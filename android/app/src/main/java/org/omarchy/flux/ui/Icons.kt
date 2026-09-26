@@ -107,6 +107,7 @@ object Ic {
     val mic = R.drawable.ic_mic
     val micFill = R.drawable.ic_mic_fill
     val micOff = R.drawable.ic_mic_off
+    val signature = R.drawable.ic_signature
     val screenShare = R.drawable.ic_screen_share
     val stopScreenShare = R.drawable.ic_stop_screen_share
 }

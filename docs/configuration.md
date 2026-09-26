@@ -35,7 +35,7 @@ command = "omarchy-system-lock"
 | `name` | The desktop name shown on the phone. An empty name uses the host name. |
 | `download_dir` | Destination for received files. Defaults to the XDG Downloads directory, then `~/Downloads`. |
 | `scan_dir` | Destination for scanned text and documents. Defaults to `flux/scanned` inside the XDG Documents directory. |
-| `photo_dir` | Destination for camera photos. Defaults to `flux` inside the XDG Pictures directory. |
+| `photo_dir` | Destination for camera photos. Defaults to `flux` inside the XDG Pictures directory. Screenshots and signatures use its `screenshots` and `signatures` folders. |
 | `auto_clipboard` | Sync clipboard text in both directions. Defaults to `true`. |
 | `notifications` | Show phone notifications on the desktop. Defaults to `true`. |
 | `share_home` | Let the phone browse the desktop home folder read-only. Defaults to `true`. |
@@ -60,6 +60,7 @@ Use the [CLI](cli.md#media-and-desktop-commands) or the Phone commands page to a
 | `~/Documents/flux/scanned/` | Scanned text and documents by default |
 | `~/Pictures/flux/` | Camera photos by default |
 | `~/Pictures/flux/screenshots/` | Automatically received screenshots by default |
+| `~/Pictures/flux/signatures/` | Signatures from the camera by default |
 | `~/.cache/flux/` | Notification icons and album art |
 | `$XDG_RUNTIME_DIR/flux/fluxd.sock` | Local IPC socket |
 | `/etc/flux/approve/<user>.pub` | Root-owned phone approval public key |

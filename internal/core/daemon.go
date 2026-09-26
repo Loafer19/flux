@@ -89,6 +89,7 @@ type clipboard interface {
 	Watch(ctx context.Context, onChange func(text string))
 	Get() (string, error)
 	Set(text string) error
+	SetImage(data []byte, mime string) error
 }
 
 type ringer interface {
@@ -98,8 +99,10 @@ type ringer interface {
 
 // memClipboard is the clipboard of a headless daemon.
 type memClipboard struct {
-	mu   sync.Mutex
-	text string
+	mu    sync.Mutex
+	text  string
+	image []byte
+	mime  string
 }
 
 func (m *memClipboard) Watch(ctx context.Context, _ func(string)) { <-ctx.Done() }
@@ -112,6 +115,12 @@ func (m *memClipboard) Set(text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.text = text
+	return nil
+}
+func (m *memClipboard) SetImage(data []byte, mime string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.image, m.mime = data, mime
 	return nil
 }
 

@@ -35,7 +35,7 @@ See [isolated development](development.md#isolated-daemon).
 
 ## The phone does not appear
 
-1. Open Flux for Android.
+1. Open Flux for Android or Flux for macOS.
 2. Check that both devices use the same local network.
 3. Check Avahi:
 
@@ -53,6 +53,13 @@ See [isolated development](development.md#isolated-daemon).
 Guest Wi-Fi and client isolation can block devices on the same access point.
 Flux uses outbound desktop connections and mDNS, so a new inbound desktop firewall rule is not the default fix.
 Keep the existing identity and trust store while you diagnose connectivity.
+
+On a Mac, check that Flux has access to the local network.
+To read the Mac logs, run:
+
+```sh
+log stream --predicate 'subsystem == "org.omarchy.flux"'
+```
 
 ## The window or bar item is missing
 

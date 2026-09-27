@@ -4,6 +4,7 @@
 
 The desktop targets Omarchy and Arch Linux with a Wayland session and systemd user services.
 The Android app requires Android 10 or later.
+The macOS app requires macOS 14 or later.
 
 ## Requirements
 
@@ -16,6 +17,7 @@ The Android app requires Android 10 or later.
 | Clipboard | `wl-clipboard` |
 | Icons | A Nerd Font that provides `ttf-font-nerd` |
 | Android build | JDK 21, SDK platform 36, and Build Tools 36.0.0 |
+| macOS build | Xcode and XcodeGen on macOS 14 or later |
 
 ## Clone the repository
 
@@ -202,3 +204,4 @@ The source removal targets leave user configuration and pairing identity in plac
 See [configuration paths](configuration.md#data-paths) before you remove user data.
 
 Continue with [Android setup](android.md) and [phone pairing](features.md#pair-a-phone).
+To connect a Mac, continue with [Flux for macOS](macos.md).

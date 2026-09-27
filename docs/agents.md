@@ -3,7 +3,7 @@
 [Documentation index](README.md)
 
 The repository includes a complete Flux skill in [`skills/omarchy-flux/`](../skills/omarchy-flux/SKILL.md).
-It covers desktop and Android setup, CLI operations, diagnostics, development, AUR packages, and APK releases.
+It covers desktop, Android, and macOS setup, CLI operations, diagnostics, development, AUR packages, and APK releases.
 The root [`AGENTS.md`](../AGENTS.md) points repository agents to the skill and documentation.
 
 ## Use the skill from the checkout

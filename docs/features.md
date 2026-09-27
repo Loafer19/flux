@@ -2,6 +2,9 @@
 
 [Documentation index](README.md)
 
+This page describes Flux for Android.
+For the Mac app, see [Flux for macOS](macos.md#features).
+
 ## Pair a phone
 
 1. Install [Flux for Android](android.md).

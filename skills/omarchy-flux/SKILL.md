@@ -1,11 +1,11 @@
 ---
 name: omarchy-flux
-description: Use, install, diagnose, develop, and release Omarchy Flux. Use this skill for the flux CLI, fluxd, Flux for Android, phone pairing, file or clipboard transfers, phone notifications, webcam or microphone streams, screen mirror, fingerprint approval, the Flux Qt app, the Flux Omarchy plugin, AUR packages, and Flux APK workflows. Scope this skill to Flux tasks, not general Android or Omarchy configuration.
+description: Use, install, diagnose, develop, and release Omarchy Flux. Use this skill for the flux CLI, fluxd, Flux for Android, Flux for macOS, phone and Mac pairing, file or clipboard transfers, phone notifications, webcam or microphone streams, screen mirror, fingerprint approval, the Flux Qt app, the Flux Omarchy plugin, AUR packages, and Flux APK workflows. Scope this skill to Flux tasks, not general Android or Omarchy configuration.
 ---
 
 # Omarchy Flux
 
-Flux connects an Omarchy desktop to Flux for Android on the same local network.
+Flux connects an Omarchy desktop to Flux for Android or Flux for macOS on the same local network.
 The desktop includes the `flux` CLI, `fluxd`, a Qt app, and an Omarchy shell plugin.
 
 ## Choose the task
@@ -138,6 +138,7 @@ make build
 | Qt host | `gui/app/` |
 | Omarchy shell host | `gui/omarchy/` |
 | Android app | `android/app/src/main/java/org/omarchy/flux/` |
+| macOS app | `macos/Sources/FluxKit/`, `macos/App/` |
 | Fingerprint approval | `internal/approve/`, `cmd/flux-approve/`, Android `core/Approve*` |
 | Package and system install | `dist/`, `Makefile` |
 
@@ -145,7 +146,7 @@ Keep network state in `fluxd`.
 The CLI and both desktop hosts use its Unix socket.
 Keep shared QML free of Quickshell imports.
 Update both host adapters when you change their shared backend contract.
-Test wire changes on both Go and Kotlin implementations.
+Test wire changes on the Go, Kotlin, and Swift implementations.
 
 Use the existing tests for the component you change.
 Run these checks for a complete build change:
@@ -155,6 +156,9 @@ make build test vet
 cd android
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease --no-daemon
 ```
+
+On a Mac with Xcode and XcodeGen, run `make test-macos macos` from the repository root.
+Use `docs/macos.md` for the macOS app.
 
 Use `docs/development.md` for isolated daemon tests and UI snapshots.
 Do not run a second development daemon against the user's active socket or trust store.

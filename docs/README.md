@@ -5,8 +5,8 @@ Flux connects an Omarchy desktop to Flux for Android or Flux for macOS on the sa
 ## Start here
 
 1. [Clone and install Flux](install.md).
-2. [Install the Android app](android.md).
-3. [Pair your phone](features.md#pair-a-phone).
+2. [Install the Android app](android.md) or [build the Mac app](macos.md#build-and-run).
+3. [Pair your phone](features.md#pair-a-phone) or [pair your Mac](macos.md#pair-a-mac).
 4. [Use the CLI](cli.md) or open the window with `flux open`.
 
 ## Use Flux

@@ -1,6 +1,6 @@
 # Flux documentation
 
-Flux connects an Omarchy desktop to Flux for Android on the same local network.
+Flux connects an Omarchy desktop to Flux for Android or Flux for macOS on the same local network.
 
 ## Start here
 
@@ -15,6 +15,7 @@ Flux connects an Omarchy desktop to Flux for Android on the same local network.
 | --- | --- |
 | [Installation](install.md) | Dependencies, Arch package, source install, user-only install, updates, and removal |
 | [Android](android.md) | APK installation, local builds, SDK setup, tests, and screenshots |
+| [macOS](macos.md) | Mac app build, pairing, features, permissions, and local tests |
 | [CLI](cli.md) | Commands, device selection, JSON state, and notifications from scripts |
 | [Everyday use](features.md) | Pair, share, SMS, media, calls, Do Not Disturb, and automatic photo transfers |
 | [Camera and streams](camera.md) | Scans, photos, webcam settings, microphone, and screen mirror |
@@ -34,5 +35,7 @@ Flux connects an Omarchy desktop to Flux for Android on the same local network.
 | [Releases](releasing.md) | GitHub workflows, AUR publication, APK signatures, and secrets |
 | [Agent skill](agents.md) | Skill installation, scope, and example prompts |
 | [Approval security design](approve.md) | Trust anchors, signatures, enrollment, and failure behavior |
+| [macOS client plan](macos-plan.md) | Decisions, phases, and checklists for the Mac app |
+| [macOS client status](macos-status.md) | Build plan, current state, and what was verified against `fluxd` |
 
 Return to the [project README](../README.md).

@@ -131,6 +131,13 @@ func (d *Daemon) herdrViewLocked() herdrView {
 // them, and close them.
 func (d *Daemon) herdrControlLocked() bool { return d.cfg.Herdr && d.cfg.HerdrControl }
 
+// herdrControlOn reports whether herdr_control is on.
+func (d *Daemon) herdrControlOn() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.herdrControlLocked()
+}
+
 // herdrTerminalsLocked reports whether a phone can open terminals and type
 // in them. It needs herdr_control too.
 func (d *Daemon) herdrTerminalsLocked() bool { return d.herdrControlLocked() && d.cfg.HerdrTerminals }
@@ -203,8 +210,11 @@ func (d *Daemon) herdrSession(ctx context.Context, logged *string) error {
 			return err
 		}
 		// An agent that the user installs or removes shows after a
-		// minute.
-		if time.Since(kindsAt) > herdrKindsTTL {
+		// minute. Only herdr_control uses the list, so fluxd skips the
+		// lookup while it is off.
+		if !d.herdrControlOn() {
+			kinds, kindsAt = nil, time.Time{}
+		} else if time.Since(kindsAt) > herdrKindsTTL {
 			kinds, kindsAt = d.herdrAvailableKinds(ctx), time.Now()
 		}
 		agents := herdrAgents(snap)

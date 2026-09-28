@@ -48,7 +48,9 @@ The role `remote` is a phone, a tablet, or a Mac.
 See [Connect two computers](desktop-peer.md) for the firewall allow and the pair.
 `send` and `clip` take a peer by the same `--device` name or id as a phone.
 
-Window pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+Window pages: `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+`network` shows this computer and each paired device.
+A peer row says that clipboard and files work, Do Not Disturb between desks is off, and screen edges are not set.
 
 `flux-cli version` prints the version of `flux-cli` and of the running `fluxd`.
 After an update, it also prints the new `fluxd` version that waits for its restart.

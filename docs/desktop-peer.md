@@ -83,6 +83,10 @@ flux-cli status
 Accept it on the other computer.
 `status` then shows that computer as `laptop` or `desktop`, role `peer`, and `paired`.
 
+Open **Network** in the window to see this computer and the paired devices.
+A peer row shows clipboard and files on, Do Not Disturb between desks off, and screen edges unset.
+Select the row to open that device.
+
 Two computers with the same name need a device id:
 
 ```sh

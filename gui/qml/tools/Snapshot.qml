@@ -164,6 +164,19 @@ Window {
       view.selectedId = laptop
       view.tab = "commands"
     }],
+    ["30c-network", function () {
+      mock.setState(function (s) {
+        s.self = { id: "9c1f2e3d4b5a69788796a5b4c3d2e1f0", name: "omarchy-framework", type: "laptop", tcpPort: 1716 }
+        s.devices = s.devices.filter(function (d) { return d.id !== laptop })
+        s.devices.push({
+          id: laptop, name: "work-thinkpad", type: "laptop", ip: "192.168.1.70",
+          paired: true, online: true, pairState: "paired", pairedAt: "2026-09-20",
+          role: "peer", battery: { charge: 64, charging: true },
+          plugins: ["clipboard", "share", "battery"], notifications: [], conversations: []
+        })
+      })
+      view.tab = "network"
+    }],
     ["30-notif-reply", function () {
       mock.setState(function (s) { s.devices = s.devices.filter(function (d) { return d.id !== laptop }) })
       view.selectedId = pixel; view.tab = "notifications"

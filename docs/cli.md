@@ -45,6 +45,7 @@ flux-cli open files
 `flux-cli status` prints each device as name, type, role, connection, battery, address, and pair state.
 The role `peer` is another computer running `fluxd`.
 The role `remote` is a phone, a tablet, or a Mac.
+See [Connect two computers](desktop-peer.md) for the firewall allow and the pair.
 `send` and `clip` take a peer by the same `--device` name or id as a phone.
 
 Window pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.

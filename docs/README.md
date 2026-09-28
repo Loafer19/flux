@@ -7,7 +7,7 @@ A paired device can also connect through [Tailscale](tailscale.md) away from tha
 
 1. [Clone and install Flux](install.md).
 2. [Install the Android app](android.md), [install the iPhone app](ios.md#install-on-an-iphone), or [build the Mac app](macos.md#build-and-run).
-3. [Pair your phone](features.md#pair-a-phone), [pair your iPhone](ios.md#pair-an-iphone), or [pair your Mac](macos.md#pair-a-mac).
+3. [Pair your phone](features.md#pair-a-phone), [pair your iPhone](ios.md#pair-an-iphone), [pair your Mac](macos.md#pair-a-mac), or [connect two computers](desktop-peer.md).
 4. [Use the CLI](cli.md) or open the window with `flux-cli open`.
 
 ## Use Flux
@@ -22,6 +22,7 @@ A paired device can also connect through [Tailscale](tailscale.md) away from tha
 | [CLI](cli.md) | Commands, device selection, JSON state, and notifications from scripts |
 | [Everyday use](features.md) | Pair, share, clipboard images, SMS, media, calls, Do Not Disturb, automatic photo transfers, and dictation in text fields |
 | [Tailscale](tailscale.md) | Extra addresses, links away from the local network, other VPNs, and connection checks |
+| [Two computers](desktop-peer.md) | Pair two Omarchy desks, the firewall allow, and Tailscale between them |
 | [Camera and streams](camera.md) | Scans, photos, webcam settings, microphone, and screen mirror |
 | [Configuration](configuration.md) | TOML settings, data paths, environment variables, and service control |
 | [Omarchy integration](omarchy.md) | Shell plugin, bar item, window host, theme, and desktop integration |

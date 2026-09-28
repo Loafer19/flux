@@ -264,8 +264,11 @@ Leave Android, the Mac app, `internal/approve`, and the firewall package files a
 
 ## Later
 
-Phase 3, separate from the MVP diff: confirm the existing idle dial schedule from the merged issue 49 still reconnects a peer, and dedupe mDNS only if a desk shows one peer twice.
-A setup page for two Omarchy desks, including the TCP allow, lands with that phase.
+Phase 3 is the setup page [Connect two computers](desktop-peer.md).
+A paired peer stays on the dial schedule from the merged issue 49: `TestPeerDialBackoff` covers the fast and slow intervals.
+Two mDNS reports for one id stay one device: `TestMDNSReportsStayOneDevice`.
+An IPv6 mDNS answer is dropped before it becomes a row.
+The Android list can still show one computer twice. That is issue 7, and this phase does not change the phone app.
 
 Phase 4, separate pull requests: edge mouse through `flux.input` and a virtual pointer, drag across that edge, focus follow, and a real phone storage server.
 None of those ride in the MVP change.

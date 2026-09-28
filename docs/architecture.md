@@ -61,7 +61,7 @@ The phone and the Mac send `flux.tunnel`, so they stay remotes.
 A peer shares clipboard text, clipboard images, and files.
 Each desk accepts inbound TCP 1716–1764 from the other.
 The package adds no firewall rule.
-See [the desktop peer design](desktop-peer-mvp.md).
+See [Connect two computers](desktop-peer.md) for the setup, and [the desktop peer design](desktop-peer-mvp.md) for the role rules.
 
 ## App versions
 

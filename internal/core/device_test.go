@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
 
+	"flux/internal/lan"
 	"flux/internal/proto"
 )
 
@@ -52,6 +54,43 @@ func TestPeerRole(t *testing.T) {
 	unknown := &Device{}
 	if got := unknown.view(); got.Role != "remote" || got.Type != "phone" {
 		t.Fatalf("empty device view %+v", got)
+	}
+}
+
+// Two mDNS reports for one id stay one device. Avahi can emit an IPv4
+// record twice, or the browse can repeat. The window keys the list by id.
+func TestMDNSReportsStayOneDevice(t *testing.T) {
+	self := "fedcba9876543210fedcba9876543210"
+	id := "0123456789abcdef0123456789abcdef"
+	d := &Daemon{
+		selfID:  self,
+		devices: map[string]*Device{},
+		ctx:     context.Background(),
+		lan: lan.New(lan.Config{Identity: func() proto.Identity {
+			return proto.Identity{DeviceID: self}
+		}}),
+	}
+	d.onMDNS(lan.MDNSPeer{DeviceID: id, Name: "other-desk", Type: "laptop", Protocol: 8, IP: "192.0.2.10", Port: 0})
+	dev := d.devices[id]
+	if dev == nil {
+		t.Fatal("mDNS did not record the computer")
+	}
+	dev.Paired = true
+	d.onMDNS(lan.MDNSPeer{DeviceID: id, Name: "second-name", Type: "desktop", Protocol: 8, IP: "192.0.2.11", Port: 0})
+	if len(d.devices) != 1 {
+		t.Fatalf("%d devices, want 1", len(d.devices))
+	}
+	if dev.Name != "other-desk" || dev.IP != "192.0.2.11" {
+		t.Fatalf("device name %q ip %s", dev.Name, dev.IP)
+	}
+	shown := 0
+	for _, item := range d.devices {
+		if item.Paired || item.link != nil {
+			shown++
+		}
+	}
+	if shown != 1 {
+		t.Fatalf("list would show %d computers", shown)
 	}
 }
 

@@ -146,9 +146,13 @@ func (d *Daemon) handlePair(dev *Device, p *proto.Packet) {
 	d.startPairTimerLocked(dev)
 	key := dev.pairKey
 	d.mu.Unlock()
+	notice := "Check that the phone shows " + key + ". Open Flux to accept."
+	if dev.peer() {
+		notice = "Check that " + dev.Name + " shows " + key + ". Open Flux to accept."
+	}
 	d.notify(desktop.Notification{
 		AppName: "Flux", Title: dev.Name + " wants to pair",
-		Body:    "Check that the phone shows " + key + ". Open Flux to accept.",
+		Body:    notice,
 		Actions: []desktop.Action{{Key: "pair-accept:" + dev.ID, Label: "Accept"}, {Key: "pair-reject:" + dev.ID, Label: "Reject"}},
 		Urgency: 1, Timeout: pairTimeout,
 	})

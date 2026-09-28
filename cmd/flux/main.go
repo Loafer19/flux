@@ -253,6 +253,7 @@ type State struct {
 		Online     bool   `json:"online"`
 		PairState  string `json:"pairState"`
 		PairKey    string `json:"pairKey"`
+		Role       string `json:"role"`
 		App        string `json:"app"`
 		AppVersion string `json:"appVersion"`
 		AppUpdate  string `json:"appUpdate"`
@@ -305,7 +306,11 @@ func status(asJSON bool) error {
 				bat += " +"
 			}
 		}
-		fmt.Printf("  %-22s %-7s %-10s %-6s %-15s %s\n", d.Name, d.Type, state, bat, d.IP, pair)
+		role := d.Role
+		if role == "" {
+			role = "remote"
+		}
+		fmt.Printf("  %-22s %-7s %-6s %-10s %-6s %-15s %s\n", d.Name, d.Type, role, state, bat, d.IP, pair)
 		if d.AppUpdate != "" {
 			fmt.Printf("  %-22s Flux for Android %s is available. To send it, run: flux-cli --device %q update --phone\n", "", d.AppUpdate, d.Name)
 		}

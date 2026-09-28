@@ -64,6 +64,8 @@ type state struct {
 		Paired     bool     `json:"paired"`
 		PairState  string   `json:"pairState"`
 		PairKey    string   `json:"pairKey"`
+		Role       string   `json:"role"`
+		Plugins    []string `json:"plugins"`
 		// Notifications are the notifications that the device sent.
 		Notifications []struct {
 			App   string `json:"app"`
@@ -72,8 +74,9 @@ type state struct {
 		} `json:"notifications"`
 	} `json:"devices"`
 	Clipboard []struct {
-		Text string `json:"text"`
-		Dir  string `json:"dir"`
+		Text  string `json:"text"`
+		Dir   string `json:"dir"`
+		Image string `json:"image"`
 	} `json:"clipboard"`
 	Transfers []struct {
 		Name  string `json:"name"`
@@ -248,6 +251,23 @@ func setLastIP(t *testing.T, n *node, ip string) {
 	}
 }
 
+func assertPeer(t *testing.T, s state, name string) {
+	t.Helper()
+	for _, d := range s.Devices {
+		if d.Name != name {
+			continue
+		}
+		if d.Role != "peer" || !slices.Equal(d.Plugins, []string{"clipboard", "share", "battery"}) {
+			t.Fatalf("%s role %q plugins %v", name, d.Role, d.Plugins)
+		}
+		if slices.Contains(d.Plugins, "sftp") || slices.Contains(d.Plugins, "sms") {
+			t.Fatalf("%s offers phone plugins %v", name, d.Plugins)
+		}
+		return
+	}
+	t.Fatalf("no device %s", name)
+}
+
 func device(s state, name string) (id string, online, paired bool, pairState, key string) {
 	for _, d := range s.Devices {
 		if d.Name == name {
@@ -261,6 +281,12 @@ func TestTwoDaemons(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts 2 processes")
 	}
+	clipPNG := append([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR"), bytes.Repeat([]byte{0x11}, 64)...)
+	clipPath := filepath.Join(t.TempDir(), "clip.png")
+	if err := os.WriteFile(clipPath, clipPNG, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FLUX_CLIP_IMAGE", clipPath)
 	bin := buildFluxd(t)
 	udp := freePort(t, "udp")
 	tcpA, tcpB := freePort(t, "tcp"), freePort(t, "tcp")
@@ -292,14 +318,27 @@ func TestTwoDaemons(t *testing.T) {
 		t.Fatalf("verification keys differ: %q and %q", keyA, keyB)
 	}
 	beta.call(t, "pair.accept", map[string]any{"device": "alpha"}, nil)
-	alpha.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "beta"); return p })
-	beta.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "alpha"); return p })
+	pairedA := alpha.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "beta"); return p })
+	pairedB := beta.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "alpha"); return p })
+	assertPeer(t, pairedA, "beta")
+	assertPeer(t, pairedB, "alpha")
 
 	// Clipboard.
 	alpha.call(t, "clipboard.send", map[string]any{"device": "beta", "text": "yay -S flux-git"}, nil)
 	beta.wait(t, "clipboard entry", func(s state) bool {
 		return len(s.Clipboard) > 0 && s.Clipboard[0].Text == "yay -S flux-git" && s.Clipboard[0].Dir == "in"
 	})
+
+	// Clipboard image. The headless daemon loaded FLUX_CLIP_IMAGE. An empty
+	// clipboard.send sends that image.
+	alpha.call(t, "clipboard.send", map[string]any{"device": "beta"}, nil)
+	imageState := beta.wait(t, "clipboard image", func(s state) bool {
+		return len(s.Clipboard) > 0 && s.Clipboard[0].Image != "" && s.Clipboard[0].Dir == "in"
+	})
+	gotImage, err := os.ReadFile(imageState.Clipboard[0].Image)
+	if err != nil || !bytes.Equal(gotImage, clipPNG) {
+		t.Fatalf("clipboard image: %v, %d bytes", err, len(gotImage))
+	}
 
 	// File transfer.
 	src := filepath.Join(t.TempDir(), "IMG_2041.jpg")

@@ -119,7 +119,7 @@ func (d *Daemon) dndWanted() bool {
 		return false
 	}
 	for _, dev := range d.devices {
-		if dev.Paired && dev.link != nil && dev.accepts(proto.TypeFluxDnd) {
+		if dev.Paired && dev.link != nil && !dev.peer() && dev.accepts(proto.TypeFluxDnd) {
 			return true
 		}
 	}
@@ -166,7 +166,7 @@ func (d *Daemon) sendDnd(on bool, except string) {
 	d.mu.Lock()
 	var links []*lan.Link
 	for _, dev := range d.devices {
-		if dev.Paired && dev.link != nil && dev.ID != except && dev.accepts(proto.TypeFluxDnd) {
+		if dev.Paired && dev.link != nil && dev.ID != except && !dev.peer() && dev.accepts(proto.TypeFluxDnd) {
 			links = append(links, dev.link)
 		}
 	}

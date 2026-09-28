@@ -84,6 +84,7 @@ Item {
 
   function tabAllowed(key) {
     if (key === "messages") return has("sms")
+    if (key === "commands") return !dev || dev.role !== "peer"
     return true
   }
 

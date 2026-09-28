@@ -197,6 +197,9 @@ func (d *Daemon) approveDevice(dev *Device) error {
 	if dev.link == nil {
 		return offline(dev)
 	}
+	if dev.peer() {
+		return apiErr("unsupported", "%s is a computer. Fingerprint approval stays on the phone", dev.Name)
+	}
 	if !dev.accepts(proto.TypeFluxApprove) {
 		return apiErr("unsupported", "Update Flux for Android on %s to approve with a fingerprint", dev.Name)
 	}

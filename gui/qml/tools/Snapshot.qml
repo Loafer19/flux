@@ -149,6 +149,21 @@ Window {
       })
       view.selectedId = laptop
     }],
+    // A desktop peer keeps Overview, Clipboard, Files, and Notifications.
+    // Phone commands are hidden, and a request for that tab stays on Overview.
+    ["30b-peer", function () {
+      mock.setState(function (s) {
+        s.devices = s.devices.filter(function (d) { return d.id !== laptop })
+        s.devices.push({
+          id: laptop, name: "work-thinkpad", type: "laptop", ip: "192.168.1.70",
+          paired: true, online: true, pairState: "paired", pairedAt: "2026-09-20",
+          role: "peer", battery: { charge: 64, charging: true },
+          plugins: ["clipboard", "share", "battery"], notifications: [], conversations: []
+        })
+      })
+      view.selectedId = laptop
+      view.tab = "commands"
+    }],
     ["30-notif-reply", function () {
       mock.setState(function (s) { s.devices = s.devices.filter(function (d) { return d.id !== laptop }) })
       view.selectedId = pixel; view.tab = "notifications"

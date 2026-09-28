@@ -42,6 +42,11 @@ flux-cli on
 flux-cli open files
 ```
 
+`flux-cli status` prints each device as name, type, role, connection, battery, address, and pair state.
+The role `peer` is another computer running `fluxd`.
+The role `remote` is a phone, a tablet, or a Mac.
+`send` and `clip` take a peer by the same `--device` name or id as a phone.
+
 Window pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
 
 `flux-cli version` prints the version of `flux-cli` and of the running `fluxd`.

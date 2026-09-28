@@ -109,3 +109,30 @@ func TestClipImageOverLink(t *testing.T) {
 		t.Fatal("sent an image to a device that does not accept images")
 	}
 }
+
+// TestPeerClipImage uses two fluxd identities. The image uses the same
+// payload path as a phone, and the device is a peer.
+func TestPeerClipImage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	onA, onB, idA, idB := linkPair(t, ctx)
+	a, _ := clipDaemon(t, true)
+	b, clipB := clipDaemon(t, true)
+	a.ctx, b.ctx = ctx, ctx
+	in, out := fluxIdentity()
+	devB := &Device{ID: idB, Name: "beta", Type: "desktop", Paired: true, link: onA, Incoming: in, Outgoing: out}
+	devA := &Device{ID: idA, Name: "alpha", Type: "laptop", Paired: true, link: onB, Incoming: append([]string{}, in...), Outgoing: append([]string{}, out...)}
+	if devB.role() != "peer" || devA.role() != "peer" {
+		t.Fatalf("roles %s %s", devA.role(), devB.role())
+	}
+	a.devices[idB] = devB
+	b.devices[idA] = devA
+	go onA.Receive(func(p *proto.Packet) { a.handlePacket(devB, onA, p) })
+	go onB.Receive(func(p *proto.Packet) { b.handlePacket(devA, onB, p) })
+
+	img := append(testPNG(9), bytes.Repeat([]byte{0xcd}, 4096)...)
+	a.onLocalImage(img, "image/png")
+	if got := waitImage(t, clipB); !bytes.Equal(got, img) {
+		t.Fatalf("peer got %d bytes, want %d", len(got), len(img))
+	}
+}

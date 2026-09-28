@@ -214,7 +214,14 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		d.binDir = filepath.Dir(exe)
 	}
 	if opts.Headless {
-		d.clip = &memClipboard{}
+		mem := &memClipboard{}
+		// Headless tests place a PNG on the clipboard with FLUX_CLIP_IMAGE.
+		if p := os.Getenv("FLUX_CLIP_IMAGE"); p != "" {
+			if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+				mem.image, mem.mime = b, desktop.ImageType
+			}
+		}
+		d.clip = mem
 		// A headless daemon can share the runtime folder with the daemon of
 		// the desktop, so it keeps its clipboard images in its own folder.
 		d.clipDir = filepath.Join(os.TempDir(), "fluxd-clipboard-"+config.NewID(6))
@@ -706,19 +713,21 @@ func (d *Daemon) onPairedLink(dev *Device, l *lan.Link) {
 			}
 		}
 	}
-	if dev.supports(proto.TypeNotification) {
+	// A peer shares clipboard and files. It does not receive the phone
+	// controls: notification requests, Do Not Disturb, remote input, or herdr.
+	if !dev.peer() && dev.supports(proto.TypeNotification) {
 		_ = l.Send(proto.New(proto.TypeNotificationRequest, map[string]any{"request": true}))
 	}
-	if dev.accepts(proto.TypeFluxDnd) {
+	if !dev.peer() && dev.accepts(proto.TypeFluxDnd) {
 		d.wakeDnd()
 	}
-	if dev.accepts(proto.TypeFluxInput) {
+	if !dev.peer() && dev.accepts(proto.TypeFluxInput) {
 		d.sendInputState(l)
 	}
 	if d.media != nil && dev.supports(proto.TypeMprisRequest) {
 		d.sendPlayers(l)
 	}
-	if dev.accepts(proto.TypeFluxHerdr) {
+	if !dev.peer() && dev.accepts(proto.TypeFluxHerdr) {
 		d.mu.Lock()
 		state := herdrStatePacket(d.herdrViewLocked())
 		d.mu.Unlock()

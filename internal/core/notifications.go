@@ -217,7 +217,7 @@ func (d *Daemon) onNotificationAction(_ uint32, key string) {
 	case "reveal":
 		_ = desktop.Open(filepath.Dir(rest))
 	case "pair-accept", "pair-reject":
-		if dev := d.lookup(rest); dev != nil {
+		if dev, err := d.lookup(rest); err == nil && dev != nil {
 			if kind == "pair-accept" {
 				_ = d.AcceptPair(dev)
 			} else {
@@ -228,13 +228,13 @@ func (d *Daemon) onNotificationAction(_ uint32, key string) {
 		_ = d.StopDesktop()
 	case "notif-dismiss":
 		devID, id, _ := strings.Cut(rest, ":")
-		if dev := d.lookup(devID); dev != nil {
+		if dev, err := d.lookup(devID); err == nil && dev != nil {
 			_ = d.DismissNotification(dev, unb64(id))
 		}
 	case "notif-action":
 		parts := strings.SplitN(rest, ":", 3)
 		if len(parts) == 3 {
-			if dev := d.lookup(parts[0]); dev != nil {
+			if dev, err := d.lookup(parts[0]); err == nil && dev != nil {
 				_ = d.NotificationAction(dev, unb64(parts[1]), unb64(parts[2]))
 			}
 		}

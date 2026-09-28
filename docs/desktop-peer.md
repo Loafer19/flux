@@ -83,6 +83,14 @@ flux-cli status
 Accept it on the other computer.
 `status` then shows that computer as `laptop` or `desktop`, role `peer`, and `paired`.
 
+Two computers with the same name need a device id:
+
+```sh
+flux-cli --device DEVICE_ID clip "from this desk"
+```
+
+`flux-cli status --json` prints the id.
+
 In `flux-cli status --json` the same device has `"role": "peer"`.
 
 ## Share

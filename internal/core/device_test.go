@@ -14,6 +14,31 @@ func fluxIdentity() (in, out []string) {
 	return append([]string{}, proto.Incoming...), append([]string{}, proto.Outgoing...)
 }
 
+func TestLookupAmbiguousName(t *testing.T) {
+	a := newDevice("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	a.Name = "omarchy"
+	b := newDevice("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	b.Name = "Omarchy"
+	one := newDevice("cccccccccccccccccccccccccccccccc")
+	one.Name = "Pixel 8"
+	d := &Daemon{devices: map[string]*Device{a.ID: a, b.ID: b, one.ID: one}}
+	if _, err := d.lookup("omarchy"); err == nil {
+		t.Fatal("two devices with one name were accepted")
+	}
+	dev, err := d.lookup(a.ID)
+	if err != nil || dev != a {
+		t.Fatalf("id lookup %v %v", dev, err)
+	}
+	dev, err = d.lookup("pixel 8")
+	if err != nil || dev != one {
+		t.Fatalf("name lookup %v %v", dev, err)
+	}
+	dev, err = d.lookup("missing")
+	if err != nil || dev != nil {
+		t.Fatalf("missing lookup %v %v", dev, err)
+	}
+}
+
 func TestPeerRole(t *testing.T) {
 	in, out := fluxIdentity()
 	peer := &Device{Type: "desktop", Incoming: in, Outgoing: out}

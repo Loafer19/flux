@@ -27,25 +27,43 @@ func apiErr(code, format string, args ...any) *Error {
 func offline(dev *Device) *Error { return apiErr("offline", "%s is offline", dev.Name) }
 
 // lookup finds a device by ID or by name. Names match without case.
-func (d *Daemon) lookup(key string) *Device {
+// lookup finds a device by ID or by name. Two devices with the same name
+// return an error, so a command cannot pick one of them by chance.
+func (d *Daemon) lookup(key string) (*Device, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if dev, ok := d.devices[key]; ok {
-		return dev
+		return dev, nil
 	}
+	var found []*Device
 	for _, dev := range d.devices {
 		if strings.EqualFold(dev.Name, key) {
-			return dev
+			found = append(found, dev)
 		}
 	}
-	return nil
+	switch len(found) {
+	case 0:
+		return nil, nil
+	case 1:
+		return found[0], nil
+	}
+	ids := make([]string, len(found))
+	for i, dev := range found {
+		ids[i] = dev.ID
+	}
+	sort.Strings(ids)
+	return nil, apiErr("ambiguous", "%d devices are named %q. Use a device ID: %s", len(found), key, strings.Join(ids, ", "))
 }
 
 // pick returns the device that a request names. Without a name it returns
 // the only connected paired device.
 func (d *Daemon) pick(key string) (*Device, error) {
 	if key != "" {
-		if dev := d.lookup(key); dev != nil {
+		dev, err := d.lookup(key)
+		if err != nil {
+			return nil, err
+		}
+		if dev != nil {
 			return dev, nil
 		}
 		return nil, apiErr("not_found", "No device named %q", key)

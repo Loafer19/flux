@@ -42,6 +42,7 @@ The `adb` method keeps Play Protect on, so use it when you can.
 ### Install with adb
 
 `adb install` does not go through the check for a browser, a messaging app, or a file manager.
+Install `adb` on the computer first, as in [Android requirements](android.md#requirements).
 
 1. On the phone, open **Settings > About phone** and tap **Build number** 7 times.
 2. Open **Settings > Developer options** and turn on **USB debugging**.
@@ -86,6 +87,7 @@ CAUTION: While app scanning is off, Play Protect does not check any app that you
 
 Android 13 and later restrict notification access for an app that you install from a browser, a messaging app, or a file manager.
 Android 15 and later also restrict SMS access for these apps.
+On Android 15, an app that you install with `adb` can also get the restriction.
 Android then shows **Restricted setting** when you turn on **Share notifications** or **Text messages**.
 
 To give Flux these permissions:
@@ -94,7 +96,16 @@ To give Flux these permissions:
 2. Open the menu in the top corner and select **Allow restricted settings**.
    The menu item shows only after Android has shown **Restricted setting** for Flux once.
 3. Confirm with the PIN or the fingerprint of the phone.
-4. Return to Flux and turn on **Share notifications** or **Text messages** again.
+4. Return to Flux and open the page of the computer.
+   Scroll below the large tiles and turn on **Share notifications** or **Text messages** again.
+
+If the menu item does not show, allow restricted settings from the computer with `adb`:
+
+```sh
+adb shell appops set org.omarchy.flux ACCESS_RESTRICTED_SETTINGS allow
+```
+
+Then turn on the switch in Flux again.
 
 ## How Flux for Android is set up
 

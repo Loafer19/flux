@@ -83,6 +83,8 @@ flux-cli pair "Pixel 8"
 To connect an iPhone, install the app with Xcode and follow [Pair an iPhone](docs/ios.md#pair-an-iphone).
 To connect a Mac, build the app and follow [Pair a Mac](docs/macos.md#pair-a-mac).
 
+To connect a second Omarchy computer, follow [Connect two computers](docs/desktop-peer.md).
+
 ## Use it from your terminal
 
 ```sh

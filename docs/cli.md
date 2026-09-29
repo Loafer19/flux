@@ -42,7 +42,17 @@ flux-cli on
 flux-cli open files
 ```
 
-Window pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+`flux-cli status` prints each device as name, type, role, connection, battery, address, and pair state.
+The role `peer` is another computer running `fluxd`.
+The role `remote` is a phone, a tablet, or a Mac.
+See [Connect two computers](desktop-peer.md) for the firewall allow and the pair.
+`send` and `clip` take a peer by the same `--device` name or id as a phone.
+
+Window pages: `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+`network` shows this computer and each paired device.
+A peer row says that clipboard and files work, and that Do Not Disturb between desks is off.
+The computer named in `edge_device` shows that screen edge. The others stay unset.
+Set the seam with `flux-cli edge left other-desk`, clear it with `flux-cli edge off`, or tap the edge chip on the Network page.
 
 `flux-cli version` prints the version of `flux-cli` and of the running `fluxd`.
 After an update, it also prints the new `fluxd` version that waits for its restart.
@@ -74,6 +84,9 @@ FLUX_GUI=plugin flux-cli open notifications
 ```sh
 flux-cli discover
 flux-cli pair "Pixel 8"
+flux-cli pair invite --host desk-b
+flux-cli pair join 'flux1:…@desk-b:1716'
+flux-cli pair connect desk-b --id DEVICE_ID --port 1716
 flux-cli accept "Pixel 8"
 flux-cli reject "Pixel 8"
 flux-cli unpair "Pixel 8"
@@ -81,6 +94,8 @@ flux-cli unpair "Pixel 8"
 
 Compare the verification key on both devices before you accept.
 See [phone pairing](features.md#pair-a-phone).
+`pair invite` and `pair join` skip mDNS when two computers already share a reachable host, for example through Tailscale.
+See [Pair without discovery](desktop-peer.md#pair-without-discovery).
 
 ## Reach a device away from the local network
 
@@ -114,6 +129,7 @@ flux-cli notify "Backup done" "412 files, 2.1 GB"
 `flux-cli send` starts transfers and returns their count.
 Inspect `transfers` in `flux-cli status --json` for completion.
 `flux-cli clip` without text sends the desktop clipboard.
+`flux-cli url` opens an `http` or `https` address. On a computer, any other address is rejected.
 When the clipboard holds an image, the command sends the image and returns when the transfer ends.
 See [clipboard images](features.md#clipboard-images).
 `flux-cli notifications clear` dismisses the phone notifications on the phone and on the desktop. Ongoing notifications stay.

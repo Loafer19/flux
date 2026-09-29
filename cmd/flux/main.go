@@ -25,10 +25,14 @@ const usage = `Usage: flux-cli [command] [--device NAME] [args]
 Commands:
   open [page]            Open the Flux window: the omarchy-shell plugin when it is
                          enabled, else flux-gui. Pages: overview, clipboard, files,
-                         notifications, messages, commands
+                         notifications, messages, commands, network
   status [--json]        Show this computer and the known devices
   discover               Broadcast this computer on the network now
   pair DEVICE            Ask a device to pair and show the verification key
+  pair invite [--host H] Print an invite for discovery-less first pairing
+  pair join INVITE       Dial an invite, then ask to pair
+  pair connect HOST --id ID [--port N]
+                         Dial a verified reachable host by device ID, then pair
   accept DEVICE          Accept a pair request
   reject DEVICE          Reject a pair request
   unpair DEVICE          Remove a paired device
@@ -36,11 +40,13 @@ Commands:
   addresses add HOST     Add a host name or IP address, for example the Tailscale
                          name of the phone. fluxd tries it while the device is offline
   addresses remove HOST  Remove an extra address
+  edge [SIDE DEVICE]     Show or set the screen edge that continues on a peer.
+                         SIDE is left, right, top, or bottom. edge off clears it.
   ring                   Ring the phone
   ping [MESSAGE]         Send a ping
   send FILE...           Send files
   clip [TEXT]            Send the clipboard, or TEXT
-  url URL                Open a URL on the phone
+  url URL                Open an http or https address on the device
   sms NUMBER TEXT...     Send a text message through the phone
   notifications          List the phone notifications
   notifications clear    Dismiss the phone notifications, on the phone and here.
@@ -95,7 +101,7 @@ func main() {
 	case "discover":
 		err = call("discover", nil)
 	case "pair":
-		err = pair(need(args, "DEVICE"))
+		err = pairCmd(args)
 	case "accept":
 		err = call("pair.accept", map[string]any{"device": need(args, "DEVICE")})
 	case "reject":
@@ -104,6 +110,8 @@ func main() {
 		err = call("pair.unpair", map[string]any{"device": need(args, "DEVICE")})
 	case "addresses":
 		err = addresses(device, args)
+	case "edge":
+		err = edgeCmd(args)
 	case "ring":
 		err = call("ring", map[string]any{"device": device})
 	case "ping":
@@ -253,6 +261,7 @@ type State struct {
 		Online     bool   `json:"online"`
 		PairState  string `json:"pairState"`
 		PairKey    string `json:"pairKey"`
+		Role       string `json:"role"`
 		App        string `json:"app"`
 		AppVersion string `json:"appVersion"`
 		AppUpdate  string `json:"appUpdate"`
@@ -305,7 +314,11 @@ func status(asJSON bool) error {
 				bat += " +"
 			}
 		}
-		fmt.Printf("  %-22s %-7s %-10s %-6s %-15s %s\n", d.Name, d.Type, state, bat, d.IP, pair)
+		role := d.Role
+		if role == "" {
+			role = "remote"
+		}
+		fmt.Printf("  %-22s %-7s %-6s %-10s %-6s %-15s %s\n", d.Name, d.Type, role, state, bat, d.IP, pair)
 		if d.AppUpdate != "" {
 			fmt.Printf("  %-22s Flux for Android %s is available. To send it, run: flux-cli --device %q update --phone\n", "", d.AppUpdate, d.Name)
 		}
@@ -313,7 +326,167 @@ func status(asJSON bool) error {
 	return nil
 }
 
-func pair(device string) error {
+func pairCmd(args []string) error {
+	switch first(args) {
+	case "invite":
+		return pairInvite(args[1:])
+	case "join":
+		return pairJoin(need(args[1:], "INVITE"))
+	case "connect":
+		return pairConnect(args[1:])
+	case "":
+		return fmt.Errorf("Usage: flux-cli pair DEVICE | pair invite [--host HOST] | pair join INVITE | pair connect HOST --id ID")
+	default:
+		return pairRequest(need(args, "DEVICE"))
+	}
+}
+
+func pairInvite(args []string) error {
+	host := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--host":
+			host = need(args[i+1:], "HOST")
+			i++
+		case strings.HasPrefix(a, "--host="):
+			host = strings.TrimPrefix(a, "--host=")
+		default:
+			return fmt.Errorf("unknown pair invite argument %q", a)
+		}
+	}
+	var inv struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Host   string `json:"host"`
+		Port   int    `json:"port"`
+		Invite string `json:"invite"`
+	}
+	if err := callInto("pair.invite", map[string]any{"host": host}, &inv); err != nil {
+		return err
+	}
+	fmt.Printf("Invite for %s (give to the other computer):\n\n  %s\n\n", inv.Name, inv.Invite)
+	fmt.Println("On the other computer, with a path that reaches this host (LAN allow or Tailscale):")
+	fmt.Printf("  flux-cli pair join %q\n", inv.Invite)
+	fmt.Println()
+	fmt.Println("Compare the 8-character key on both sides, then accept.")
+	fmt.Println("This invite is not a secret. It only skips mDNS/UDP discovery.")
+	return nil
+}
+
+func pairJoin(invite string) error {
+	var inv struct {
+		ID     string `json:"id"`
+		Host   string `json:"host"`
+		Port   int    `json:"port"`
+		Invite string `json:"invite"`
+	}
+	if err := callInto("pair.connect", map[string]any{"invite": invite}, &inv); err != nil {
+		return err
+	}
+	fmt.Printf("Dialing %s:%d…\n", inv.Host, inv.Port)
+	if err := waitOnline(inv.ID); err != nil {
+		return err
+	}
+	return pairRequest(inv.ID)
+}
+
+func pairConnect(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("Usage: flux-cli pair connect HOST --id DEVICE_ID [--port PORT]")
+	}
+	host, id, port := "", "", 0
+	rest := []string{}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--id":
+			id = need(args[i+1:], "DEVICE_ID")
+			i++
+		case strings.HasPrefix(a, "--id="):
+			id = strings.TrimPrefix(a, "--id=")
+		case a == "--port":
+			n, err := strconv.Atoi(need(args[i+1:], "PORT"))
+			if err != nil {
+				return fmt.Errorf("port: %v", err)
+			}
+			port, i = n, i+1
+		case strings.HasPrefix(a, "--port="):
+			n, err := strconv.Atoi(strings.TrimPrefix(a, "--port="))
+			if err != nil {
+				return fmt.Errorf("port: %v", err)
+			}
+			port = n
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown pair connect argument %q", a)
+		default:
+			rest = append(rest, a)
+		}
+	}
+	if len(rest) != 1 {
+		return fmt.Errorf("Usage: flux-cli pair connect HOST --id DEVICE_ID [--port PORT]")
+	}
+	host = rest[0]
+	if id == "" {
+		return fmt.Errorf("Give --id with the device ID from the other computer's flux-cli status --json")
+	}
+	params := map[string]any{"id": id, "host": host}
+	if port > 0 {
+		params["port"] = port
+	}
+	if err := call("pair.connect", params); err != nil {
+		return err
+	}
+	if port == 0 {
+		port = 1716
+	}
+	fmt.Printf("Dialing %s:%d…\n", host, port)
+	if err := waitOnline(id); err != nil {
+		return err
+	}
+	return pairRequest(id)
+}
+
+func waitOnline(device string) error {
+	c, err := dial()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err := c.Call("subscribe", nil, nil); err != nil {
+		return err
+	}
+	// Ask for a fresh state in case the link is already up.
+	var s State
+	if err := c.Call("state", nil, &s); err == nil {
+		for _, d := range s.Devices {
+			if (d.ID == device || strings.EqualFold(d.Name, device)) && d.Online {
+				fmt.Printf("Linked to %s\n", d.Name)
+				return nil
+			}
+		}
+	}
+	for ev := range c.Events() {
+		if ev.Event != "state" {
+			continue
+		}
+		if json.Unmarshal(ev.Data, &s) != nil {
+			continue
+		}
+		for _, d := range s.Devices {
+			if d.ID != device && !strings.EqualFold(d.Name, device) {
+				continue
+			}
+			if d.Online {
+				fmt.Printf("Linked to %s\n", d.Name)
+				return nil
+			}
+		}
+	}
+	return errors.New("fluxd closed the connection before the peer answered")
+}
+
+func pairRequest(device string) error {
 	c, err := dial()
 	if err != nil {
 		return err
@@ -356,6 +529,62 @@ func pair(device string) error {
 // addresses lists, adds, or removes the extra addresses of a paired
 // device. fluxd dials them while the device is offline, for example
 // through Tailscale.
+
+func edgeCmd(args []string) error {
+	switch first(args) {
+	case "", "status":
+		var s struct {
+			Settings struct {
+				EdgeSide   string `json:"edgeSide"`
+				EdgeDevice string `json:"edgeDevice"`
+			} `json:"settings"`
+		}
+		if err := callInto("state", nil, &s); err != nil {
+			return err
+		}
+		side := strings.TrimSpace(s.Settings.EdgeSide)
+		dev := strings.TrimSpace(s.Settings.EdgeDevice)
+		if side == "" || dev == "" {
+			fmt.Println("Screen edge: off")
+			fmt.Println("Set one with: flux-cli edge left vivobook")
+			return nil
+		}
+		fmt.Printf("Screen edge: %s → %s\n", side, dev)
+		return nil
+	case "off", "clear", "none":
+		if err := call("settings.set", map[string]any{"key": "edgeSide", "value": ""}); err != nil {
+			return err
+		}
+		if err := call("settings.set", map[string]any{"key": "edgeDevice", "value": ""}); err != nil {
+			return err
+		}
+		fmt.Println("Screen edge: off")
+		return nil
+	default:
+		if len(args) < 2 {
+			return fmt.Errorf("Usage: flux-cli edge SIDE DEVICE\n       flux-cli edge off")
+		}
+		side := strings.ToLower(strings.TrimSpace(args[0]))
+		device := strings.TrimSpace(args[1])
+		switch side {
+		case "left", "right", "top", "bottom":
+		default:
+			return fmt.Errorf("SIDE must be left, right, top, or bottom")
+		}
+		if device == "" {
+			return fmt.Errorf("give the paired computer name or id")
+		}
+		if err := call("settings.set", map[string]any{"key": "edgeSide", "value": side}); err != nil {
+			return err
+		}
+		if err := call("settings.set", map[string]any{"key": "edgeDevice", "value": device}); err != nil {
+			return err
+		}
+		fmt.Printf("Screen edge: %s → %s\n", side, device)
+		return nil
+	}
+}
+
 func addresses(device string, args []string) error {
 	switch first(args) {
 	case "add", "remove", "rm":

@@ -279,7 +279,7 @@ func (d *Daemon) inputChanged() {
 	var links []*lan.Link
 	for _, dev := range d.devices {
 		dev.inputRefused = false
-		if dev.Paired && dev.link != nil && dev.accepts(proto.TypeFluxInput) {
+		if dev.Paired && dev.link != nil && !dev.peer() && dev.accepts(proto.TypeFluxInput) {
 			links = append(links, dev.link)
 		}
 	}

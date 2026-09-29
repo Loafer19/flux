@@ -85,11 +85,14 @@ Use an explicit command for diagnostics.
 
 The desktop discovers phones through Avahi and mDNS.
 The desktop opens connections to the phone, including reverse payload tunnels.
-A missing connection does not require a new desktop firewall rule by default.
+A missing connection to a phone or a Mac does not require a new desktop firewall rule by default.
 Check the daemon, Avahi, Wi-Fi isolation, and phone state first.
+Two Omarchy computers are the exception: each one must accept inbound TCP 1716–1764 from the other before the pair.
+Read `docs/desktop-peer.md` for that allow, the pair, and the Tailscale address on both sides.
 
-Discovery and pairing need the local network.
-To reach a paired phone away from that network, add its Tailscale name as an extra address:
+Discovery uses the local network.
+Two computers can skip discovery with `flux-cli pair invite` / `pair join` when they already share a reachable host (for example Tailscale).
+To reach a paired phone away from the local network, add its Tailscale name as an extra address:
 
 ```sh
 tailscale status

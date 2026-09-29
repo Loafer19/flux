@@ -20,11 +20,12 @@ The steps are the same for a Mac that runs Flux for macOS.
 ## Requirements
 
 - Tailscale runs on the desktop and on the phone, in the same tailnet.
-- The phone is paired with the desktop. Pair it on the local network first.
+- The phone is paired with the desktop. Pair a phone on the local network first.
 - Flux for Android runs on the phone.
 
 Tailscale does not carry the mDNS and UDP broadcasts that Flux uses for discovery.
-So Flux cannot find or pair a device through Tailscale.
+A phone still pairs on the local network first.
+Two Omarchy computers can do the first pair over Tailscale with an invite: see [Pair without discovery](desktop-peer.md#pair-without-discovery).
 
 ## Add the phone
 

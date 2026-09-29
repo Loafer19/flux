@@ -146,9 +146,13 @@ func (d *Daemon) handlePair(dev *Device, p *proto.Packet) {
 	d.startPairTimerLocked(dev)
 	key := dev.pairKey
 	d.mu.Unlock()
+	notice := "Check that the phone shows " + key + ". Open Flux to accept."
+	if dev.peer() {
+		notice = "Check that " + dev.Name + " shows " + key + ". Open Flux to accept."
+	}
 	d.notify(desktop.Notification{
 		AppName: "Flux", Title: dev.Name + " wants to pair",
-		Body:    "Check that the phone shows " + key + ". Open Flux to accept.",
+		Body:    notice,
 		Actions: []desktop.Action{{Key: "pair-accept:" + dev.ID, Label: "Accept"}, {Key: "pair-reject:" + dev.ID, Label: "Reject"}},
 		Urgency: 1, Timeout: pairTimeout,
 	})
@@ -163,6 +167,11 @@ func (d *Daemon) pairingDone(dev *Device) {
 	t := config.TrustedDevice{
 		ID: dev.ID, Name: dev.Name, Type: dev.Type, LastIP: dev.IP, LastPort: dev.Port, PairedAt: dev.PairedAt,
 	}
+	if host := dev.inviteHost; host != "" && host != dev.IP {
+		t.Addresses = []string{host}
+		dev.Addresses = []string{host}
+	}
+	dev.inviteHost = ""
 	if dev.Cert != nil {
 		t.CertPEM = proto.CertPEM(dev.Cert)
 	}

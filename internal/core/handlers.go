@@ -39,6 +39,10 @@ func (d *Daemon) handlePacket(dev *Device, l *lan.Link, p *proto.Packet) {
 		d.logf("%s: ignored %s from a device that is not paired", dev.Name, p.Type)
 		return
 	}
+	if dev.peer() && peerIgnores(p.Type) {
+		d.logf("%s: ignored %s from a desktop peer", dev.Name, p.Type)
+		return
+	}
 	switch p.Type {
 	case proto.TypeIdentity:
 		var id proto.Identity
@@ -89,6 +93,8 @@ func (d *Daemon) handlePacket(dev *Device, l *lan.Link, p *proto.Packet) {
 		d.handleHerdr(dev, l, p)
 	case proto.TypeMousepadRequest:
 		d.handleMousepad(dev, p)
+	case proto.TypeFluxEdge:
+		d.handleEdge(dev, p)
 	case proto.TypeSmsMessages:
 		d.handleSms(dev, p)
 	case proto.TypeTelephony:

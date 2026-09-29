@@ -97,7 +97,7 @@ systemctl --user reload fluxd
    ```
 
 Guest Wi-Fi and client isolation can block devices on the same access point.
-Flux uses outbound desktop connections and mDNS, so a new inbound desktop firewall rule is not the default fix.
+Flux uses outbound desktop connections and mDNS, so a new inbound desktop firewall rule is not the default fix for a phone or a Mac.
 Keep the existing identity and trust store while you diagnose connectivity.
 
 On a Mac, check that Flux has access to the local network.
@@ -106,6 +106,12 @@ To read the Mac logs, run:
 ```sh
 log stream --predicate 'subsystem == "org.omarchy.flux"'
 ```
+
+## The other computer does not appear
+
+Two Omarchy computers need inbound TCP 1716–1764 from each other before either one shows in the list.
+Follow [Connect two computers](desktop-peer.md).
+The phone steps above stay the ones to use for a phone or a Mac.
 
 ## The phone does not connect away from home
 
@@ -119,6 +125,8 @@ journalctl --user -u fluxd -n 50 --no-pager | grep "connect to"
 ```
 
 If `flux-cli addresses` shows `none` for the phone, add its Tailscale name.
+If two computers never appear for the first pair (NAT, different networks, Tailscale only), use `flux-cli pair invite --host HOST` and `flux-cli pair join INVITE` instead of opening the firewall to anywhere. See [Pair without discovery](desktop-peer.md#pair-without-discovery).
+
 See [Connect through Tailscale](tailscale.md#troubleshoot) for the other checks.
 
 ## The window or bar item is missing

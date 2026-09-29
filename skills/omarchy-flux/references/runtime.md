@@ -31,7 +31,7 @@ FLUX_GUI=plugin flux-cli open notifications
 `flux-cli on` removes the marker and starts the daemon.
 Prefer these commands when the user asks to turn Flux off or on.
 
-Pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, `browse`, and `commands`.
+Pages: `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, `browse`, and `commands`.
 
 ## Devices and transfers
 
@@ -69,9 +69,10 @@ Each device in `flux-cli status --json` has an `addresses` list.
 `flux-cli doctor` reports an extra host name that does not resolve.
 The addresses are in `~/.local/share/flux/devices.json`. Change them with the CLI, not by hand, while `fluxd` runs.
 
-Flux cannot discover or pair a device through Tailscale.
-Pair on the local network first.
-Read `docs/tailscale.md` for the limits and the troubleshooting steps.
+Tailscale does not carry mDNS or UDP discovery.
+A phone still pairs on the local network first.
+Two computers can first-pair over Tailscale with `flux-cli pair invite --host NAME` and `flux-cli pair join INVITE`.
+Read `docs/desktop-peer.md` and `docs/tailscale.md`.
 
 ## Notifications and commands
 

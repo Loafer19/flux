@@ -56,6 +56,13 @@ The default Omarchy firewall permits mDNS.
 Flux needs no new inbound desktop firewall rule for these routes.
 Wi-Fi client isolation can still block communication between devices.
 
+A second Omarchy computer is a peer: another `fluxd` whose device type is `desktop` or `laptop`, that accepts `flux.tunnel` and does not send it.
+The phone and the Mac send `flux.tunnel`, so they stay remotes.
+A peer shares clipboard text, clipboard images, and files.
+Each desk accepts inbound TCP 1716–1764 from the other.
+The package adds no firewall rule.
+See [Connect two computers](desktop-peer.md) for the setup, and [the desktop peer design](desktop-peer-mvp.md) for the role rules.
+
 ## App versions
 
 The identity packet names the Flux program and its version in `app` and `appVersion`.

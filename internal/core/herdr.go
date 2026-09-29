@@ -499,7 +499,7 @@ func (d *Daemon) sendHerdr() {
 	p := herdrStatePacket(d.herdrViewLocked())
 	var links []*lan.Link
 	for _, dev := range d.devices {
-		if dev.Paired && dev.link != nil && dev.accepts(proto.TypeFluxHerdr) {
+		if dev.Paired && dev.link != nil && !dev.peer() && dev.accepts(proto.TypeFluxHerdr) {
 			links = append(links, dev.link)
 		}
 	}

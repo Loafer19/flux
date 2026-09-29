@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"flux/internal/config"
+	"flux/internal/desktop"
 	"flux/internal/proto"
 )
 
@@ -27,25 +28,43 @@ func apiErr(code, format string, args ...any) *Error {
 func offline(dev *Device) *Error { return apiErr("offline", "%s is offline", dev.Name) }
 
 // lookup finds a device by ID or by name. Names match without case.
-func (d *Daemon) lookup(key string) *Device {
+// lookup finds a device by ID or by name. Two devices with the same name
+// return an error, so a command cannot pick one of them by chance.
+func (d *Daemon) lookup(key string) (*Device, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if dev, ok := d.devices[key]; ok {
-		return dev
+		return dev, nil
 	}
+	var found []*Device
 	for _, dev := range d.devices {
 		if strings.EqualFold(dev.Name, key) {
-			return dev
+			found = append(found, dev)
 		}
 	}
-	return nil
+	switch len(found) {
+	case 0:
+		return nil, nil
+	case 1:
+		return found[0], nil
+	}
+	ids := make([]string, len(found))
+	for i, dev := range found {
+		ids[i] = dev.ID
+	}
+	sort.Strings(ids)
+	return nil, apiErr("ambiguous", "%d devices are named %q. Use a device ID: %s", len(found), key, strings.Join(ids, ", "))
 }
 
 // pick returns the device that a request names. Without a name it returns
 // the only connected paired device.
 func (d *Daemon) pick(key string) (*Device, error) {
 	if key != "" {
-		if dev := d.lookup(key); dev != nil {
+		dev, err := d.lookup(key)
+		if err != nil {
+			return nil, err
+		}
+		if dev != nil {
 			return dev, nil
 		}
 		return nil, apiErr("not_found", "No device named %q", key)
@@ -133,6 +152,8 @@ func (d *Daemon) Snapshot() json.RawMessage {
 			"remoteInput":      d.cfg.RemoteInput,
 			"remoteDesktop":    d.cfg.RemoteDesktop,
 			"checkUpdates":     d.cfg.CheckUpdates,
+			"edgeSide":         strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide)),
+			"edgeDevice":       strings.TrimSpace(d.cfg.EdgeDevice),
 		},
 		"webcam":  d.webcamViewLocked(),
 		"mic":     d.micViewLocked(),
@@ -181,6 +202,9 @@ type params struct {
 	Value     any             `json:"value"`
 	Config    json.RawMessage `json:"config"`
 	Reset     bool            `json:"reset"`
+	Host      string          `json:"host"`
+	Port      int             `json:"port"`
+	Invite    string          `json:"invite"`
 }
 
 // Call runs one API method.
@@ -251,6 +275,33 @@ func (d *Daemon) Call(ctx context.Context, method string, raw json.RawMessage) (
 			return nil, err
 		}
 		return ok, d.sendAppUpdate(dev)
+	case "pair.invite":
+		inv, err := d.MakeInvite(p.Host)
+		if err != nil {
+			return nil, err
+		}
+		return inv, nil
+	case "pair.connect":
+		if p.Invite != "" {
+			inv, err := d.ConnectInvite(p.Invite)
+			if err != nil {
+				return nil, err
+			}
+			return inv, nil
+		}
+		host := firstNonEmpty(p.Host, p.Address)
+		port := p.Port
+		if port == 0 {
+			port = 1716
+		}
+		if err := d.ConnectEndpoint(p.ID, p.Name, host, port); err != nil {
+			return nil, err
+		}
+		host, err := normalizeAddress(host)
+		if err != nil {
+			return nil, err
+		}
+		return Invite{ID: p.ID, Name: p.Name, Host: host, Port: port, Code: FormatInvite(p.ID, host, port)}, nil
 	}
 
 	dev, err := d.pick(p.Device)
@@ -419,6 +470,15 @@ func (d *Daemon) setSetting(key string, value any) error {
 		d.cfg.Name = strings.TrimSpace(s)
 	case key == "downloadDir" && isString:
 		d.cfg.DownloadDir = strings.TrimSpace(s)
+	case key == "edgeSide" && isString:
+		side := strings.ToLower(strings.TrimSpace(s))
+		if side != "" && !desktop.ValidEdge(side) {
+			d.mu.Unlock()
+			return apiErr("bad_setting", "edgeSide must be left, right, top, bottom, or empty")
+		}
+		d.cfg.EdgeSide = side
+	case key == "edgeDevice" && isString:
+		d.cfg.EdgeDevice = strings.TrimSpace(s)
 	default:
 		d.mu.Unlock()
 		return apiErr("bad_setting", "Unknown setting %q or wrong value type", key)
@@ -443,6 +503,11 @@ func (d *Daemon) setSetting(key string, value any) error {
 	if key == "checkUpdates" {
 		d.wakeRelease()
 	}
+	if key == "edgeSide" || key == "edgeDevice" {
+		// Clearing or changing the seam must drop any pointer lease:
+		// show cursor, restore follow_mouse, destroy overlay, leave peer.
+		d.resetEdgePointer()
+	}
 	d.markDirty()
 	return nil
 }
@@ -454,6 +519,10 @@ func (d *Daemon) Reload() error {
 		return err
 	}
 	d.mu.Lock()
+	prevSide, prevDev := "", ""
+	if d.cfg != nil {
+		prevSide, prevDev = d.cfg.EdgeSide, d.cfg.EdgeDevice
+	}
 	d.cfg = cfg
 	d.mu.Unlock()
 	d.commandsChanged()
@@ -461,10 +530,23 @@ func (d *Daemon) Reload() error {
 	d.inputChanged()
 	d.wakeDnd()
 	d.wakeRelease()
+	// Edge cleared or changed in config.toml: drop any stuck pointer lease.
+	if prevSide != cfg.EdgeSide || prevDev != cfg.EdgeDevice {
+		d.resetEdgePointer()
+	}
 	return nil
 }
 
 func hostname() string {
 	h, _ := os.Hostname()
 	return h
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

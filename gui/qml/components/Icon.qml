@@ -1,21 +1,21 @@
 import QtQuick
+import QtQuick.Controls.impl
 import ".."
 
-// An icon: a Material Design glyph from the Nerd Font in the monospace
-// font of Omarchy, the same icons as the Omarchy shell. It takes a color
-// like text. The box is square, so that icons line up in rows.
-Text {
+// A square icon tile. Material Design Icons SVGs share a 24×24 viewBox, so
+// phone, laptop, and every other kind share the same cell geometry. ColorImage
+// tints the paths; no per-glyph optical nudge.
+ColorImage {
   id: root
   property string name: ""
   property int size: 16
 
-  text: Fmt.glyph(name)
-  color: Theme.fg
-  font.family: Theme.font
-  font.pixelSize: size
-  textFormat: Text.PlainText
-  horizontalAlignment: Text.AlignHCenter
-  verticalAlignment: Text.AlignVCenter
-  width: Math.round(size * 1.25)
+  width: size
   height: size
+  source: name !== "" ? Qt.resolvedUrl("../icons/" + name + ".svg") : ""
+  sourceSize.width: size
+  sourceSize.height: size
+  fillMode: Image.PreserveAspectFit
+  smooth: true
+  color: Theme.fg
 }

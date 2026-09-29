@@ -30,6 +30,36 @@ func TestDialBackoff(t *testing.T) {
 	}
 }
 
+// A paired desk uses the same dial schedule as a phone. peer does not
+// remove it from dialKnown.
+func TestPeerDialBackoff(t *testing.T) {
+	in, out := fluxIdentity()
+	id := "0123456789abcdef0123456789abcdef"
+	peer := newDevice(id)
+	peer.Paired = true
+	peer.Type = "laptop"
+	peer.Incoming, peer.Outgoing = in, out
+	if !peer.peer() {
+		t.Fatal("fixture is not a peer")
+	}
+	d := &Daemon{devices: map[string]*Device{id: peer}}
+	for range fastDials {
+		d.dialKnown()
+	}
+	if peer.dialTries != fastDials {
+		t.Fatalf("%d dials, want %d", peer.dialTries, fastDials)
+	}
+	d.dialKnown()
+	if peer.dialTries != fastDials {
+		t.Fatalf("%d dials on the slow schedule, want %d", peer.dialTries, fastDials)
+	}
+	peer.dialAt = time.Now().Add(-slowDial)
+	d.dialKnown()
+	if peer.dialTries != fastDials+1 {
+		t.Fatalf("%d dials after the slow interval, want %d", peer.dialTries, fastDials+1)
+	}
+}
+
 // dialKnown removes a device that is not paired and was not seen for a
 // while. It keeps a device with a pairing request.
 func TestForgetOldDevices(t *testing.T) {

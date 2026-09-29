@@ -29,6 +29,7 @@ The desktop discovers phones through mDNS and opens the connections itself.
 The phone scans for computers for 10 seconds when the app opens.
 If the desktop is not in the list, tap **Scan again** on the phone.
 To use the phone away from the local network, see [Connect through Tailscale](tailscale.md).
+To pair a second Omarchy computer, see [Connect two computers](desktop-peer.md).
 
 ## Files, clipboard, and links
 

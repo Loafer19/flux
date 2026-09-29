@@ -79,6 +79,10 @@ const (
 	// the phone, and runs a binding or a workspace action for it. Both
 	// sides send it.
 	TypeFluxShortcuts = "flux.shortcuts"
+	// TypeFluxEdge moves the pointer across one screen edge onto another
+	// fluxd. The body is {"op": "enter"|"move"|"leave", "dx": number, "dy":
+	// number}. A phone does not send it.
+	TypeFluxEdge = "flux.edge"
 )
 
 // Incoming lists the packet types that Flux accepts. The phone enables a
@@ -90,7 +94,7 @@ var Incoming = []string{
 	TypeSmsMessages, TypeTelephony,
 	TypeFluxTunnel, TypeFluxWebcam, TypeFluxDnd, TypeFluxMic, TypeFluxScreen,
 	TypeFluxApprove, TypeFluxHerdr, TypeFluxClipboardImage, TypeMousepadRequest,
-	TypeFluxDesktop, TypeFluxShortcuts,
+	TypeFluxDesktop, TypeFluxShortcuts, TypeFluxEdge,
 }
 
 // Outgoing lists the packet types that Flux sends.
@@ -102,6 +106,7 @@ var Outgoing = []string{
 	TypeSmsConversation, TypeSftp, TypeFluxWebcam, TypeFluxDnd,
 	TypeFluxMic, TypeFluxScreen, TypeFluxApprove, TypeFluxHerdr,
 	TypeFluxClipboardImage, TypeFluxInput, TypeFluxDesktop, TypeFluxShortcuts,
+	TypeFluxEdge,
 }
 
 // Identity is the body of a flux.identity packet.

@@ -46,6 +46,13 @@ type Daemon struct {
 
 	opts Options
 	clip clipboard
+	// edgeActive is true while the named peer drives this pointer across
+	// the configured screen edge.
+	edgeActive bool
+	// edgeKick asks edgeLoop to drop a pointer lease (overlay, leave,
+	// HyprEndPointerLease, warp on-screen). Buffered so settings can
+	// signal without blocking.
+	edgeKick chan struct{}
 	// input moves the pointer and types for the phone. It is nil in a
 	// headless daemon. inputQ holds the actions in order.
 	input    inputBackend
@@ -209,12 +216,20 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		herdrWake:   make(chan struct{}, 1),
 		dndWake:     make(chan struct{}, 1),
 		releaseWake: make(chan struct{}, 1),
+		edgeKick:    make(chan struct{}, 1),
 	}
 	if exe, err := os.Executable(); err == nil {
 		d.binDir = filepath.Dir(exe)
 	}
 	if opts.Headless {
-		d.clip = &memClipboard{}
+		mem := &memClipboard{}
+		// Headless tests place a PNG on the clipboard with FLUX_CLIP_IMAGE.
+		if p := os.Getenv("FLUX_CLIP_IMAGE"); p != "" {
+			if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+				mem.image, mem.mime = b, desktop.ImageType
+			}
+		}
+		d.clip = mem
 		// A headless daemon can share the runtime folder with the daemon of
 		// the desktop, so it keeps its clipboard images in its own folder.
 		d.clipDir = filepath.Join(os.TempDir(), "fluxd-clipboard-"+config.NewID(6))
@@ -373,6 +388,7 @@ func (d *Daemon) Run() error {
 	removeClipImages(d.clipDir)
 	go d.clip.Watch(ctx, d.onLocalClipboard, d.onLocalImage)
 	go d.inputLoop(ctx)
+	go d.edgeLoop(ctx)
 	go d.publishLoop(ctx)
 	go d.discoveryLoop(ctx)
 	go d.batteryLoop(ctx)
@@ -706,19 +722,21 @@ func (d *Daemon) onPairedLink(dev *Device, l *lan.Link) {
 			}
 		}
 	}
-	if dev.supports(proto.TypeNotification) {
+	// A peer shares clipboard and files. It does not receive the phone
+	// controls: notification requests, Do Not Disturb, remote input, or herdr.
+	if !dev.peer() && dev.supports(proto.TypeNotification) {
 		_ = l.Send(proto.New(proto.TypeNotificationRequest, map[string]any{"request": true}))
 	}
-	if dev.accepts(proto.TypeFluxDnd) {
+	if !dev.peer() && dev.accepts(proto.TypeFluxDnd) {
 		d.wakeDnd()
 	}
-	if dev.accepts(proto.TypeFluxInput) {
+	if !dev.peer() && dev.accepts(proto.TypeFluxInput) {
 		d.sendInputState(l)
 	}
 	if d.media != nil && dev.supports(proto.TypeMprisRequest) {
 		d.sendPlayers(l)
 	}
-	if dev.accepts(proto.TypeFluxHerdr) {
+	if !dev.peer() && dev.accepts(proto.TypeFluxHerdr) {
 		d.mu.Lock()
 		state := herdrStatePacket(d.herdrViewLocked())
 		d.mu.Unlock()

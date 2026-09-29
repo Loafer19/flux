@@ -14,7 +14,11 @@ Item {
   property bool appReplaced: false
   signal restartApp()
   onThemeTextChanged: Theme.load(themeText)
-  Component.onCompleted: Theme.load(themeText)
+  Component.onCompleted: {
+    Theme.load(themeText)
+    if (typeof fluxInitialPage === "string" && fluxInitialPage !== "")
+      showPage(fluxInitialPage)
+  }
 
   readonly property var tabs: [
     { key: "overview", label: "Overview", page: "Overview", icon: "dashboard" },
@@ -70,10 +74,13 @@ Item {
   readonly property string devName: dev ? (dev.name || "device") : "device"
   readonly property var visibleTabs: tabs.filter(t => tabAllowed(t.key))
   readonly property var currentTab: {
+    if (tab === "network") return null
     for (var i = 0; i < visibleTabs.length; i++)
       if (visibleTabs[i].key === tab) return visibleTabs[i]
-    return visibleTabs[0]
+    return visibleTabs.length > 0 ? visibleTabs[0] : null
   }
+  readonly property bool networkTab: tab === "network"
+  readonly property var selfDevice: backend ? (backend.selfDevice || {}) : {}
 
   focus: true
 
@@ -84,6 +91,7 @@ Item {
 
   function tabAllowed(key) {
     if (key === "messages") return has("sms")
+    if (key === "commands") return !dev || dev.role !== "peer"
     return true
   }
 
@@ -92,6 +100,10 @@ Item {
   }
 
   function showPage(key) {
+    if (key === "network") {
+      root.tab = "network"
+      return true
+    }
     for (var i = 0; i < tabs.length; i++) {
       if (tabs[i].key === key) {
         go(key)
@@ -286,15 +298,24 @@ Item {
             onClicked: root.drawerOpen = true
           }
           Item { width: 1; height: 4 }
+          RailButton {
+            icon: "link"
+            tip: "Network"
+            selected: root.networkTab
+            onClicked: root.tab = "network"
+          }
           Repeater {
             model: root.pairedRows
             delegate: RailButton {
               required property var modelData
               icon: Fmt.kindIcon(modelData.type)
               tip: modelData.name + (modelData.online ? " · connected" : " · offline")
-              selected: !!root.dev && root.dev.id === modelData.id
+              selected: !root.networkTab && !!root.dev && root.dev.id === modelData.id
               dot: modelData.online ? Theme.ok : "transparent"
-              onClicked: root.selectedId = modelData.id
+              onClicked: {
+                root.selectedId = modelData.id
+                if (root.networkTab) root.tab = "overview"
+              }
             }
           }
           RailButton {
@@ -366,6 +387,40 @@ Item {
           }
         }
 
+        // Network sits above the devices. The rows below are one device each.
+        Rectangle {
+          id: networkRow
+          width: parent.width
+          height: networkLabel.implicitHeight + 16
+          color: root.networkTab ? Theme.alpha(Theme.accent, 0.18) : (networkArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")
+          Icon {
+            id: networkIcon
+            x: 10
+            anchors.verticalCenter: parent.verticalCenter
+            name: "link"
+            size: 16
+            color: root.networkTab ? Theme.accent : Theme.dim
+          }
+          Txt {
+            id: networkLabel
+            anchors.left: networkIcon.right
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Network"
+            color: root.networkTab ? Theme.accent : Theme.fg
+          }
+          MouseArea {
+            id: networkArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              root.tab = "network"
+              root.drawerOpen = false
+            }
+          }
+        }
+
         // Devices
         Column {
           width: parent.width
@@ -388,9 +443,10 @@ Item {
               required property var modelData
               width: side.width
               device: modelData
-              selected: !!root.dev && root.dev.id === modelData.id
+              selected: !root.networkTab && !!root.dev && root.dev.id === modelData.id
               onClicked: {
                 root.selectedId = modelData.id
+                if (root.networkTab) root.tab = "overview"
                 root.drawerOpen = false
               }
               onSelectedChanged: if (selected) Qt.callLater(root.revealInSidebar, this)
@@ -638,7 +694,7 @@ Item {
         width: Math.min(implicitWidth, (actions.visible ? actions.x - 14 : parent.width - root.gutter) - x)
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -0.5
-        text: root.dev ? root.currentTab.label : "Get started"
+        text: root.networkTab ? "Network" : (root.dev && root.currentTab ? root.currentTab.label : "Get started")
         font.pixelSize: root.narrowLayout ? 17 : 20
         font.weight: Font.Bold
         elide: Text.ElideRight
@@ -650,8 +706,10 @@ Item {
         anchors.right: actions.left
         anchors.rightMargin: 14
         anchors.verticalCenter: title.verticalCenter
-        visible: !!root.dev && !root.compactHeader
-        text: root.dev ? root.devName + " · " + (root.dev.ip || "—") : ""
+        visible: !root.compactHeader && (root.networkTab || !!root.dev)
+        text: root.networkTab
+              ? ((root.selfDevice.name || "This computer") + " · " + Fmt.typeName(root.selfDevice.type || "desktop"))
+              : (root.dev ? root.devName + " · " + (root.dev.ip || "—") : "")
         color: Theme.dim
         font.pixelSize: 12
         elide: Text.ElideRight
@@ -662,7 +720,7 @@ Item {
         anchors.rightMargin: root.gutter
         anchors.verticalCenter: title.verticalCenter
         spacing: 8
-        visible: !!root.dev
+        visible: !!root.dev && !root.networkTab
         OutlineButton {
           visible: root.has("findmyphone")
           icon: "bell-ring"
@@ -715,7 +773,7 @@ Item {
         Txt {
           id: offlineLine
           width: parent.width
-          visible: !!root.dev && !root.dev.online
+          visible: !!root.dev && !root.dev.online && !root.networkTab
           text: root.dev ? root.devName + " is offline. Last seen " + Fmt.lastSeen(root.dev.lastSeen) + "." : ""
           color: Theme.dim
           wrapMode: Text.Wrap
@@ -725,7 +783,7 @@ Item {
           id: page
           width: parent.width
           height: item ? (item.fillHeight ? body.fillHeight : item.implicitHeight) : 0
-          readonly property string url: root.dev ? "pages/" + root.currentTab.page + ".qml" : "pages/Empty.qml"
+          readonly property string url: root.networkTab ? "pages/Network.qml" : (root.dev ? "pages/" + root.currentTab.page + ".qml" : "pages/Empty.qml")
           // A host can set tab when it creates the view. The url then
           // changes before the view is complete, so load only the last url.
           property bool complete: false

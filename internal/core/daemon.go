@@ -371,7 +371,6 @@ func (d *Daemon) Run() error {
 	}
 
 	removeClipImages(d.clipDir)
-	go pruneIcons(iconDir(), iconMaxAge)
 	go d.clip.Watch(ctx, d.onLocalClipboard, d.onLocalImage)
 	go d.inputLoop(ctx)
 	go d.publishLoop(ctx)
@@ -676,7 +675,6 @@ func (d *Daemon) onLink(l *lan.Link) {
 			dev.link = nil
 			dev.LastSeen = time.Now()
 			dev.clearPairingLocked()
-			dev.closeSftp()
 		}
 		d.mu.Unlock()
 		d.logf("link down: %s: %v", dev.Name, err)

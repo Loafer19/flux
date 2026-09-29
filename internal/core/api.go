@@ -151,6 +151,8 @@ func (d *Daemon) Snapshot() json.RawMessage {
 			"remoteInput":      d.cfg.RemoteInput,
 			"remoteDesktop":    d.cfg.RemoteDesktop,
 			"checkUpdates":     d.cfg.CheckUpdates,
+			"edgeSide":         strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide)),
+			"edgeDevice":       strings.TrimSpace(d.cfg.EdgeDevice),
 		},
 		"webcam":  d.webcamViewLocked(),
 		"mic":     d.micViewLocked(),

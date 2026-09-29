@@ -46,6 +46,9 @@ type Daemon struct {
 
 	opts Options
 	clip clipboard
+	// edgeUntil is how long a pointer seam from the named computer stays
+	// open after its last packet.
+	edgeUntil time.Time
 	// input moves the pointer and types for the phone. It is nil in a
 	// headless daemon. inputQ holds the actions in order.
 	input    inputBackend
@@ -380,6 +383,7 @@ func (d *Daemon) Run() error {
 	removeClipImages(d.clipDir)
 	go d.clip.Watch(ctx, d.onLocalClipboard, d.onLocalImage)
 	go d.inputLoop(ctx)
+	go d.edgeLoop(ctx)
 	go d.publishLoop(ctx)
 	go d.discoveryLoop(ctx)
 	go d.batteryLoop(ctx)

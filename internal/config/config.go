@@ -64,6 +64,11 @@ type Config struct {
 	// GUI selects the window: "plugin" for the omarchy-shell plugin, "app"
 	// for flux-gui, or empty for the plugin when it is enabled.
 	GUI string `toml:"gui,omitempty"`
+	// EdgeSide is the screen edge that continues onto another computer:
+	// left, right, top, or bottom. Empty leaves the pointer on this computer.
+	EdgeSide string `toml:"edge_side,omitempty"`
+	// EdgeDevice is the name or id of the paired computer on that edge.
+	EdgeDevice string `toml:"edge_device,omitempty"`
 	// ApproveTimeout is how long an approval waits for the phone, in
 	// seconds, from 5 to 120. Zero means 20.
 	ApproveTimeout int       `toml:"approve_timeout,omitempty"`

@@ -84,7 +84,8 @@ Accept it on the other computer.
 `status` then shows that computer as `laptop` or `desktop`, role `peer`, and `paired`.
 
 Open **Network** in the window to see this computer and the paired devices.
-A peer row shows clipboard and files on, Do Not Disturb between desks off, and screen edges unset.
+A peer row shows clipboard and files on, and Do Not Disturb between desks off.
+The computer named in `edge_device` shows that screen edge. The others stay unset.
 Select the row to open that device.
 
 Two computers with the same name need a device id:
@@ -107,6 +108,38 @@ flux-cli --device "other-desk" url "https://example.com"
 
 `url` opens an `http` or `https` address on that computer.
 A computer does not open a `file:` address.
+
+## Screen edge
+
+One edge of this screen can continue on the other computer.
+The pointer moves there. Clicks and the keyboard stay on the computer where they were pressed.
+`remote_input` stays off. This is not the phone touchpad.
+
+On this computer, name the edge that leaves the screen and the other computer:
+
+```toml
+edge_side = "left"
+edge_device = "other-desk"
+```
+
+On the other computer, name the opposite edge and this computer:
+
+```toml
+edge_side = "right"
+edge_device = "vivobook"
+```
+
+`left` meets `right`, and `top` meets `bottom`.
+Reload both daemons. The packaged service uses:
+
+```sh
+systemctl --user reload fluxd
+```
+
+A daemon started by hand reloads on `SIGHUP`.
+Move the pointer through that edge. It appears on the other screen.
+Move it back the other way to return.
+The Network page names that edge on the computer it points at.
 
 Clipboard text uses the link that is already open.
 A copied image and a file also use a TCP port in 1716–1764, back toward the computer that sends them.

@@ -29,6 +29,8 @@ remote_desktop = false
 check_updates = true
 gui = ""
 approve_timeout = 20
+edge_side = ""
+edge_device = ""
 
 [[commands]]
 id = "lock"
@@ -51,6 +53,8 @@ command = "omarchy-system-lock"
 | `herdr_control` | Let the phone send keys and prompts to the herdr agents, start agents, and close them. Defaults to `false`. See [Answer an agent](herdr.md#answer-an-agent). |
 | `herdr_terminals` | Let the phone open herdr terminals, read them, and type commands in them. Needs `herdr_control`. Defaults to `false`. See [Use terminals](herdr.md#use-terminals). |
 | `remote_input` | Let the phone or the Mac move the pointer and type on this computer. Defaults to `false`. `flux-cli input on` and `flux-cli input off` change it. See [Touchpad and keyboard](remote-input.md). |
+| `edge_side` | `left`, `right`, `top`, or `bottom`. The pointer that crosses that edge continues on `edge_device`. Empty leaves the pointer here. |
+| `edge_device` | Name or id of the paired computer on that edge. |
 | `remote_desktop` | Let the phone or the Mac show the screen of this computer. Defaults to `false`. The touches and the mouse on the screen also need `remote_input`. `flux-cli desktop on` and `flux-cli desktop off` change it. See [Remote desktop](remote-desktop.md). |
 | `check_updates` | Ask GitHub once a day for the latest release. Defaults to `true`. See [release check](#release-check). |
 | `gui` | Use `app`, `plugin`, or an empty value for automatic host selection. |

@@ -119,6 +119,14 @@ Item {
         id: card
         required property var modelData
         readonly property bool peer: modelData.role === "peer"
+        readonly property string edgeLabel: {
+          var side = String(root.settings.edgeSide || "")
+          var who = String(root.settings.edgeDevice || "").toLowerCase()
+          var name = String(modelData.name || "").toLowerCase()
+          var id = String(modelData.id || "")
+          if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return "No edges"
+          return side.charAt(0).toUpperCase() + side.slice(1) + " edge"
+        }
         width: col.width
         implicitHeight: devCol.implicitHeight + 36
 
@@ -167,7 +175,7 @@ Item {
             Row {
               spacing: 18
               Status { icon: "bell-off"; label: "DND off"; on: false }
-              Status { icon: "monitor"; label: "No edges"; on: false }
+              Status { icon: "monitor"; label: card.edgeLabel; on: card.edgeLabel !== "No edges" }
             }
           }
           Status {

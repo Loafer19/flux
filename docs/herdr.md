@@ -10,6 +10,7 @@ When you also turn on terminals, Flux for Android opens herdr terminals and type
 The phone uses the Flux link that it already has.
 It needs no new port, no firewall rule, and no new pairing.
 This page describes the phone. A Mac works the same way, and [Use a Mac](#use-a-mac) describes where it differs.
+An iPhone with [Flux for iOS](ios.md) works like the Android phone. It dictates in the languages of the iPhone, and it gets agent notifications only while Flux runs.
 
 ```text
 herdr server ── Unix socket ── fluxd ── Flux TLS link ── Flux for Android
@@ -243,7 +244,7 @@ The mic key does not show when the phone has no speech recognizer.
 ## Use a Mac
 
 Flux for macOS shows the same agents and sends the same replies as the phone.
-It shows up to 200 lines of output.
+It shows up to 1000 lines of output.
 It does not start agents, close them, or open terminals.
 
 - The page of the computer has an **Agents** card. It lists the first agents and shows the number of blocked agents.

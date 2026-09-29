@@ -1,6 +1,8 @@
 import Foundation
+#if os(macOS)
 import IOKit.ps
 import SystemConfiguration
+#endif
 
 /// A snapshot of the core for the UI.
 public struct CoreState: Sendable, Equatable {
@@ -97,13 +99,14 @@ public final class FluxCore: @unchecked Sendable {
             order.append(t.id)
         }
         for p in plugins {
-            for type in p.incoming { routes[type, default: []].append(p) }
+            for type in p.handledTypes { routes[type, default: []].append(p) }
         }
         for p in plugins { p.attach(core: self) }
     }
 
     // MARK: Identity
 
+    #if os(macOS)
     /// The computer name from System Settings > General > Sharing.
     public var deviceName: String {
         cleanName((SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? Host.current().localizedName ?? "Mac")
@@ -119,6 +122,42 @@ public final class FluxCore: @unchecked Sendable {
         }
         return "desktop"
     }()
+    #else
+    /// The name that the user gives the iPhone in Flux, else "iPhone". iOS
+    /// gives apps only the generic device name.
+    public var deviceName: String {
+        cleanName(defaults.string(forKey: Self.deviceNameKey) ?? "", fallback: "iPhone")
+    }
+
+    /// The iPhone is a phone.
+    public static let deviceType = "phone"
+
+    /// Stores the device name. An empty name goes back to "iPhone". The new
+    /// name goes out through Bonjour and to known computers. A computer reads
+    /// the name only when a link starts, so the open links close, and the
+    /// computers connect again with the new name.
+    @MainActor
+    public func setDeviceName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let old = deviceName
+        if trimmed.isEmpty {
+            defaults.removeObject(forKey: Self.deviceNameKey)
+        } else {
+            defaults.set(trimmed, forKey: Self.deviceNameKey)
+        }
+        guard deviceName != old else { return }
+        let (b, bj, links) = lock.withLock { (backend, bonjour, devices.values.compactMap(\.link)) }
+        links.forEach { $0.close() }
+        if let b {
+            bj?.publish(name: deviceName, type: Self.deviceType, port: b.tcpPort)
+            b.broadcast()
+        }
+        publish()
+    }
+    #endif
+
+    /// The defaults key of the device name that the user sets on iOS.
+    public static let deviceNameKey = "deviceName"
 
     public var incomingCapabilities: [String] { unique(plugins.flatMap(\.incoming)) }
     public var outgoingCapabilities: [String] { unique(plugins.flatMap(\.outgoing)) }
@@ -131,6 +170,14 @@ public final class FluxCore: @unchecked Sendable {
     public func identity(tcpPort: Int) -> Identity {
         Identity(deviceId: local.deviceId, deviceName: deviceName, deviceType: Self.deviceType, protocolVersion: protocolVersion,
                  incoming: incomingCapabilities, outgoing: outgoingCapabilities, tcpPort: tcpPort)
+    }
+
+    /// Sends the identity again to each connected, paired computer, after
+    /// the capabilities changed. fluxd takes the new capabilities from it.
+    public func sendIdentity() {
+        let port = lock.withLock { backend?.tcpPort ?? 0 }
+        let p = identity(tcpPort: port).packet()
+        for d in connectedPaired() { d.send(p) }
     }
 
     // MARK: Settings
@@ -166,6 +213,24 @@ public final class FluxCore: @unchecked Sendable {
             }
             search()
         }
+    }
+
+    /// True while the network runs.
+    public var isRunning: Bool { lock.withLock { backend != nil } }
+
+    /// Brings the network back when the app returns to the screen. A stopped
+    /// network starts. A running one announces this device again and
+    /// searches, so that the computers connect at once. iOS stops the network
+    /// after the app leaves the screen.
+    public func resume() {
+        guard enabled else { return }
+        let (b, bj) = lock.withLock { (backend, bonjour) }
+        guard let b else {
+            start()
+            return
+        }
+        bj?.publish(name: deviceName, type: Self.deviceType, port: b.tcpPort)
+        search()
     }
 
     /// Closes every link and stops discovery.

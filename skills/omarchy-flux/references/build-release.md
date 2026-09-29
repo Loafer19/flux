@@ -7,11 +7,12 @@
 - Qt 6.5 or later with Qt Quick, SVG, and Wayland support.
 - JDK 21 and Android SDK platform 36 for Android.
 - Android Build Tools 36.0.0 and the committed Gradle wrapper.
-- Xcode and XcodeGen on macOS 14 or later for the macOS app.
+- Xcode and XcodeGen on macOS 14 or later for the macOS app, and Xcode 26 or later for the iOS app.
 
 Use `docs/install.md` for the full Arch dependency command.
 Use `docs/android.md` for SDK setup and phone installation.
 Use `docs/macos.md` for the macOS app build and pairing.
+Use `docs/ios.md` for the iOS app build, installation, and pairing.
 
 ## Desktop builds
 
@@ -98,7 +99,7 @@ Disable the Gradle configuration cache for builds that use release secrets:
 
 | File | Trigger and result |
 | --- | --- |
-| `.github/workflows/build.yml` | Main branch, pull request, manual run, or reusable call. Builds the Arch package, the Android APKs, and the macOS app. |
+| `.github/workflows/build.yml` | Main branch, pull request, manual run, or reusable call. Builds the Arch package, the Android APKs, and the macOS app, and tests the iOS app. |
 | `.github/workflows/release.yml` | Stable version tag or manual rebuild of an existing tag. Publishes the package, signed APK, AUR recipe, certificate details, and checksums. |
 | `.github/workflows/aur.yml` | Reusable call after a successful release. Pushes the tested recipe to AUR. |
 

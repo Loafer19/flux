@@ -14,6 +14,10 @@ public final class HerdrModel {
     public internal(set) var outputs: [String: HerdrOutput] = [:]
     /// The last reply from the agents window of a computer.
     public internal(set) var replies: [String: HerdrReply] = [:]
+    /// The last new agent, new terminal, or close on a computer.
+    public internal(set) var actions: [String: HerdrAction] = [:]
+    /// The first task of the last new agent on a computer.
+    public internal(set) var firstTasks: [String: FirstTask] = [:]
 
     /// Notify when an agent on a computer needs input. It applies to all computers.
     public var inputAlerts = true {
@@ -56,8 +60,9 @@ public final class HerdrModel {
 
 /// flux.herdr in both directions. fluxd sends the coding agents that herdr
 /// runs on the computer, and this Mac asks for the recent output of an
-/// agent. When the computer allows it, this Mac also sends keys and prompts
-/// to an agent. The app asks for Touch ID or the password before the first
+/// agent. When the computer allows it, this device also sends keys and
+/// prompts to an agent, starts agents, and closes them. When the computer
+/// allows terminals, it also opens terminals and types in them. The app asks for Touch ID or the password before the first
 /// reply. docs/herdr.md describes the feature and the wire format.
 public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     public static let notificationCategory = "herdr"
@@ -70,10 +75,16 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     /// How long a finished agent must stay ready before this Mac posts it.
     /// The status can change between tool calls.
     static let finishHold: Duration = .seconds(2)
-    /// How long a read waits for the output.
-    static let readTimeout: Duration = .seconds(10)
+    /// How long a read waits for the output. fluxd can take 10 seconds to
+    /// collect the history of an agent.
+    static let readTimeout: Duration = .seconds(15)
+    /// How long a new agent or terminal waits. fluxd waits up to 45 seconds
+    /// for herdr to start an agent.
+    static let createTimeout: Duration = .seconds(60)
     /// How long a reply waits for the answer of the computer.
     static let replyTimeout: Duration = .seconds(10)
+    /// How long a close waits for the answer of the computer.
+    static let closeTimeout: Duration = .seconds(10)
     /// How long this Mac waits after a reply before it reads the output
     /// again. The agent needs a moment to draw.
     static let rereadDelay: Duration = .milliseconds(700)
@@ -90,6 +101,11 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     /// replace a newer answer.
     @MainActor private var reads = 0
     @MainActor private var replies = 0
+    /// Counts the creates and the closes, so that a late timeout does not
+    /// replace a newer one.
+    @MainActor private var actions = 0
+    /// The time in seconds for the first task. Tests set their own.
+    @MainActor var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
 
     @MainActor
     public init() { model = HerdrModel() }
@@ -127,12 +143,19 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
             model.states[deviceId] = state
             let alerts = trackers[deviceId, default: HerdrTracker()].update(state.agents)
             alert(alerts, deviceId: deviceId, computer: computer)
+            advanceFirstTask(deviceId)
         case "output":
             // Only the pane on screen keeps its output.
             guard let out = HerdrWire.output(p.body), model.outputs[deviceId]?.pane == out.pane else { return }
             model.outputs[deviceId] = out
+            advanceFirstTask(deviceId)
         case "sent":
-            guard let sent = HerdrWire.sent(p.body), var reply = model.replies[deviceId], reply.pane == sent.pane, reply.sending else { return }
+            guard let sent = HerdrWire.sent(p.body) else { return }
+            if sent.action == "prompt", var task = model.firstTasks[deviceId], task.phase == .sending, task.pane == sent.pane {
+                task.sent(error: sent.error)
+                model.firstTasks[deviceId] = task
+            }
+            guard var reply = model.replies[deviceId], reply.pane == sent.pane, reply.sending else { return }
             reply.sending = false
             reply.error = sent.error
             model.replies[deviceId] = reply
@@ -142,6 +165,15 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
                 guard let self, self.model.outputs[deviceId]?.pane == sent.pane else { return }
                 self.read(deviceId, pane: sent.pane)
             }
+        case "created", "closed":
+            guard let done = HerdrWire.done(p.body), var action = model.actions[deviceId],
+                  action.action == done.action, action.sending else { return }
+            if done.action == "close" && action.pane != done.pane { return }
+            action.sending = false
+            action.pane = done.pane ?? action.pane
+            action.error = done.error
+            model.actions[deviceId] = action
+            settleFirstTask(deviceId, action)
         default:
             FluxLog.plugin.debug("herdr: ignored kind \(p.string("kind") ?? "", privacy: .public)")
         }
@@ -208,23 +240,152 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
         reply(deviceId, pane: pane, action: "prompt", HerdrWire.prompt(pane: pane, t))
     }
 
+    /// Types `text` in the terminal `pane`, then sends `keys`, for example
+    /// "ls" and "enter". Only the keys that fluxd allows go out.
     @MainActor
-    private func reply(_ deviceId: String, pane: String, action: String, _ packet: Packet) {
+    public func sendInput(_ deviceId: String, pane: String, text: String, keys: [String]) {
+        guard HerdrWire.allowedInput(text: text, keys: keys) else { return }
+        guard text.utf8.count <= HerdrWire.maxPrompt else {
+            replies += 1
+            model.replies[deviceId] = HerdrReply(pane: pane, action: "input", seq: replies, sending: false,
+                                                 error: "The text is too long. The limit is 16 KB.")
+            return
+        }
+        reply(deviceId, pane: pane, action: "input", HerdrWire.input(pane: pane, text: text, keys: keys))
+    }
+
+    /// Asks the computer to open a pane: an agent of `kind` when `what` is
+    /// "agent", or a shell when it is "terminal". The pane opens in `cwd`,
+    /// as a new tab of `workspace`, or in a new workspace when `workspace`
+    /// is empty. `model.actions` has the answer. A new agent gets `task` as
+    /// its first prompt when it is ready, see `FirstTask`.
+    @MainActor
+    public func create(_ deviceId: String, what: String, kind: String, cwd: String, workspace: String, task: String? = nil) {
+        let text = what == "agent" ? task?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" : ""
+        if !text.isEmpty {
+            // The task belongs to the next action.
+            model.firstTasks[deviceId] = FirstTask(text: text, action: actions + 1)
+        } else {
+            model.firstTasks[deviceId] = nil
+        }
+        action(deviceId, HerdrAction(action: "create", seq: 0, what: what), timeout: Self.createTimeout,
+               HerdrWire.create(what: what, agent: kind, cwd: cwd, workspace: workspace))
+    }
+
+    /// Forgets the first task of the last new agent, after the UI showed its end.
+    @MainActor
+    public func clearFirstTask(_ deviceId: String) {
+        model.firstTasks[deviceId] = nil
+    }
+
+    /// Asks the computer to close `pane`. The agent or the shell in it ends.
+    @MainActor
+    public func close(_ deviceId: String, pane: String) {
+        action(deviceId, HerdrAction(action: "close", seq: 0, pane: pane), timeout: Self.closeTimeout, HerdrWire.close(pane: pane))
+    }
+
+    /// Forgets the last create or close, after the UI used its answer.
+    @MainActor
+    public func clearAction(_ deviceId: String, seq: Int) {
+        if model.actions[deviceId]?.seq == seq { model.actions[deviceId] = nil }
+    }
+
+    @MainActor
+    private func action(_ deviceId: String, _ start: HerdrAction, timeout: Duration, _ packet: Packet) {
+        actions += 1
+        let seq = actions
+        var a = start
+        a.seq = seq
+        model.actions[deviceId] = a
+        guard core?.send(packet, to: deviceId) == true else {
+            a.sending = false
+            a.error = "\(computerName(deviceId)) is not reachable"
+            model.actions[deviceId] = a
+            settleFirstTask(deviceId, a)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard let self, var a = self.model.actions[deviceId], a.seq == seq, a.sending else { return }
+            a.sending = false
+            a.error = "\(self.computerName(deviceId)) did not answer"
+            self.model.actions[deviceId] = a
+            self.settleFirstTask(deviceId, a)
+        }
+    }
+
+    // MARK: First task
+
+    /// Gives the answer to a create to the first task of that create.
+    @MainActor
+    private func settleFirstTask(_ deviceId: String, _ action: HerdrAction) {
+        guard action.action == "create", var task = model.firstTasks[deviceId], task.action == action.seq else { return }
+        task.created(pane: action.pane, error: action.error)
+        model.firstTasks[deviceId] = task
+        advanceFirstTask(deviceId)
+    }
+
+    /// Sends the first task when its agent stayed ready for
+    /// `FirstTask.hold`. The output on screen counts when it is of the new
+    /// agent, so a dialog there holds the task. When the agent becomes
+    /// ready, the output is read again, and the task is checked again at
+    /// the end of the hold, and at the deadline for the pane to appear.
+    @MainActor
+    private func advanceFirstTask(_ deviceId: String) {
+        guard var task = model.firstTasks[deviceId], let pane = task.pane else { return }
+        let out = model.output(deviceId, pane: pane)
+        let (before, appearBefore) = (task.due, task.appearDue)
+        let go = task.update(status: model.states[deviceId]?.agent(pane)?.status, choices: !(out?.choices.isEmpty ?? true), now: clock())
+        model.firstTasks[deviceId] = task
+        if let due = task.appearDue, due != appearBefore {
+            // The agent list may never have the pane: check again at the deadline.
+            let wait = max(0, due - clock()) + 0.05
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                self?.advanceFirstTask(deviceId)
+            }
+        }
+        if let due = task.due, due != before {
+            if out != nil { read(deviceId, pane: pane) }
+            let wait = max(0, due - clock()) + 0.05
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                self?.advanceFirstTask(deviceId)
+            }
+        }
+        guard go else { return }
+        task.reply = reply(deviceId, pane: pane, action: "prompt", HerdrWire.prompt(pane: pane, task.text))
+        // The reply fails at once when the computer is not reachable.
+        if let r = model.replies[deviceId], r.seq == task.reply, !r.sending { task.sent(error: r.error) }
+        model.firstTasks[deviceId] = task
+    }
+
+    /// Sends a reply and returns its number.
+    @MainActor
+    @discardableResult
+    private func reply(_ deviceId: String, pane: String, action: String, _ packet: Packet) -> Int {
         replies += 1
         let seq = replies
         model.replies[deviceId] = HerdrReply(pane: pane, action: action, seq: seq)
         guard core?.send(packet, to: deviceId) == true else {
             model.replies[deviceId] = HerdrReply(pane: pane, action: action, seq: seq, sending: false,
                                                  error: "\(computerName(deviceId)) is not reachable")
-            return
+            return seq
         }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.replyTimeout)
-            guard let self, var r = self.model.replies[deviceId], r.seq == seq, r.sending else { return }
+            guard let self else { return }
+            let error = "\(self.computerName(deviceId)) did not answer"
+            if var task = self.model.firstTasks[deviceId], task.reply == seq, task.phase == .sending {
+                task.sent(error: error)
+                self.model.firstTasks[deviceId] = task
+            }
+            guard var r = self.model.replies[deviceId], r.seq == seq, r.sending else { return }
             r.sending = false
-            r.error = "\(self.computerName(deviceId)) did not answer"
+            r.error = error
             self.model.replies[deviceId] = r
         }
+        return seq
     }
 
     private func computerName(_ deviceId: String) -> String { core?.device(deviceId)?.name ?? "The computer" }

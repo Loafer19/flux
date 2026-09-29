@@ -123,3 +123,31 @@ public func planCapture(_ state: CaptureState, items: [CaptureItem], now: Int64)
     next.sent = Set(state.sent.filter { $0 > baseline }.sorted().suffix(maxCaptureSent))
     return CapturePlan(send: send, state: next)
 }
+
+/// 1 asset that the photo library got, as the capture watch sees it.
+struct LibraryAsset: Sendable, Equatable {
+    var image: Bool
+    var screenshot: Bool
+    var created: Date?
+}
+
+/// The kind of an asset that the photo library got after the first switch
+/// turned on, or nil when it does not go out. `from` is `CaptureState.from`.
+///
+/// On macOS screenshots come from the screenshot folder, so an asset is a
+/// photo: an image that is not a screenshot and was taken after the photo
+/// switch turned on. On iOS screenshots are the images with the screenshot
+/// subtype, and photos are the other images. Each image that the library
+/// got goes out, whatever its creation date, so that a photo from AirDrop,
+/// Messages, or an import goes out too. `planCapture` then sends only the
+/// assets that arrived after the switch of their kind turned on.
+func libraryKind(_ asset: LibraryAsset?, from: [CaptureKind: Int64]) -> CaptureKind? {
+    guard let asset, asset.image else { return nil }
+    #if os(macOS)
+    guard !asset.screenshot, let created = asset.created, let start = from[.photo],
+          Int64(created.timeIntervalSince1970 * 1_000_000) > start else { return nil }
+    return .photo
+    #else
+    return asset.screenshot ? .screenshot : .photo
+    #endif
+}

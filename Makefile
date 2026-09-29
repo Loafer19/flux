@@ -17,7 +17,7 @@ define copy-plugin
 		while read -r f; do install -Dm644 "$$f" "$(1)/Flux/$$f"; done
 endef
 
-.PHONY: build build-go build-gui test vet install install-user install-plugin uninstall uninstall-user uninstall-plugin dev open snapshot android macos test-macos install-macos clean
+.PHONY: build build-go build-gui test vet install install-user install-plugin uninstall uninstall-user uninstall-plugin dev open snapshot android macos test-macos install-macos ios test-ios clean
 
 build: build-go build-gui
 
@@ -152,5 +152,17 @@ test-macos:
 install-macos:
 	scripts/install-macos.sh
 
+# The iOS app for the simulator in ios/build. It needs Xcode and XcodeGen.
+ios:
+	cd ios && xcodegen generate --quiet && \
+		xcodebuild -project Flux.xcodeproj -scheme Flux -configuration Debug -derivedDataPath build -destination 'generic/platform=iOS Simulator' build
+
+# The app and FluxKit tests in an iPhone simulator with iOS 17 or later: the
+# booted one, else one of the newest runtime. IOS_SIMULATOR=<id> picks another.
+test-ios:
+	cd ios && xcodegen generate --quiet && \
+		simulator=$$(../scripts/ios-simulator.sh) && \
+		xcodebuild test -project Flux.xcodeproj -scheme Flux -derivedDataPath build -destination "id=$$simulator"
+
 clean:
-	rm -rf bin $(GUI_BUILD) snapshots macos/build
+	rm -rf bin $(GUI_BUILD) snapshots macos/build ios/build

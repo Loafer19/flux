@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+#endif
 import XCTest
 @testable import FluxKit
 
@@ -66,9 +68,11 @@ final class RemoteInputTests: XCTestCase {
     }
 
     func testMacModifiersMapToTheComputer() {
+        #if os(macOS)
         let m = RemoteInput.Mods([.control, .option, .shift, .command, .function])
         XCTAssertEqual(m, .init(ctrl: true, alt: true, shift: true, meta: true))
         XCTAssertFalse(RemoteInput.Mods([.capsLock, .function]).any)
+        #endif
         XCTAssertEqual(RemoteInput.Mods(ctrl: true).union(.init(meta: true)), .init(ctrl: true, meta: true))
     }
 
@@ -84,6 +88,7 @@ final class RemoteInputTests: XCTestCase {
         XCTAssertNil(RemoteInput.key(macKeyCode: 114))
     }
 
+    #if os(macOS)
     func testPresses() {
         func press(_ code: UInt16, _ flags: NSEvent.ModifierFlags, _ plain: String?, optionIsAlt: Bool = false, commandIsSuper: Bool = true) -> RemoteInput.Press {
             RemoteInput.press(keyCode: code, flags: flags, plain: plain, optionIsAlt: optionIsAlt, commandIsSuper: commandIsSuper)
@@ -109,6 +114,7 @@ final class RemoteInputTests: XCTestCase {
         // A function key without a number, such as F13, stays on the Mac.
         XCTAssertEqual(press(105, .control, "\u{F710}"), .ignore)
     }
+    #endif
 
     func testMacScrollFollowsTheMac() throws {
         // macOS moves the content up for a negative delta, so the computer scrolls down.
@@ -185,6 +191,7 @@ final class RemoteInputTests: XCTestCase {
         XCTAssertTrue(t.leftUp().isEmpty)
     }
 
+    #if os(macOS)
     func testReleaseChord() {
         var c = ReleaseChord()
         XCTAssertFalse(c.flags(.control))
@@ -206,6 +213,7 @@ final class RemoteInputTests: XCTestCase {
         XCTAssertFalse(c.flags([.control, .option, .capsLock]))
         XCTAssertTrue(c.flags(.capsLock))
     }
+    #endif
 
     func testStateFollowsTheComputer() {
         let model = RemoteInputModel()

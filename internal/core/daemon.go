@@ -49,6 +49,10 @@ type Daemon struct {
 	// edgeActive is true while the named peer drives this pointer across
 	// the configured screen edge.
 	edgeActive bool
+	// edgeKick asks edgeLoop to drop a pointer lease (overlay, leave,
+	// HyprEndPointerLease, warp on-screen). Buffered so settings can
+	// signal without blocking.
+	edgeKick chan struct{}
 	// input moves the pointer and types for the phone. It is nil in a
 	// headless daemon. inputQ holds the actions in order.
 	input    inputBackend
@@ -212,6 +216,7 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		herdrWake:   make(chan struct{}, 1),
 		dndWake:     make(chan struct{}, 1),
 		releaseWake: make(chan struct{}, 1),
+		edgeKick:    make(chan struct{}, 1),
 	}
 	if exe, err := os.Executable(); err == nil {
 		d.binDir = filepath.Dir(exe)

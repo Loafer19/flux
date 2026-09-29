@@ -3,6 +3,7 @@ package desktop
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -36,6 +37,60 @@ func HyprLayout() (HyprCursor, []Monitor, error) {
 		return HyprCursor{}, nil, err
 	}
 	return cur, screens, nil
+}
+
+// HyprMoveCursor warps the pointer to x, y in global logical pixels.
+func HyprMoveCursor(x, y float64) error {
+	out, err := hyprCommand(fmt.Sprintf("dispatch hl.dsp.cursor.move({ x = %g, y = %g })", x, y))
+	if err != nil {
+		return err
+	}
+	if msg := strings.TrimSpace(out); msg != "" && !strings.EqualFold(msg, "ok") {
+		return fmt.Errorf("hyprland move cursor: %s", msg)
+	}
+	return nil
+}
+
+// HyprSetCursorInvisible hides or shows the pointer image.
+func HyprSetCursorInvisible(hide bool) error {
+	return hyprEval(fmt.Sprintf("hl.config{ cursor = { invisible = %v } }", hide))
+}
+
+// HyprBeginPointerLease hides the cursor image and stops focus-follows-mouse
+// so a parked pointer does not activate tiled windows under it.
+func HyprBeginPointerLease() error {
+	var err error
+	if e := HyprSetCursorInvisible(true); e != nil {
+		err = e
+	}
+	if e := hyprEval(`hl.config{ input = { follow_mouse = 0, mouse_refocus = false } }`); e != nil && err == nil {
+		err = e
+	}
+	return err
+}
+
+// HyprEndPointerLease restores the usual pointer image and focus-follows-mouse.
+func HyprEndPointerLease() error {
+	var err error
+	if e := HyprSetCursorInvisible(false); e != nil {
+		err = e
+	}
+	// Omarchy default is follow_mouse = 1 and mouse_refocus = true.
+	if e := hyprEval(`hl.config{ input = { follow_mouse = 1, mouse_refocus = true } }`); e != nil && err == nil {
+		err = e
+	}
+	return err
+}
+
+func hyprEval(expr string) error {
+	out, err := hyprCommand("eval " + expr)
+	if err != nil {
+		return err
+	}
+	if msg := strings.TrimSpace(out); msg != "" && !strings.EqualFold(msg, "ok") {
+		return fmt.Errorf("hyprland eval: %s", msg)
+	}
+	return nil
 }
 
 func hyprCommand(cmd string) (string, error) {

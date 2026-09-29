@@ -119,3 +119,31 @@ func TestSetEdgeSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEdgeButtonForward(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "other-desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	d.devices[peer.ID] = peer
+	d.cfg.EdgeSide = "left"
+	d.cfg.EdgeDevice = "other-desk"
+	rec := &countingInput{}
+	d.input = rec
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "enter"}))
+	before := rec.n
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "button", "button": 0x110, "pressed": true}))
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "button", "button": 0x110, "pressed": false}))
+	if rec.n != before+2 {
+		t.Fatalf("button calls %d, want %d", rec.n-before, 2)
+	}
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "leave"}))
+	before = rec.n
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "button", "button": 0x110, "pressed": true}))
+	if rec.n != before {
+		t.Fatal("button after leave still applied")
+	}
+}

@@ -503,6 +503,11 @@ func (d *Daemon) setSetting(key string, value any) error {
 	if key == "checkUpdates" {
 		d.wakeRelease()
 	}
+	if key == "edgeSide" || key == "edgeDevice" {
+		// Clearing or changing the seam must drop any pointer lease:
+		// show cursor, restore follow_mouse, destroy overlay, leave peer.
+		d.resetEdgePointer()
+	}
 	d.markDirty()
 	return nil
 }
@@ -514,6 +519,10 @@ func (d *Daemon) Reload() error {
 		return err
 	}
 	d.mu.Lock()
+	prevSide, prevDev := "", ""
+	if d.cfg != nil {
+		prevSide, prevDev = d.cfg.EdgeSide, d.cfg.EdgeDevice
+	}
 	d.cfg = cfg
 	d.mu.Unlock()
 	d.commandsChanged()
@@ -521,6 +530,10 @@ func (d *Daemon) Reload() error {
 	d.inputChanged()
 	d.wakeDnd()
 	d.wakeRelease()
+	// Edge cleared or changed in config.toml: drop any stuck pointer lease.
+	if prevSide != cfg.EdgeSide || prevDev != cfg.EdgeDevice {
+		d.resetEdgePointer()
+	}
 	return nil
 }
 

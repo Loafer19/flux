@@ -40,7 +40,7 @@ Commands:
   ping [MESSAGE]         Send a ping
   send FILE...           Send files
   clip [TEXT]            Send the clipboard, or TEXT
-  url URL                Open a URL on the phone
+  url URL                Open an http or https address on the device
   sms NUMBER TEXT...     Send a text message through the phone
   notifications          List the phone notifications
   notifications clear    Dismiss the phone notifications, on the phone and here.

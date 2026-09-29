@@ -122,6 +122,7 @@ flux-cli notify "Backup done" "412 files, 2.1 GB"
 `flux-cli send` starts transfers and returns their count.
 Inspect `transfers` in `flux-cli status --json` for completion.
 `flux-cli clip` without text sends the desktop clipboard.
+`flux-cli url` opens an `http` or `https` address. On a computer, any other address is rejected.
 When the clipboard holds an image, the command sends the image and returns when the transfer ends.
 See [clipboard images](features.md#clipboard-images).
 `flux-cli notifications clear` dismisses the phone notifications on the phone and on the desktop. Ongoing notifications stay.

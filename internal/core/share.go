@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,10 @@ func (d *Daemon) handleShare(dev *Device, l *lan.Link, p *proto.Packet) {
 	}
 	switch {
 	case body.URL != "":
+		if dev.peer() && !httpURL(body.URL) {
+			d.logf("%s: ignored %s, a computer opens only an http or https address", dev.Name, body.URL)
+			return
+		}
 		if err := desktop.Open(body.URL); err != nil {
 			d.logf("open %s: %v", body.URL, err)
 		}
@@ -410,9 +415,18 @@ func (d *Daemon) sendFile(l *lan.Link, t *Transfer, path string, info os.FileInf
 	return l.SendWithPayload(ctx, p, f, info.Size(), d.progress(t))
 }
 
-// ShareText sends text or a URL to a device.
+// ShareText sends text or a URL to a device. A computer opens only an
+// http or https address.
 func (d *Daemon) ShareText(dev *Device, key, value string) error {
+	if key == "url" && dev.peer() && !httpURL(value) {
+		return apiErr("bad_url", "A computer opens only an http or https address")
+	}
 	return d.send(dev, proto.New(proto.TypeShare, map[string]any{key: value}))
+}
+
+func httpURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // safeName keeps only the last element of a received file name.

@@ -102,7 +102,11 @@ In `flux-cli status --json` the same device has `"role": "peer"`.
 ```sh
 flux-cli --device "other-desk" clip "from this desk"
 flux-cli --device "other-desk" send "$HOME/Downloads/report.txt"
+flux-cli --device "other-desk" url "https://example.com"
 ```
+
+`url` opens an `http` or `https` address on that computer.
+A computer does not open a `file:` address.
 
 Clipboard text uses the link that is already open.
 A copied image and a file also use a TCP port in 1716–1764, back toward the computer that sends them.

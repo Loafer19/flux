@@ -127,8 +127,23 @@ QtObject {
     return tokens[h % tokens.length]
   }
 
-  // The codepoints of the icons in the Nerd Fonts "md" range, by name. Icon
-  // reads this 1 table, so each icon does not make its own copy.
+  function kindOf(name, dir) {
+    if (dir) return "folder"
+    var m = (name || "").toLowerCase().match(/\.([a-z0-9]+)$/)
+    var ext = m ? m[1] : ""
+    if (["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "svg", "avif"].indexOf(ext) >= 0) return "image"
+    if (["mp4", "mov", "mkv", "webm", "avi", "3gp", "m4v"].indexOf(ext) >= 0) return "video"
+    if (["mp3", "flac", "ogg", "opus", "m4a", "wav", "aac"].indexOf(ext) >= 0) return "audio"
+    if (ext === "pdf") return "pdf"
+    if (["md", "txt", "log", "csv", "json"].indexOf(ext) >= 0) return "text"
+    if (["zip", "tar", "gz", "xz", "zst", "7z", "rar"].indexOf(ext) >= 0) return "archive"
+    if (ext === "iso") return "iso"
+    if (ext === "apk") return "apk"
+    return "file"
+  }
+
+  // Legacy Nerd Font codepoints, kept for Fmt.glyph. Icon renders SVGs in
+  // gui/qml/icons/ (Material Design Icons, same names).
   readonly property var icons: ({
     "dashboard": 0xF0A1D, "clipboard": 0xF0A38, "transfers": 0xF1A96, "bell": 0xF009C,
     "bell-ring": 0xF009F, "bell-off": 0xF0A91, "music": 0xF075A, "message": 0xF036A,
@@ -160,6 +175,7 @@ QtObject {
     "account": 0xF0B55, "whatsapp": 0xF05A3, "slack": 0xF04B1, "spotify": 0xF04C7,
     "firefox": 0xF0239, "chrome": 0xF02AF, "web": 0xF059F
   })
+
 
   // The text of an icon, or an empty string for an unknown name.
   function glyph(name) {

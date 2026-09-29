@@ -35,6 +35,9 @@ type Device struct {
 
 	link     *lan.Link
 	mdnsSeen time.Time
+	// inviteHost is the host from a discovery-less invite. After pair,
+	// fluxd keeps it as an extra address when it differs from lastIp.
+	inviteHost string
 	// dialTries counts the dials since the device was last seen. dialAt is
 	// the time of the last dial.
 	dialTries int

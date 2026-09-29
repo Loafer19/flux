@@ -12,8 +12,8 @@ This page does not turn a computer into a phone: there is no Browse storage, rin
 ## Requirements
 
 - Flux is installed on both computers, and `fluxd` is running.
-- Both computers are on the same local network for the first pair.
-- Each computer accepts inbound TCP 1716–1764 from the other.
+- Each computer can reach the other on TCP 1716–1764 (same LAN with an allow rule, or the same Tailscale tailnet).
+- For a first pair without mDNS, one computer shares an invite; see [Pair without discovery](#pair-without-discovery).
 
 Omarchy's firewall allows mDNS and blocks other inbound TCP.
 A phone still works, because the computer dials out to the phone.
@@ -98,6 +98,39 @@ flux-cli --device DEVICE_ID clip "from this desk"
 
 In `flux-cli status --json` the same device has `"role": "peer"`.
 
+## Pair without discovery
+
+mDNS and UDP broadcasts do not cross NAT, guest Wi-Fi isolation, or Tailscale.
+When the other computer never appears in the list, share an invite instead of opening the firewall to the whole internet.
+
+1. Pick a host the other computer can already reach: a Tailscale name or IP, or a LAN address after both sides allow TCP 1716–1764 from each other only.
+2. On the computer that listens at that host:
+
+   ```sh
+   flux-cli pair invite --host other-desk
+   ```
+
+   Use the Tailscale name from `tailscale status`, or the LAN address from `ip -4 -br addr`.
+   When this computer has exactly one Tailscale IPv4 address, you can omit `--host`.
+
+3. On the other computer, paste the invite:
+
+   ```sh
+   flux-cli pair join 'flux1:…@other-desk:1716'
+   ```
+
+4. Compare the 8-character key on both screens and accept.
+
+The invite carries the device ID, host, and port. It is not a secret.
+Pairing still needs the verification key.
+Flux dials only that host; it does not add a firewall rule and does not accept "pair by any IP" without the ID from the invite.
+
+After the pair, keep a Tailscale name as an extra address on both sides when you leave the LAN:
+
+```sh
+flux-cli --device "other-desk" addresses add other-desk
+```
+
 ## Share
 
 ```sh
@@ -152,8 +185,9 @@ Browse storage stays off.
 
 ## Tailscale
 
-Pair on the local network first.
-Tailscale does not carry the mDNS and UDP broadcasts Flux uses to find a device, so the first pair cannot go through Tailscale alone.
+Tailscale does not carry the mDNS and UDP broadcasts Flux uses to find a device.
+For a first pair over Tailscale, use [Pair without discovery](#pair-without-discovery) with the Tailscale name as `--host`.
+You can still pair on the LAN first, then add Tailscale addresses.
 
 On each computer, after the pair:
 

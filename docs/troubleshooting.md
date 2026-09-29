@@ -125,6 +125,8 @@ journalctl --user -u fluxd -n 50 --no-pager | grep "connect to"
 ```
 
 If `flux-cli addresses` shows `none` for the phone, add its Tailscale name.
+If two computers never appear for the first pair (NAT, different networks, Tailscale only), use `flux-cli pair invite --host HOST` and `flux-cli pair join INVITE` instead of opening the firewall to anywhere. See [Pair without discovery](desktop-peer.md#pair-without-discovery).
+
 See [Connect through Tailscale](tailscale.md#troubleshoot) for the other checks.
 
 ## The window or bar item is missing

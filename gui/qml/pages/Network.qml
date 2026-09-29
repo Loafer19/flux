@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import ".."
 import "../components"
 
@@ -28,19 +29,23 @@ Item {
 
   implicitHeight: col.implicitHeight
 
-  component Status: Row {
+  // Capability / feature chip. On = fg (neutral); green is reserved for
+  // the live "connected" indicator on the status line.
+  component Status: RowLayout {
     property string icon: ""
     property string label: ""
     property bool on: false
     spacing: 6
     Icon {
-      anchors.verticalCenter: parent.verticalCenter
+      Layout.alignment: Qt.AlignVCenter
+      Layout.preferredWidth: 14
+      Layout.preferredHeight: 14
       name: icon
       size: 14
-      color: on ? Theme.ok : Theme.dim
+      color: on ? Theme.fg : Theme.dim
     }
     Txt {
-      anchors.verticalCenter: parent.verticalCenter
+      Layout.alignment: Qt.AlignVCenter
       text: label
       color: on ? Theme.fg : Theme.dim
       font.pixelSize: 12
@@ -51,12 +56,6 @@ Item {
     if (d.role === "peer") return "Peer · " + Fmt.typeName(d.type || "desktop")
     if (d.type === "phone" || d.type === "tablet") return Fmt.typeName(d.type)
     return "Remote · " + Fmt.typeName(d.type || "device")
-  }
-
-  function place(d) {
-    var where = d.online ? "connected" : "offline"
-    if (d.ip) where += " · " + d.ip
-    return where
   }
 
   Column {
@@ -75,16 +74,18 @@ Item {
         y: 18
         width: parent.width - 36
         spacing: 6
-        Row {
+        RowLayout {
           spacing: 10
           Icon {
-            anchors.verticalCenter: parent.verticalCenter
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 18
+            Layout.preferredHeight: 18
             name: Fmt.kindIcon(root.self.type || "desktop")
             size: 18
             color: Theme.accent
           }
           Txt {
-            anchors.verticalCenter: parent.verticalCenter
+            Layout.alignment: Qt.AlignVCenter
             text: root.self.name || "This computer"
             font.pixelSize: 18
             font.weight: Font.Bold
@@ -136,34 +137,54 @@ Item {
           y: 18
           width: parent.width - 36
           spacing: 6
-          Row {
+          RowLayout {
             width: parent.width
             spacing: 10
             Icon {
-              anchors.verticalCenter: parent.verticalCenter
-              name: Fmt.kindIcon(modelData.type)
+              Layout.alignment: Qt.AlignVCenter
+              Layout.preferredWidth: 18
+              Layout.preferredHeight: 18
+                name: Fmt.kindIcon(modelData.type)
               size: 18
               color: Theme.fg
             }
             Txt {
-              anchors.verticalCenter: parent.verticalCenter
-              width: Math.min(implicitWidth, parent.width - 28)
+              Layout.fillWidth: true
+              Layout.alignment: Qt.AlignVCenter
               text: modelData.name || "Device"
               font.pixelSize: 16
               font.weight: Font.DemiBold
               elide: Text.ElideRight
             }
           }
-          Txt {
+          // Role and IP stay muted; only the live link word uses Theme.ok.
+          RowLayout {
             width: parent.width
-            text: root.roleLine(modelData) + " · " + root.place(modelData)
-            color: modelData.online ? Theme.ok : Theme.dim
-            elide: Text.ElideRight
+            spacing: 0
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              text: root.roleLine(modelData) + " · "
+              color: Theme.dim
+              elide: Text.ElideRight
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              text: modelData.online ? "connected" : "offline"
+              color: modelData.online ? Theme.ok : Theme.dim
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              Layout.fillWidth: true
+              visible: !!modelData.ip
+              text: " · " + (modelData.ip || "")
+              color: Theme.dim
+              elide: Text.ElideRight
+            }
           }
           Column {
             visible: card.peer
             spacing: 8
-            Row {
+            RowLayout {
               spacing: 18
               Status {
                 icon: "clipboard"
@@ -172,7 +193,7 @@ Item {
               }
               Status { icon: "file"; label: "Files"; on: true }
             }
-            Row {
+            RowLayout {
               spacing: 18
               Status { icon: "bell-off"; label: "DND off"; on: false }
               Status { icon: "monitor"; label: card.edgeLabel; on: card.edgeLabel !== "No edges" }

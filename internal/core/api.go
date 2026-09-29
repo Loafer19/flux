@@ -201,6 +201,9 @@ type params struct {
 	Value     any             `json:"value"`
 	Config    json.RawMessage `json:"config"`
 	Reset     bool            `json:"reset"`
+	Host      string          `json:"host"`
+	Port      int             `json:"port"`
+	Invite    string          `json:"invite"`
 }
 
 // Call runs one API method.
@@ -271,6 +274,33 @@ func (d *Daemon) Call(ctx context.Context, method string, raw json.RawMessage) (
 			return nil, err
 		}
 		return ok, d.sendAppUpdate(dev)
+	case "pair.invite":
+		inv, err := d.MakeInvite(p.Host)
+		if err != nil {
+			return nil, err
+		}
+		return inv, nil
+	case "pair.connect":
+		if p.Invite != "" {
+			inv, err := d.ConnectInvite(p.Invite)
+			if err != nil {
+				return nil, err
+			}
+			return inv, nil
+		}
+		host := firstNonEmpty(p.Host, p.Address)
+		port := p.Port
+		if port == 0 {
+			port = 1716
+		}
+		if err := d.ConnectEndpoint(p.ID, p.Name, host, port); err != nil {
+			return nil, err
+		}
+		host, err := normalizeAddress(host)
+		if err != nil {
+			return nil, err
+		}
+		return Invite{ID: p.ID, Name: p.Name, Host: host, Port: port, Code: FormatInvite(p.ID, host, port)}, nil
 	}
 
 	dev, err := d.pick(p.Device)
@@ -487,4 +517,13 @@ func (d *Daemon) Reload() error {
 func hostname() string {
 	h, _ := os.Hostname()
 	return h
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

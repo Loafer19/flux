@@ -89,7 +89,7 @@ flux-cli watch
 | Group | Examples |
 | --- | --- |
 | State | `state`, `subscribe`, `discover` |
-| Pairing | `pair.request`, `pair.accept`, `pair.reject`, `pair.unpair` |
+| Pairing | `pair.request`, `pair.accept`, `pair.reject`, `pair.unpair`, `pair.invite`, `pair.connect` |
 | Addresses | `addresses.add`, `addresses.remove` |
 | Sharing | `clipboard.send`, `share.files`, `share.url` |
 | Commands | `commands.add`, `commands.remove`, `commands.run` |
@@ -176,3 +176,19 @@ Each device in the state has the same list in its `addresses` field.
 An address with a port or a scheme returns the `bad_address` error.
 A sixth address returns `too_many`.
 An address that the device does not have returns `not_found` from `addresses.remove`.
+
+## Pair invite
+
+`pair.invite` builds a discovery-less invite for this computer.
+`pair.connect` dials the peer in an invite, or dials an explicit host with a device ID.
+
+```json
+{"id":7,"method":"pair.invite","params":{"host":"other-desk"}}
+{"id":7,"result":{"id":"…","name":"vivobook","host":"other-desk","port":1716,"invite":"flux1:…@other-desk:1716"}}
+
+{"id":8,"method":"pair.connect","params":{"invite":"flux1:…@other-desk:1716"}}
+{"id":8,"result":{"id":"…","host":"other-desk","port":1716,"invite":"flux1:…@other-desk:1716"}}
+```
+
+The invite is not authentication.
+The TLS certificate must still match the device ID, and both sides confirm the verification key.

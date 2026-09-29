@@ -83,6 +83,9 @@ FLUX_GUI=plugin flux-cli open notifications
 ```sh
 flux-cli discover
 flux-cli pair "Pixel 8"
+flux-cli pair invite --host desk-b
+flux-cli pair join 'flux1:…@desk-b:1716'
+flux-cli pair connect desk-b --id DEVICE_ID --port 1716
 flux-cli accept "Pixel 8"
 flux-cli reject "Pixel 8"
 flux-cli unpair "Pixel 8"
@@ -90,6 +93,8 @@ flux-cli unpair "Pixel 8"
 
 Compare the verification key on both devices before you accept.
 See [phone pairing](features.md#pair-a-phone).
+`pair invite` and `pair join` skip mDNS when two computers already share a reachable host, for example through Tailscale.
+See [Pair without discovery](desktop-peer.md#pair-without-discovery).
 
 ## Reach a device away from the local network
 

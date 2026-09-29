@@ -26,6 +26,7 @@ file(GLOB_RECURSE flux_shared_files CONFIGURE_DEPENDS
     "${FLUX_SHARED_QML}/*.qml"
     "${FLUX_SHARED_QML}/*.js"
     "${FLUX_SHARED_QML}/*.json"
+    "${FLUX_SHARED_QML}/*.svg"
     "${FLUX_SHARED_QML}/*qmldir"
 )
 if(flux_shared_files)

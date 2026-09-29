@@ -167,6 +167,11 @@ func (d *Daemon) pairingDone(dev *Device) {
 	t := config.TrustedDevice{
 		ID: dev.ID, Name: dev.Name, Type: dev.Type, LastIP: dev.IP, LastPort: dev.Port, PairedAt: dev.PairedAt,
 	}
+	if host := dev.inviteHost; host != "" && host != dev.IP {
+		t.Addresses = []string{host}
+		dev.Addresses = []string{host}
+	}
+	dev.inviteHost = ""
 	if dev.Cert != nil {
 		t.CertPEM = proto.CertPEM(dev.Cert)
 	}

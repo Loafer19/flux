@@ -265,6 +265,8 @@ Leave Android, the Mac app, `internal/approve`, and the firewall package files a
 ## Later
 
 Phase 3 is the setup page [Connect two computers](desktop-peer.md).
+Discovery-less first pairing is on that page: `flux-cli pair invite` / `pair join` dial a host from an invite when mDNS and UDP do not cross the path.
+The invite carries the device ID, so Flux does not invent pair-by-arbitrary-IP.
 A paired peer stays on the dial schedule from the merged issue 49: `TestPeerDialBackoff` covers the fast and slow intervals.
 Two mDNS reports for one id stay one device: `TestMDNSReportsStayOneDevice`.
 An IPv6 mDNS answer is dropped before it becomes a row.

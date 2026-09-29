@@ -16,7 +16,7 @@ PLUGIN_FILES := manifest.json Service.qml Backend.qml BarWidget.qml Panel.qml
 define copy-plugin
 	mkdir -p $(1)/Flux
 	for f in $(PLUGIN_FILES); do install -m644 gui/omarchy/$$f $(1)/$$f; done
-	cd gui/qml && find . -path ./tools -prune -o -type f \( -name '*.qml' -o -name qmldir -o -name '*.js' \) -print | \
+	cd gui/qml && find . -path ./tools -prune -o -type f \( -name '*.qml' -o -name qmldir -o -name '*.js' -o -name '*.svg' \) -print | \
 		while read -r f; do install -Dm644 "$$f" "$(1)/Flux/$$f"; done
 endef
 

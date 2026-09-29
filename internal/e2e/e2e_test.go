@@ -429,3 +429,68 @@ func TestTwoDaemons(t *testing.T) {
 		t.Fatalf("a daemon panicked:\n%s\n%s", alpha.log, beta.log)
 	}
 }
+
+// TestInvitePairWithoutDiscovery pairs two daemons that do not share a UDP
+// discovery port. The joiner dials an invite that carries the device ID and
+// a reachable host, then both sides confirm the verification key.
+func TestInvitePairWithoutDiscovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts 2 processes")
+	}
+	bin := buildFluxd(t)
+	udpA, udpB := freePort(t, "udp"), freePort(t, "udp")
+	tcpA, tcpB := freePort(t, "tcp"), freePort(t, "tcp")
+	alpha := start(t, bin, "alpha", udpA, tcpA)
+	beta := start(t, bin, "beta", udpB, tcpB)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("alpha log:\n%s\nbeta log:\n%s", alpha.log, beta.log)
+		}
+	})
+
+	var inv struct {
+		ID     string `json:"id"`
+		Invite string `json:"invite"`
+		Host   string `json:"host"`
+		Port   int    `json:"port"`
+	}
+	alpha.call(t, "pair.invite", map[string]any{"host": "127.0.0.1"}, &inv)
+	if inv.Invite == "" || inv.ID == "" || inv.Port != tcpA {
+		t.Fatalf("invite %+v, want tcp %d", inv, tcpA)
+	}
+
+	// Different UDP ports: beta must not see alpha through discovery.
+	time.Sleep(400 * time.Millisecond)
+	sb := beta.state(t)
+	if _, on, _, _, _ := device(sb, "alpha"); on {
+		t.Fatal("beta discovered alpha without an invite")
+	}
+
+	beta.call(t, "pair.connect", map[string]any{"invite": inv.Invite}, nil)
+	beta.wait(t, "alpha online via invite", func(s state) bool {
+		_, on, _, _, _ := device(s, "alpha")
+		return on
+	})
+	alpha.wait(t, "beta online via return path", func(s state) bool {
+		_, on, _, _, _ := device(s, "beta")
+		return on
+	})
+
+	beta.call(t, "pair.request", map[string]any{"device": "alpha"}, nil)
+	sa := alpha.wait(t, "incoming", func(s state) bool {
+		_, _, _, ps, _ := device(s, "beta")
+		return ps == "incoming"
+	})
+	sb = beta.wait(t, "requested", func(s state) bool {
+		_, _, _, ps, _ := device(s, "alpha")
+		return ps == "requested"
+	})
+	_, _, _, _, keyA := device(sa, "beta")
+	_, _, _, _, keyB := device(sb, "alpha")
+	if keyA == "" || keyA != keyB {
+		t.Fatalf("keys %q %q", keyA, keyB)
+	}
+	alpha.call(t, "pair.accept", map[string]any{"device": "beta"}, nil)
+	alpha.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "beta"); return p })
+	beta.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "alpha"); return p })
+}

@@ -52,6 +52,7 @@ Window pages: `network`, `overview`, `clipboard`, `files`, `notifications`, `mes
 `network` shows this computer and each paired device.
 A peer row says that clipboard and files work, and that Do Not Disturb between desks is off.
 The computer named in `edge_device` shows that screen edge. The others stay unset.
+Set the seam with `flux-cli edge left other-desk`, clear it with `flux-cli edge off`, or tap the edge chip on the Network page.
 
 `flux-cli version` prints the version of `flux-cli` and of the running `fluxd`.
 After an update, it also prints the new `fluxd` version that waits for its restart.

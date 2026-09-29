@@ -3,9 +3,9 @@ import QtQuick.Layouts
 import ".."
 import "../components"
 
-// This computer and the paired devices. A peer shows the link as it is:
-// clipboard and files work, Do Not Disturb between desks is off, and screen
-// edges are not set. The page does not turn those on.
+// This computer and the paired devices. A peer shows clipboard and files,
+// Do Not Disturb between desks off, and the configured screen edge.
+// Tap the edge chip on a peer to set or clear that seam.
 Item {
   id: root
   property var view
@@ -128,6 +128,28 @@ Item {
           if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return "No edges"
           return side.charAt(0).toUpperCase() + side.slice(1) + " edge"
         }
+        function cycleEdge() {
+          var order = ["", "left", "right", "top", "bottom"]
+          var cur = ""
+          var who = String(root.settings.edgeDevice || "").toLowerCase()
+          var name = String(modelData.name || "").toLowerCase()
+          var id = String(modelData.id || "")
+          if (root.settings.edgeSide && who && (id === root.settings.edgeDevice || name === who))
+            cur = String(root.settings.edgeSide || "").toLowerCase()
+          var i = order.indexOf(cur)
+          var next = order[(i + 1) % order.length]
+          var device = modelData.name || modelData.id
+          if (!root.view || !root.view.call) return
+          if (!next) {
+            root.view.call("settings.set", { key: "edgeSide", value: "" })
+            root.view.call("settings.set", { key: "edgeDevice", value: "" })
+            root.view.toast("Screen edge off")
+            return
+          }
+          root.view.call("settings.set", { key: "edgeSide", value: next })
+          root.view.call("settings.set", { key: "edgeDevice", value: device })
+          root.view.toast(next.charAt(0).toUpperCase() + next.slice(1) + " edge → " + device)
+        }
         width: col.width
         implicitHeight: devCol.implicitHeight + 36
 
@@ -196,7 +218,21 @@ Item {
             RowLayout {
               spacing: 18
               Status { icon: "bell-off"; label: "DND off"; on: false }
-              Status { icon: "monitor"; label: card.edgeLabel; on: card.edgeLabel !== "No edges" }
+              Item {
+                Layout.preferredWidth: edgeChip.implicitWidth
+                Layout.preferredHeight: edgeChip.implicitHeight
+                Status {
+                  id: edgeChip
+                  icon: "monitor"
+                  label: card.edgeLabel
+                  on: card.edgeLabel !== "No edges"
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: card.cycleEdge()
+                }
+              }
             }
           }
           Status {
@@ -209,6 +245,7 @@ Item {
 
         MouseArea {
           anchors.fill: parent
+          z: -1
           cursorShape: Qt.PointingHandCursor
           onClicked: {
             root.view.selectedId = modelData.id

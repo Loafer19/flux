@@ -46,9 +46,9 @@ type Daemon struct {
 
 	opts Options
 	clip clipboard
-	// edgeUntil is how long a pointer seam from the named computer stays
-	// open after its last packet.
-	edgeUntil time.Time
+	// edgeActive is true while the named peer drives this pointer across
+	// the configured screen edge.
+	edgeActive bool
 	// input moves the pointer and types for the phone. It is nil in a
 	// headless daemon. inputQ holds the actions in order.
 	input    inputBackend

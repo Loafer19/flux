@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"flux/internal/config"
+	"flux/internal/desktop"
 	"flux/internal/proto"
 )
 
@@ -469,6 +470,15 @@ func (d *Daemon) setSetting(key string, value any) error {
 		d.cfg.Name = strings.TrimSpace(s)
 	case key == "downloadDir" && isString:
 		d.cfg.DownloadDir = strings.TrimSpace(s)
+	case key == "edgeSide" && isString:
+		side := strings.ToLower(strings.TrimSpace(s))
+		if side != "" && !desktop.ValidEdge(side) {
+			d.mu.Unlock()
+			return apiErr("bad_setting", "edgeSide must be left, right, top, bottom, or empty")
+		}
+		d.cfg.EdgeSide = side
+	case key == "edgeDevice" && isString:
+		d.cfg.EdgeDevice = strings.TrimSpace(s)
 	default:
 		d.mu.Unlock()
 		return apiErr("bad_setting", "Unknown setting %q or wrong value type", key)

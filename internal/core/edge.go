@@ -15,7 +15,6 @@ const (
 	edgeMargin = 6.0
 	edgeReturn = 48.0
 	edgeTick   = 20 * time.Millisecond
-	edgeHold   = 400 * time.Millisecond
 )
 
 // edgeLoop watches the cursor. When it crosses the configured edge onto a
@@ -37,6 +36,11 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+		}
+		if d.edgeReceiving() {
+			// The other desk drives this pointer. Do not capture the edge
+			// back until it sends leave.
+			continue
 		}
 		side, dev, link := d.edgeAim()
 		if side == "" || dev == nil || link == nil {
@@ -148,30 +152,43 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 	}
 	switch body.Op {
 	case "leave":
-		d.mu.Lock()
-		d.edgeUntil = time.Time{}
-		d.mu.Unlock()
+		d.setEdgeActive(false)
 	case "enter":
 		d.mu.Lock()
 		side := strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide))
-		d.edgeUntil = time.Now().Add(edgeHold)
+		d.edgeActive = true
 		d.mu.Unlock()
 		x, y := desktop.EdgePoint(side)
 		_ = d.input.MoveTo("", x, y)
 	case "move":
-		d.mu.Lock()
-		open := !d.edgeUntil.IsZero() && time.Now().Before(d.edgeUntil)
-		if open {
-			d.edgeUntil = time.Now().Add(edgeHold)
-		}
-		d.mu.Unlock()
-		if !open {
+		if !d.edgeReceiving() {
 			return
 		}
 		dx := max(-maxInputDelta, min(maxInputDelta, body.DX))
 		dy := max(-maxInputDelta, min(maxInputDelta, body.DY))
 		_ = d.input.Move(dx, dy)
 	}
+}
+
+// edgeReceiving reports whether the named peer currently drives this pointer.
+func (d *Daemon) edgeReceiving() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.edgeActive {
+		return false
+	}
+	// A cleared edge config drops a stale lease so this desk can capture again.
+	if d.cfg == nil || !desktop.ValidEdge(d.cfg.EdgeSide) || strings.TrimSpace(d.cfg.EdgeDevice) == "" {
+		d.edgeActive = false
+		return false
+	}
+	return true
+}
+
+func (d *Daemon) setEdgeActive(on bool) {
+	d.mu.Lock()
+	d.edgeActive = on
+	d.mu.Unlock()
 }
 
 // edgeFrom reports whether dev is the computer this desk named for its seam.

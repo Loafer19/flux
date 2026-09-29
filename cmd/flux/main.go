@@ -40,6 +40,8 @@ Commands:
   addresses add HOST     Add a host name or IP address, for example the Tailscale
                          name of the phone. fluxd tries it while the device is offline
   addresses remove HOST  Remove an extra address
+  edge [SIDE DEVICE]     Show or set the screen edge that continues on a peer.
+                         SIDE is left, right, top, or bottom. edge off clears it.
   ring                   Ring the phone
   ping [MESSAGE]         Send a ping
   send FILE...           Send files
@@ -108,6 +110,8 @@ func main() {
 		err = call("pair.unpair", map[string]any{"device": need(args, "DEVICE")})
 	case "addresses":
 		err = addresses(device, args)
+	case "edge":
+		err = edgeCmd(args)
 	case "ring":
 		err = call("ring", map[string]any{"device": device})
 	case "ping":
@@ -525,6 +529,62 @@ func pairRequest(device string) error {
 // addresses lists, adds, or removes the extra addresses of a paired
 // device. fluxd dials them while the device is offline, for example
 // through Tailscale.
+
+func edgeCmd(args []string) error {
+	switch first(args) {
+	case "", "status":
+		var s struct {
+			Settings struct {
+				EdgeSide   string `json:"edgeSide"`
+				EdgeDevice string `json:"edgeDevice"`
+			} `json:"settings"`
+		}
+		if err := callInto("state", nil, &s); err != nil {
+			return err
+		}
+		side := strings.TrimSpace(s.Settings.EdgeSide)
+		dev := strings.TrimSpace(s.Settings.EdgeDevice)
+		if side == "" || dev == "" {
+			fmt.Println("Screen edge: off")
+			fmt.Println("Set one with: flux-cli edge left vivobook")
+			return nil
+		}
+		fmt.Printf("Screen edge: %s → %s\n", side, dev)
+		return nil
+	case "off", "clear", "none":
+		if err := call("settings.set", map[string]any{"key": "edgeSide", "value": ""}); err != nil {
+			return err
+		}
+		if err := call("settings.set", map[string]any{"key": "edgeDevice", "value": ""}); err != nil {
+			return err
+		}
+		fmt.Println("Screen edge: off")
+		return nil
+	default:
+		if len(args) < 2 {
+			return fmt.Errorf("Usage: flux-cli edge SIDE DEVICE\n       flux-cli edge off")
+		}
+		side := strings.ToLower(strings.TrimSpace(args[0]))
+		device := strings.TrimSpace(args[1])
+		switch side {
+		case "left", "right", "top", "bottom":
+		default:
+			return fmt.Errorf("SIDE must be left, right, top, or bottom")
+		}
+		if device == "" {
+			return fmt.Errorf("give the paired computer name or id")
+		}
+		if err := call("settings.set", map[string]any{"key": "edgeSide", "value": side}); err != nil {
+			return err
+		}
+		if err := call("settings.set", map[string]any{"key": "edgeDevice", "value": device}); err != nil {
+			return err
+		}
+		fmt.Printf("Screen edge: %s → %s\n", side, device)
+		return nil
+	}
+}
+
 func addresses(device string, args []string) error {
 	switch first(args) {
 	case "add", "remove", "rm":

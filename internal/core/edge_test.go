@@ -73,3 +73,49 @@ func TestPeerURLAndEdge(t *testing.T) {
 		t.Fatal("a computer that is not the seam moved the pointer")
 	}
 }
+
+func TestEdgeIdleLeaseStaysOpen(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "other-desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	d.devices[peer.ID] = peer
+	d.cfg.EdgeSide = "left"
+	d.cfg.EdgeDevice = "other-desk"
+	rec := &countingInput{}
+	d.input = rec
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "enter"}))
+	time.Sleep(500 * time.Millisecond)
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "move", "dx": 8, "dy": 0}))
+	if rec.n != 2 {
+		t.Fatalf("after idle, pointer calls %d, want enter and one move", rec.n)
+	}
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "leave"}))
+	before := rec.n
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "move", "dx": 3, "dy": 0}))
+	if rec.n != before {
+		t.Fatal("move after leave still applied")
+	}
+}
+
+func TestSetEdgeSettings(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	if err := d.setSetting("edgeSide", "up"); err == nil {
+		t.Fatal("accepted a bad edge")
+	}
+	if err := d.setSetting("edgeSide", "left"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.setSetting("edgeDevice", "vivobook"); err != nil {
+		t.Fatal(err)
+	}
+	if d.cfg.EdgeSide != "left" || d.cfg.EdgeDevice != "vivobook" {
+		t.Fatalf("cfg %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+	if err := d.setSetting("edgeSide", ""); err != nil {
+		t.Fatal(err)
+	}
+}

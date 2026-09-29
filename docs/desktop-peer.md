@@ -147,32 +147,34 @@ A computer does not open a `file:` address.
 One edge of this screen can continue on the other computer.
 The pointer moves there. Clicks and the keyboard stay on the computer where they were pressed.
 `remote_input` stays off. This is not the phone touchpad.
+Both computers must name the seam: this desk names the edge that leaves, the other desk names the opposite edge.
 
-On this computer, name the edge that leaves the screen and the other computer:
+On this computer (for example dragon), point the left edge at the other desk:
 
-```toml
-edge_side = "left"
-edge_device = "other-desk"
+```sh
+flux-cli edge left vivobook
 ```
 
-On the other computer, name the opposite edge and this computer:
+On the other computer, point the opposite edge back:
 
-```toml
-edge_side = "right"
-edge_device = "vivobook"
+```sh
+flux-cli edge right dragon
 ```
 
 `left` meets `right`, and `top` meets `bottom`.
-Reload both daemons. The packaged service uses:
+`flux-cli edge` shows the seam. `flux-cli edge off` clears it.
+The same keys live in `~/.config/flux/config.toml` as `edge_side` and `edge_device`; a reload picks that up too:
 
 ```sh
 systemctl --user reload fluxd
 ```
 
 A daemon started by hand reloads on `SIGHUP`.
+On the Network page, tap the edge chip on a peer row to cycle left, right, top, bottom, or off.
+
 Move the pointer through that edge. It appears on the other screen.
-Move it back the other way to return.
-The Network page names that edge on the computer it points at.
+Move it back inward on this computer to return.
+Hyprland must be running: Flux reads the cursor from the Hyprland socket and moves the peer with `zwlr_virtual_pointer_v1` (no `/dev/uinput`, no `remote_input`).
 
 Clipboard text uses the link that is already open.
 A copied image and a file also use a TCP port in 1716–1764, back toward the computer that sends them.

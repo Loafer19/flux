@@ -272,6 +272,6 @@ Two mDNS reports for one id stay one device: `TestMDNSReportsStayOneDevice`.
 An IPv6 mDNS answer is dropped before it becomes a row.
 The Android list can still show one computer twice. That is issue 7, and this phase does not change the phone app.
 
-The pointer crosses one screen edge through `flux.edge`, configured with `edge_side` and `edge_device`.
+The pointer crosses one screen edge through `flux.edge`, configured with `edge_side` and `edge_device` (`flux-cli edge`, Network chip, or IPC).
 Clicks and the keyboard stay on the computer where they were pressed, and `remote_input` stays the phone touchpad.
 Still separate: drag across that edge, focus follow, and a real phone storage server.

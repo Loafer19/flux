@@ -86,14 +86,13 @@ func ScreenCenter(screens []Monitor) (x, y float64, ok bool) {
 }
 
 // ScreenPark is where the local cursor sits while the peer holds the pointer.
-// Top-left of the combined bounds (typically the status bar) avoids the
-// middle of tiled windows that would otherwise catch hover and focus.
+// Use the screen center so relative deltas work in every direction. Parking at
+// the top-left corner (2,2) lets the compositor clamp left/up motion to zero,
+// which blocks return through a right/bottom seam and drops those moves on the
+// peer. The fullscreen edge overlay plus a hidden cursor / follow_mouse=0 keep
+// the park point from activating tiled windows underneath.
 func ScreenPark(screens []Monitor) (x, y float64, ok bool) {
-	minX, minY, _, _, ok := ScreenBounds(screens)
-	if !ok {
-		return 0, 0, false
-	}
-	return minX + 2, minY + 2, true
+	return ScreenCenter(screens)
 }
 
 // EdgeInside is a point inset from side, keeping the along-edge coordinate

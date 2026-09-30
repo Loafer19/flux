@@ -3,11 +3,9 @@ import QtQuick.Layouts
 import ".."
 import "../components"
 
-// This computer and the paired devices. A peer shows clipboard and files,
-// Do Not Disturb between desks off, and the configured screen edge.
+// This computer and the paired devices. Devices-first: pair and relay sit below.
 // Tap the edge chip on a peer to set or clear that seam.
 // View opens desk↔desk remote desktop (desktop.view); Stop ends it.
-// Pair without discovery: generate a flux1 invite or paste one from another desk.
 Item {
   id: root
   property var view
@@ -34,7 +32,7 @@ Item {
   }
   readonly property bool phoneDnd: settings.syncDnd !== false && paired.some(d => d.role !== "peer")
 
-  // Invite / join state for discovery-less first pairing (same as flux-cli pair invite|join).
+  // Invite / join state for discovery-less first pairing.
   property string inviteCode: ""
   property string inviteHost: ""
   property int invitePort: 0
@@ -46,10 +44,14 @@ Item {
   property bool inviting: false
   property bool joining: false
 
+  // Relay card: collapsed when off until the user expands; auto-open when on.
+  property bool relayUserExpanded: false
+  readonly property bool relayExpanded: !!settings.relay || relayUserExpanded
+
   implicitHeight: col.implicitHeight
 
   // Capability / feature chip. On = fg (neutral); green is reserved for
-  // the live "connected" indicator on the status line.
+  // the live "Online" indicator on the status line.
   component Status: RowLayout {
     property string icon: ""
     property string label: ""
@@ -71,10 +73,48 @@ Item {
     }
   }
 
+  // Short type only — no "Peer ·" / "Remote ·" noise.
   function roleLine(d) {
-    if (d.role === "peer") return "Peer · " + Fmt.typeName(d.type || "desktop")
+    if (d.role === "peer") return Fmt.typeName(d.type || "desktop")
     if (d.type === "phone" || d.type === "tablet") return Fmt.typeName(d.type)
-    return "Remote · " + Fmt.typeName(d.type || "device")
+    return Fmt.typeName(d.type || "device")
+  }
+
+  // Path chip heuristic from IP + settings.relay (no backend path API).
+  function pathLabel(d) {
+    if (!d) return ""
+    if (root.settings.relay) return "Relay"
+    var ip = String(d.ip || "")
+    if (ip.indexOf("100.") === 0) return "Tailscale"
+    if (ip.indexOf("192.168.") === 0 || ip.indexOf("10.") === 0) return "LAN"
+    var m = ip.match(/^172\.(\d+)\./)
+    if (m) {
+      var n = parseInt(m[1], 10)
+      if (n >= 16 && n <= 31) return "LAN"
+    }
+    return ""
+  }
+
+  function edgeSideFor(d) {
+    var side = String(root.settings.edgeSide || "")
+    var who = String(root.settings.edgeDevice || "").toLowerCase()
+    var name = String(d.name || "").toLowerCase()
+    var id = String(d.id || "")
+    if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return ""
+    return side.toLowerCase()
+  }
+
+  function edgeIcon(side) {
+    if (side === "left") return "arrow-left"
+    if (side === "right") return "arrow-right"
+    if (side === "top") return "arrow-up"
+    if (side === "bottom") return "arrow-down"
+    return "monitor"
+  }
+
+  function edgeLabel(side) {
+    if (!side) return "Edges"
+    return side.charAt(0).toUpperCase() + side.slice(1) + " edge"
   }
 
   function copyText(t) {
@@ -109,7 +149,6 @@ Item {
     // when the request fails (no cb). Success clears it in the cb above.
     inviteBusyTimer.restart()
   }
-
 
   function saveRelayURL() {
     if (!root.view || !root.view.call) return
@@ -213,6 +252,16 @@ Item {
     })
   }
 
+  function unpairDevice(d) {
+    if (!root.view || !root.view.call || !d) return
+    var key = d.id || d.name
+    var name = d.name || "device"
+    root.view.call("pair.unpair", { device: key }, function () {
+      if (root.view) root.view.toast("Unpaired " + name)
+    })
+  }
+
+
   // view.call does not invoke cb on error; these clear busy flags after a beat.
   Timer {
     id: inviteBusyTimer
@@ -269,6 +318,7 @@ Item {
     width: parent.width
     spacing: 18
 
+    // ── 1. THIS COMPUTER (rich — device context lives here, not in header) ──
     SectionLabel { text: "THIS COMPUTER" }
 
     Card {
@@ -301,72 +351,292 @@ Item {
           text: Fmt.typeName(root.self.type || "desktop") + (root.self.tcpPort ? " · TCP " + root.self.tcpPort : "")
           color: Theme.dim
         }
-        Status {
-          visible: root.phoneDnd
-          icon: "bell"
-          label: "Phones follow DND"
-          on: true
+        RowLayout {
+          spacing: 18
+          Status {
+            visible: root.phoneDnd
+            icon: "bell"
+            label: "Phones follow DND"
+            on: true
+          }
+          Status {
+            visible: !!root.settings.relay
+            icon: "wifi"
+            label: "Relay on"
+            on: true
+          }
         }
       }
     }
 
-    SectionLabel { text: "RELAY" }
+    // ── 2. DEVICES (moved up) ──
+    SectionLabel { text: "DEVICES" }
 
-    Card {
+    Txt {
+      visible: root.paired.length === 0
       width: parent.width
-      implicitHeight: relayCol.implicitHeight + 36
-      Column {
-        id: relayCol
-        x: 18
-        y: 18
-        width: parent.width - 36
-        spacing: 10
-        Txt {
-          width: parent.width
-          text: "Optional TCP rendezvous when there is no direct LAN or Tailscale path. Leave off when either computer can reach the other. Both sides need the same relay host URL."
-          color: Theme.dim
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
+      wrapMode: Text.Wrap
+      text: "No paired devices yet. Pair a phone on the LAN, or add a computer below."
+      color: Theme.dim
+    }
+
+    Repeater {
+      model: root.ordered
+      delegate: Card {
+        id: card
+        required property var modelData
+        readonly property bool peer: modelData.role === "peer"
+        readonly property bool viewing: root.viewingPeer(modelData)
+        readonly property string edgeSide: root.edgeSideFor(modelData)
+        readonly property string path: root.pathLabel(modelData)
+        property bool confirmUnpair: false
+        function cycleEdge() {
+          var order = ["", "left", "right", "top", "bottom"]
+          var cur = root.edgeSideFor(modelData)
+          var i = order.indexOf(cur)
+          var next = order[(i + 1) % order.length]
+          var device = modelData.name || modelData.id
+          if (!root.view || !root.view.call) return
+          if (!next) {
+            root.view.call("settings.set", { key: "edgeSide", value: "" })
+            root.view.call("settings.set", { key: "edgeDevice", value: "" })
+            root.view.toast("Screen edge off")
+            return
+          }
+          root.view.call("settings.set", { key: "edgeSide", value: next })
+          root.view.call("settings.set", { key: "edgeDevice", value: device })
+          root.view.toast(next.charAt(0).toUpperCase() + next.slice(1) + " edge → " + device)
         }
-        RowLayout {
-          width: parent.width
-          spacing: 12
-          Toggle {
-            id: relayToggle
-            text: "Use relay"
-            checked: !!root.settings.relay
-            onToggled: function (checked) {
-              if (root.view) root.view.call("settings.set", { key: "relay", value: checked })
+        width: col.width
+        implicitHeight: devCol.implicitHeight + 36
+
+        Column {
+          id: devCol
+          x: 18
+          y: 18
+          width: parent.width - 36
+          spacing: 6
+          RowLayout {
+            width: parent.width
+            spacing: 10
+            Icon {
+              Layout.alignment: Qt.AlignVCenter
+              Layout.preferredWidth: 18
+              Layout.preferredHeight: 18
+              name: Fmt.kindIcon(modelData.type)
+              size: 18
+              color: Theme.fg
+            }
+            Txt {
+              Layout.fillWidth: true
+              Layout.alignment: Qt.AlignVCenter
+              text: modelData.name || "Device"
+              font.pixelSize: 16
+              font.weight: Font.DemiBold
+              elide: Text.ElideRight
+            }
+          }
+          // Type · path · IP · Online/Offline
+          RowLayout {
+            width: parent.width
+            spacing: 0
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              text: root.roleLine(modelData)
+              color: Theme.dim
+              elide: Text.ElideRight
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              visible: card.path !== "" && !!modelData.online
+              text: " · " + card.path
+              color: Theme.dim
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              visible: !!modelData.ip
+              text: " · " + (modelData.ip || "")
+              color: Theme.dim
+              elide: Text.ElideRight
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              text: " · "
+              color: Theme.dim
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              text: modelData.online ? "Online" : "Offline"
+              color: modelData.online ? Theme.ok : Theme.dim
+            }
+            Item { Layout.fillWidth: true }
+          }
+          // Phone / non-peer: battery when available
+          RowLayout {
+            visible: !card.peer && !!modelData.battery && modelData.battery.charge >= 0
+            spacing: 4
+            Icon {
+              Layout.alignment: Qt.AlignVCenter
+              Layout.preferredWidth: 14
+              Layout.preferredHeight: 14
+              name: Fmt.batteryIcon(modelData.battery)
+              size: 14
+              color: modelData.battery && modelData.battery.charge <= 15 && !modelData.battery.charging ? Theme.err : Theme.dim
+            }
+            Txt {
+              Layout.alignment: Qt.AlignVCenter
+              text: Fmt.battery(modelData.battery)
+              color: Theme.dim
+              font.pixelSize: 12
+            }
+          }
+          Column {
+            visible: card.peer
+            spacing: 8
+            // Actionable chips: Clipboard / Home share / Edge.
+            RowLayout {
+              spacing: 18
+              Item {
+                Layout.preferredWidth: clipChip.implicitWidth
+                Layout.preferredHeight: clipChip.implicitHeight
+                Status {
+                  id: clipChip
+                  icon: "clipboard"
+                  label: root.settings.autoClipboard === false ? "Clipboard off" : "Clipboard"
+                  on: root.settings.autoClipboard !== false
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    if (!root.view || !root.view.call) return
+                    var next = root.settings.autoClipboard === false
+                    root.view.call("settings.set", { key: "autoClipboard", value: next })
+                    root.view.toast(next ? "Clipboard on" : "Clipboard off")
+                  }
+                }
+              }
+              Item {
+                Layout.preferredWidth: filesChip.implicitWidth
+                Layout.preferredHeight: filesChip.implicitHeight
+                Status {
+                  id: filesChip
+                  icon: "file"
+                  label: root.settings.shareHome === false ? "Home share off" : "Home share"
+                  on: root.settings.shareHome !== false
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    if (!root.view || !root.view.call) return
+                    var next = root.settings.shareHome === false
+                    root.view.call("settings.set", { key: "shareHome", value: next })
+                    root.view.toast(next ? "Home share on" : "Home share off")
+                  }
+                }
+              }
+              Item {
+                Layout.preferredWidth: edgeChip.implicitWidth
+                Layout.preferredHeight: edgeChip.implicitHeight
+                Status {
+                  id: edgeChip
+                  icon: root.edgeIcon(card.edgeSide)
+                  label: root.edgeLabel(card.edgeSide)
+                  on: card.edgeSide !== ""
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: card.cycleEdge()
+                }
+              }
+            }
+            RowLayout {
+              width: parent.width
+              spacing: 8
+              Txt {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                visible: card.viewing
+                text: {
+                  var pd = root.peerDesktop || ({})
+                  var bits = ["Viewing"]
+                  if (pd.monitor) bits.push(pd.monitor)
+                  if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
+                  if (pd.player) bits.push(pd.player)
+                  return bits.join(" · ")
+                }
+                color: Theme.fg
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+              }
+              Item {
+                Layout.fillWidth: true
+                visible: !card.viewing
+              }
+              OutlineButton {
+                visible: !card.viewing
+                text: "View"
+                icon: "screen-share"
+                active: !!modelData.online
+                onClicked: root.startPeerView(modelData)
+              }
+              OutlineButton {
+                visible: card.viewing
+                text: "Stop"
+                icon: "stop"
+                onClicked: root.stopPeerView()
+              }
+              OutlineButton {
+                text: card.confirmUnpair ? "Confirm unpair" : "Unpair"
+                icon: "unlink"
+                onClicked: {
+                  if (!card.confirmUnpair) {
+                    card.confirmUnpair = true
+                    return
+                  }
+                  card.confirmUnpair = false
+                  root.unpairDevice(modelData)
+                }
+              }
+            }
+          }
+          // Non-peer devices: Unpair only
+          RowLayout {
+            visible: !card.peer
+            width: parent.width
+            spacing: 8
+            Item { Layout.fillWidth: true }
+            OutlineButton {
+              text: card.confirmUnpair ? "Confirm unpair" : "Unpair"
+              icon: "unlink"
+              onClicked: {
+                if (!card.confirmUnpair) {
+                  card.confirmUnpair = true
+                  return
+                }
+                card.confirmUnpair = false
+                root.unpairDevice(modelData)
+              }
             }
           }
         }
-        Txt {
-          width: parent.width
-          text: "Rendezvous host (host:port). Run flux-cli relay serve on a reachable machine for a local test."
-          color: Theme.dim
-          font.pixelSize: 11
-          wrapMode: Text.Wrap
-        }
-        RowLayout {
-          width: parent.width
-          spacing: 8
-          Field {
-            id: relayURLField
-            Layout.fillWidth: true
-            placeholder: "e.g. 100.64.0.1:17777"
-            text: root.settings.relayURL || ""
-            onAccepted: root.saveRelayURL()
-          }
-          OutlineButton {
-            text: "Save"
-            icon: "link"
-            onClicked: root.saveRelayURL()
+
+        MouseArea {
+          anchors.fill: parent
+          z: -1
+          cursorShape: Qt.PointingHandCursor
+          onClicked: {
+            root.view.selectedId = modelData.id
+            root.view.go("overview")
           }
         }
       }
     }
 
-    SectionLabel { text: "PAIR WITH INVITE" }
+    // ── 3. ADD A COMPUTER (pairing) ──
+    SectionLabel { text: "ADD A COMPUTER" }
 
     Card {
       width: parent.width
@@ -380,19 +650,19 @@ Item {
 
         Txt {
           width: parent.width
-          text: "When the other computer does not appear on the network, share a flux1 invite. Same path as flux-cli pair invite and pair join. Prefer LAN or Tailscale; turn on Relay above only for NAT or cross-network with no direct path. The invite is not a secret; you still confirm the 8-character key."
+          text: "Share a flux1 invite when the other desk is not discovered. Prefer LAN or Tailscale; enable Relay below only if there is no direct path. Confirm the matching key on both sides."
           color: Theme.dim
           font.pixelSize: 12
           wrapMode: Text.Wrap
         }
 
         Txt {
-          text: "Share this computer"
+          text: "Share invite"
           font.weight: Font.DemiBold
         }
         Txt {
           width: parent.width
-          text: "Host the other side can reach (Tailscale name or IP). Leave empty when fluxd can pick the only Tailscale address."
+          text: "Host the other side can reach (Tailscale name or IP). Leave empty to auto-pick when possible."
           color: Theme.dim
           font.pixelSize: 11
           wrapMode: Text.Wrap
@@ -408,7 +678,7 @@ Item {
           }
           AccentButton {
             text: root.inviting ? "…" : "Create invite"
-            icon: "link"
+            icon: "key"
             active: !root.inviting
             onClicked: root.generateInvite()
           }
@@ -474,12 +744,12 @@ Item {
         }
 
         Txt {
-          text: "Join another computer"
+          text: "Join with invite"
           font.weight: Font.DemiBold
         }
         Txt {
           width: parent.width
-          text: "Paste a flux1:… invite from the other desk, then Join. Flux dials that host and asks to pair."
+          text: "Paste a flux1 invite from the other desk, then Join."
           color: Theme.dim
           font.pixelSize: 11
           wrapMode: Text.Wrap
@@ -511,190 +781,72 @@ Item {
       }
     }
 
-    SectionLabel { text: "DEVICES" }
+    // ── 4. RELAY · OPTIONAL (collapsed when off) ──
+    SectionLabel { text: "RELAY · OPTIONAL" }
 
-    Txt {
-      visible: root.paired.length === 0
+    Card {
       width: parent.width
-      wrapMode: Text.Wrap
-      text: "No paired devices. Pair a phone on the LAN, or pair another computer with an invite above."
-      color: Theme.dim
-    }
+      implicitHeight: relayCol.implicitHeight + 36
+      Column {
+        id: relayCol
+        x: 18
+        y: 18
+        width: parent.width - 36
+        spacing: 10
 
-    Repeater {
-      model: root.ordered
-      delegate: Card {
-        id: card
-        required property var modelData
-        readonly property bool peer: modelData.role === "peer"
-        readonly property bool viewing: root.viewingPeer(modelData)
-        readonly property string edgeLabel: {
-          var side = String(root.settings.edgeSide || "")
-          var who = String(root.settings.edgeDevice || "").toLowerCase()
-          var name = String(modelData.name || "").toLowerCase()
-          var id = String(modelData.id || "")
-          if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return "No edges"
-          return side.charAt(0).toUpperCase() + side.slice(1) + " edge"
-        }
-        function cycleEdge() {
-          var order = ["", "left", "right", "top", "bottom"]
-          var cur = ""
-          var who = String(root.settings.edgeDevice || "").toLowerCase()
-          var name = String(modelData.name || "").toLowerCase()
-          var id = String(modelData.id || "")
-          if (root.settings.edgeSide && who && (id === root.settings.edgeDevice || name === who))
-            cur = String(root.settings.edgeSide || "").toLowerCase()
-          var i = order.indexOf(cur)
-          var next = order[(i + 1) % order.length]
-          var device = modelData.name || modelData.id
-          if (!root.view || !root.view.call) return
-          if (!next) {
-            root.view.call("settings.set", { key: "edgeSide", value: "" })
-            root.view.call("settings.set", { key: "edgeDevice", value: "" })
-            root.view.toast("Screen edge off")
-            return
+        // Collapsed summary: toggle + expand affordance
+        RowLayout {
+          width: parent.width
+          spacing: 12
+          Toggle {
+            id: relayToggle
+            text: "Use relay host"
+            checked: !!root.settings.relay
+            onToggled: function (checked) {
+              if (root.view) root.view.call("settings.set", { key: "relay", value: checked })
+              if (checked) root.relayUserExpanded = true
+            }
           }
-          root.view.call("settings.set", { key: "edgeSide", value: next })
-          root.view.call("settings.set", { key: "edgeDevice", value: device })
-          root.view.toast(next.charAt(0).toUpperCase() + next.slice(1) + " edge → " + device)
+          Item { Layout.fillWidth: true }
+          OutlineButton {
+            visible: !root.relayExpanded
+            text: "Configure"
+            icon: "chevron"
+            onClicked: root.relayUserExpanded = true
+          }
+          OutlineButton {
+            visible: root.relayExpanded && !root.settings.relay
+            text: "Hide"
+            onClicked: root.relayUserExpanded = false
+          }
         }
-        width: col.width
-        implicitHeight: devCol.implicitHeight + 36
 
         Column {
-          id: devCol
-          x: 18
-          y: 18
-          width: parent.width - 36
-          spacing: 6
+          visible: root.relayExpanded
+          width: parent.width
+          spacing: 10
+          Txt {
+            width: parent.width
+            text: "Both sides need the same host:port. Leave off when peers can reach each other."
+            color: Theme.dim
+            font.pixelSize: 12
+            wrapMode: Text.Wrap
+          }
           RowLayout {
             width: parent.width
-            spacing: 10
-            Icon {
-              Layout.alignment: Qt.AlignVCenter
-              Layout.preferredWidth: 18
-              Layout.preferredHeight: 18
-                name: Fmt.kindIcon(modelData.type)
-              size: 18
-              color: Theme.fg
-            }
-            Txt {
-              Layout.fillWidth: true
-              Layout.alignment: Qt.AlignVCenter
-              text: modelData.name || "Device"
-              font.pixelSize: 16
-              font.weight: Font.DemiBold
-              elide: Text.ElideRight
-            }
-          }
-          // Role and IP stay muted; only the live link word uses Theme.ok.
-          RowLayout {
-            width: parent.width
-            spacing: 0
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              text: root.roleLine(modelData) + " · "
-              color: Theme.dim
-              elide: Text.ElideRight
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              text: modelData.online ? "connected" : "offline"
-              color: modelData.online ? Theme.ok : Theme.dim
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              Layout.fillWidth: true
-              visible: !!modelData.ip
-              text: " · " + (modelData.ip || "")
-              color: Theme.dim
-              elide: Text.ElideRight
-            }
-          }
-          Column {
-            visible: card.peer
             spacing: 8
-            RowLayout {
-              spacing: 18
-              Status {
-                icon: "clipboard"
-                label: root.settings.autoClipboard === false ? "Clipboard off" : "Clipboard"
-                on: root.settings.autoClipboard !== false
-              }
-              Status { icon: "file"; label: "Files"; on: true }
+            Field {
+              id: relayURLField
+              Layout.fillWidth: true
+              placeholder: "e.g. 100.64.0.1:17777"
+              text: root.settings.relayURL || ""
+              onAccepted: root.saveRelayURL()
             }
-            RowLayout {
-              spacing: 18
-              Status { icon: "bell-off"; label: "DND off"; on: false }
-              Item {
-                Layout.preferredWidth: edgeChip.implicitWidth
-                Layout.preferredHeight: edgeChip.implicitHeight
-                Status {
-                  id: edgeChip
-                  icon: "monitor"
-                  label: card.edgeLabel
-                  on: card.edgeLabel !== "No edges"
-                }
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: card.cycleEdge()
-                }
-              }
+            OutlineButton {
+              text: "Save"
+              icon: "check"
+              onClicked: root.saveRelayURL()
             }
-            RowLayout {
-              width: parent.width
-              spacing: 8
-              Txt {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                text: {
-                  if (card.viewing) {
-                    var pd = root.peerDesktop || ({})
-                    var bits = ["Viewing"]
-                    if (pd.monitor) bits.push(pd.monitor)
-                    if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
-                    if (pd.player) bits.push(pd.player)
-                    return bits.join(" · ")
-                  }
-                  return modelData.online
-                    ? "Remote desktop (same as flux-cli desktop view)"
-                    : "Remote desktop when online"
-                }
-                color: card.viewing ? Theme.fg : Theme.dim
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
-              }
-              AccentButton {
-                visible: !card.viewing
-                text: "View"
-                icon: "monitor"
-                active: !!modelData.online
-                onClicked: root.startPeerView(modelData)
-              }
-              OutlineButton {
-                visible: card.viewing
-                text: "Stop"
-                icon: "stop"
-                onClicked: root.stopPeerView()
-              }
-            }
-          }
-          Status {
-            visible: !card.peer
-            icon: "dashboard"
-            label: "Overview"
-            on: true
-          }
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          z: -1
-          cursorShape: Qt.PointingHandCursor
-          onClicked: {
-            root.view.selectedId = modelData.id
-            root.view.go("overview")
           }
         }
       }

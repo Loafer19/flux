@@ -37,6 +37,9 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 		held     *lan.Link
 		sideHeld string
 		logged   string
+		// needRecover is set after any Begin so a later edge-off path still
+		// runs End even if the Go lease bit was already cleared by a race.
+		needRecover bool
 	)
 	var grab *desktop.EdgeGrab
 	stopGrab := func() {
@@ -70,6 +73,7 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 		_ = desktop.HyprEndPointerLease()
 		warpBack(screens, at)
 		lease = false
+		needRecover = false
 		depth = 0
 		wasHit = true // stay armed until the cursor leaves the margin
 		held = nil
@@ -82,11 +86,19 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 			return
 		}
 		// No active lease, but a prior crash or race may still have left
-		// the cursor hidden / follow-mouse off, or an overlay mapped.
+		// the cursor hidden / follow-mouse off, an input-capture held, or
+		// an overlay mapped. Idempotent recover restores visibility.
 		stopGrab()
 		_ = desktop.HyprEndPointerLease()
 		d.setEdgeActive(false)
-		warpBack(screens, along)
+		needRecover = false
+		if x, y, ok := desktop.EdgeInside(sideHeld, along, screens, edgeReturn); ok {
+			_ = desktop.HyprMoveCursor(x, y)
+		} else if x, y, ok := desktop.ScreenCenter(screens); ok {
+			_ = desktop.HyprMoveCursor(x, y)
+		} else {
+			_ = desktop.HyprRecoverPointer()
+		}
 	}
 	// A previous run may have left the cursor hidden / follow-mouse off.
 	_ = desktop.HyprEndPointerLease()
@@ -126,6 +138,20 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 			if lease {
 				_, screens, _ := desktop.HyprLayout()
 				release(held, screens, along)
+			} else if needRecover {
+				// Edge off / peer gone after a lease: drop overlay and
+				// restore visibility even when the Go lease bit is false.
+				stopGrab()
+				_ = desktop.HyprEndPointerLease()
+				d.setEdgeActive(false)
+				needRecover = false
+				if side == "" {
+					if _, screens, err := desktop.HyprLayout(); err == nil {
+						if x, y, ok := desktop.ScreenCenter(screens); ok {
+							_ = desktop.HyprMoveCursor(x, y)
+						}
+					}
+				}
 			}
 			continue
 		}
@@ -165,13 +191,26 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 				along = cur
 				anchor = desktop.HyprCursor{X: cx, Y: cy}
 				_ = desktop.HyprMoveCursor(cx, cy)
-				_ = desktop.HyprBeginPointerLease()
-				if g, err := desktop.StartEdgeGrab(); err == nil {
-					grab = g
-				} else {
-					d.logf("screen edge grab: %v", err)
+				if err := desktop.HyprBeginPointerLease(); err != nil {
+					d.logf("screen edge lease: %v", err)
+					_ = desktop.HyprEndPointerLease()
+					_ = desktop.HyprMoveCursor(cur.X, cur.Y)
+					wasHit = hit
+					continue
 				}
+				g, err := desktop.StartEdgeGrab()
+				if err != nil {
+					// Without the overlay, tiled windows under the park
+					// point catch ghost hover. Roll the lease back.
+					d.logf("screen edge grab: %v", err)
+					_ = desktop.HyprEndPointerLease()
+					_ = desktop.HyprMoveCursor(cur.X, cur.Y)
+					wasHit = hit
+					continue
+				}
+				grab = g
 				lease = true
+				needRecover = true
 				skip = true
 				depth = edgeReturn
 				sideHeld = side
@@ -216,13 +255,17 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 }
 
 // resetEdgePointer ends any pointer lease right away: show the cursor,
-// restore follow_mouse, clear receiving state, and kick edgeLoop so it
-// destroys the overlay, sends leave, and warps on-screen. Call this when
-// the edge config is cleared or changed ("edge off" / no edges).
+// restore follow_mouse, release input capture, clear receiving state, and
+// kick edgeLoop so it destroys the overlay, sends leave, and warps
+// on-screen. Call this when the edge config is cleared or changed
+// ("edge off" / no edges). Idempotent if the lease is already gone.
 func (d *Daemon) resetEdgePointer() {
 	d.setEdgeActive(false)
 	_ = desktop.HyprEndPointerLease()
 	if d.edgeKick == nil {
+		// No loop yet (tests): still center the pointer so edge off never
+		// leaves it parked invisible at the status-bar corner.
+		_ = desktop.HyprRecoverPointer()
 		return
 	}
 	select {
@@ -340,7 +383,20 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 				x = body.DX
 			}
 		}
-		_ = d.input.MoveTo("", x, y)
+		// Keep the enter point slightly inside the screen. Placing exactly on
+		// x=0/y=0 (or 1) lets the compositor clamp the first relative moves
+		// through that edge, so left/up feel dead right after a seam cross.
+		const enterPad = 0.02
+		pad := func(v float64) float64 {
+			if v < enterPad {
+				return enterPad
+			}
+			if v > 1-enterPad {
+				return 1 - enterPad
+			}
+			return v
+		}
+		_ = d.input.MoveTo("", pad(x), pad(y))
 	case "move":
 		if !d.edgeReceiving() {
 			return

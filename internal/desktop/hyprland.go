@@ -70,14 +70,39 @@ func HyprBeginPointerLease() error {
 }
 
 // HyprEndPointerLease restores the usual pointer image and focus-follows-mouse.
+// It is idempotent: safe when no lease is held. It also releases any Hyprland
+// input-capture session left behind by a crashed overlay or an incomplete
+// prior restore (Hyprland 0.56+), which otherwise leaves a stuck or invisible
+// pointer after edge handoff.
 func HyprEndPointerLease() error {
 	var err error
-	if e := HyprSetCursorInvisible(false); e != nil {
+	// Best-effort: no active capture still returns ok from Hyprland.
+	if _, e := hyprCommand(`dispatch hl.dsp.release_input_capture()`); e != nil && err == nil {
+		err = e
+	}
+	if e := HyprSetCursorInvisible(false); e != nil && err == nil {
 		err = e
 	}
 	// Omarchy default is follow_mouse = 1 and mouse_refocus = true.
 	if e := hyprEval(`hl.config{ input = { follow_mouse = 1, mouse_refocus = true } }`); e != nil && err == nil {
 		err = e
+	}
+	return err
+}
+
+// HyprRecoverPointer is the stuck-lease recover path: release capture, show
+// the cursor, restore follow_mouse, and warp to the screen center so the
+// pointer is never left parked at the status-bar corner.
+func HyprRecoverPointer() error {
+	err := HyprEndPointerLease()
+	if _, screens, layoutErr := HyprLayout(); layoutErr == nil {
+		if x, y, ok := ScreenCenter(screens); ok {
+			if e := HyprMoveCursor(x, y); e != nil && err == nil {
+				err = e
+			}
+		}
+	} else if err == nil {
+		err = layoutErr
 	}
 	return err
 }

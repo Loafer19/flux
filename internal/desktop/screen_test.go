@@ -47,7 +47,7 @@ func TestEdgeGeometry(t *testing.T) {
 func TestScreenPark(t *testing.T) {
 	screens := []Monitor{{X: 0, Y: 0, W: 100, H: 50}}
 	x, y, ok := ScreenPark(screens)
-	if !ok || x != 2 || y != 2 {
+	if !ok || x != 50 || y != 25 {
 		t.Fatalf("park %v %v %v", x, y, ok)
 	}
 }

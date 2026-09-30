@@ -11,6 +11,7 @@ Item {
   property bool fillHeight: false
   readonly property var dev: view ? view.dev : null
   readonly property bool online: !!dev && !!dev.online
+  readonly property bool peer: !!dev && dev.role === "peer"
   readonly property var notifs: dev && dev.notifications ? dev.notifications.slice(0, 3) : []
   // The phone camera as a webcam on this computer. Null when it is not used.
   readonly property var webcam: view && view.backend && view.backend.state ? (view.backend.state.webcam || null) : null
@@ -19,6 +20,40 @@ Item {
   readonly property var screen: view && view.backend && view.backend.state ? (view.backend.state.screen || null) : null
   // The remote desktop of this computer on a device. Null when not used.
   readonly property var desktop: view && view.backend && view.backend.state ? (view.backend.state.desktop || null) : null
+  // Desk↔desk view of the selected peer (desktop.view). Null when idle.
+  readonly property var peerDesktop: view && view.backend && view.backend.state ? (view.backend.state.peerDesktop || null) : null
+  readonly property bool viewingPeer: {
+    var pd = root.peerDesktop
+    if (!pd || !root.dev) return false
+    var from = String(pd.from || "")
+    var name = String(pd.fromName || "").toLowerCase()
+    return from === String(root.dev.id || "") || name === String(root.dev.name || "").toLowerCase()
+  }
+  // Hide battery for desktops and when there is no real charge (no "?" / "—").
+  readonly property bool showBattery: {
+    if (!root.dev || root.dev.type === "desktop") return false
+    var b = root.dev.battery
+    return !!b && b.charge !== undefined && b.charge !== null && b.charge >= 0
+  }
+
+  function startPeerView() {
+    if (!root.view || !root.view.call || !root.dev) return
+    if (!root.online) {
+      root.view.toast((root.dev.name || "Peer") + " is offline")
+      return
+    }
+    var key = root.dev.name || root.dev.id
+    root.view.call("desktop.view", { device: key }, function () {
+      if (root.view) root.view.toast("Showing " + (root.dev.name || "peer") + " desktop")
+    })
+  }
+
+  function stopPeerView() {
+    if (!root.view || !root.view.call) return
+    root.view.call("desktop.viewStop", {}, function () {
+      if (root.view) root.view.toast("Stopped peer desktop")
+    })
+  }
 
   implicitHeight: grid.implicitHeight
 
@@ -30,15 +65,16 @@ Item {
     rowSpacing: 18
     uniformCellWidths: true
 
-    // Battery and device facts
+    // Device facts (and battery when the device reports a real charge)
     Card {
       Layout.fillWidth: true
       Layout.fillHeight: true
       Layout.preferredWidth: 320
-      implicitHeight: Math.max(batteryCol.implicitHeight, facts.implicitHeight) + 46
+      implicitHeight: Math.max(root.showBattery ? batteryCol.implicitHeight : 0, facts.implicitHeight) + 46
 
       Column {
         id: batteryCol
+        visible: root.showBattery
         x: 23
         anchors.verticalCenter: parent.verticalCenter
         width: 110
@@ -70,10 +106,10 @@ Item {
 
       Column {
         id: facts
-        anchors.left: batteryCol.right
-        anchors.leftMargin: 22
-        anchors.right: parent.right
-        anchors.rightMargin: 23
+        // When battery is hidden, start at the left padding (invisible
+        // batteryCol still has geometry, so do not anchor to it).
+        x: root.showBattery ? batteryCol.x + batteryCol.width + 22 : 23
+        width: parent.width - x - 23
         anchors.verticalCenter: parent.verticalCenter
         spacing: 4
         Txt {
@@ -101,14 +137,14 @@ Item {
         Txt {
           width: parent.width
           readonly property var b: root.dev ? root.dev.battery : null
-          text: "● " + (root.online ? "connected" : "offline") + (root.online && b ? " · " + (b.charging ? "charging" : "discharging") : "")
+          text: "● " + (root.online ? "connected" : "offline") + (root.online && root.showBattery && b ? " · " + (b.charging ? "charging" : "discharging") : "")
           color: root.online ? Theme.ok : Theme.dim
           elide: Text.ElideRight
         }
       }
     }
 
-    // Quick actions
+    // Quick actions — phone: Ring + Send file; desk peer: Send file then View desktop
     GridLayout {
       Layout.fillWidth: true
       Layout.fillHeight: true
@@ -138,6 +174,96 @@ Item {
         icon: "upload"
         label: "Send file"
         onClicked: root.view.go("files")
+      }
+    }
+
+    // Desk peer: open the peer screen (same desktop.view as Network).
+    Card {
+      visible: root.peer
+      Layout.fillWidth: true
+      Layout.fillHeight: true
+      Layout.preferredWidth: 320
+      implicitHeight: viewDeskCol.implicitHeight + 38
+
+      Column {
+        id: viewDeskCol
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 19
+        spacing: 12
+
+        Row {
+          spacing: 8
+          Icon {
+            anchors.verticalCenter: parent.verticalCenter
+            name: "screen-share"
+            size: 14
+            color: root.viewingPeer ? Theme.err : Theme.dim
+          }
+          SectionLabel {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.viewingPeer ? "VIEW DESKTOP · LIVE" : "VIEW DESKTOP"
+          }
+        }
+
+        Item {
+          width: parent.width
+          height: Math.max(viewDeskText.implicitHeight, viewDeskButtons.implicitHeight)
+
+          Column {
+            id: viewDeskText
+            anchors.left: parent.left
+            anchors.right: viewDeskButtons.left
+            anchors.rightMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
+            Txt {
+              width: parent.width
+              text: {
+                if (root.viewingPeer) {
+                  var pd = root.peerDesktop || ({})
+                  var bits = [(root.dev && root.dev.name) ? root.dev.name : "Peer"]
+                  if (pd.monitor) bits.push(pd.monitor)
+                  if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
+                  return bits.join(" · ") + " is on this screen"
+                }
+                return root.online
+                  ? "Show " + ((root.dev && root.dev.name) ? root.dev.name : "peer") + " on this screen"
+                  : ((root.dev && root.dev.name) ? root.dev.name : "Peer") + " is offline"
+              }
+              font.weight: root.viewingPeer ? Font.Bold : Font.Normal
+              color: root.viewingPeer ? Theme.fg : Theme.dim
+              wrapMode: Text.Wrap
+            }
+            Txt {
+              width: parent.width
+              visible: root.viewingPeer && root.peerDesktop && root.peerDesktop.player
+              text: root.peerDesktop ? (root.peerDesktop.player || "") : ""
+              color: Theme.dim
+              elide: Text.ElideRight
+            }
+          }
+
+          Row {
+            id: viewDeskButtons
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            OutlineButton {
+              visible: !root.viewingPeer
+              icon: "screen-share"
+              text: "View"
+              active: root.online
+              onClicked: root.startPeerView()
+            }
+            OutlineButton {
+              visible: root.viewingPeer
+              icon: "stop"
+              text: "Stop"
+              onClicked: root.stopPeerView()
+            }
+          }
+        }
       }
     }
 

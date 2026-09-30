@@ -100,6 +100,8 @@ func (d *Daemon) MakeInvite(host string) (Invite, error) {
 	d.mu.Unlock()
 	// Prefer the rendezvous host when relay is on and the user did not pass
 	// an explicit --host. Direct LAN/Tailscale invites still work with --host.
+	// Do not wakeRelay here: a waiting REGISTER must stay up for the joiner.
+	// settings.set / Reload already restart the loop when the URL changes.
 	if relayOn && host == "" {
 		if relayURL == "" {
 			return Invite{}, apiErr("need_relay", "Relay is on but relay_url is empty. Run: flux-cli relay url HOST:PORT")
@@ -109,15 +111,12 @@ func (d *Daemon) MakeInvite(host string) (Invite, error) {
 			return Invite{}, apiErr("bad_relay", "%v", err)
 		}
 		host, port = rHost, rPort
-		d.wakeRelay()
 	} else if host == "" {
 		picked, err := pickInviteHost(d.inviteHostCandidates())
 		if err != nil {
 			return Invite{}, err
 		}
 		host = picked
-	} else if relayOn && relayURL != "" {
-		d.wakeRelay()
 	}
 	normalized, err := normalizeAddress(host)
 	if err != nil {
@@ -190,6 +189,9 @@ func (d *Daemon) connectEndpoint(id, name, host string, port int) error {
 	if online {
 		return nil
 	}
+	// Relay invite (host:port is the rendezvous): JOIN only. Otherwise dial
+	// the invite host directly, and when relay is on also JOIN by device ID
+	// so a UI toggle + URL still rendezvous if the direct path is dead.
 	if d.connectShouldRelay(host, port) {
 		go d.dialViaRelay(id, name)
 		return nil
@@ -197,6 +199,9 @@ func (d *Daemon) connectEndpoint(id, name, host string, port int) error {
 	d.lan.DialAny(d.ctx, []string{host}, port, proto.Identity{
 		DeviceID: id, DeviceName: name, ProtocolVersion: proto.ProtocolVersion,
 	})
+	if d.useRelay() {
+		go d.dialViaRelay(id, name)
+	}
 	return nil
 }
 

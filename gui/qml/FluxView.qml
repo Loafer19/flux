@@ -332,10 +332,10 @@ Item {
             width: 32
             height: 1
             color: Theme.bg3
-            visible: !!root.dev
+            visible: !!root.dev && !root.networkTab
           }
           Repeater {
-            model: root.dev ? root.visibleTabs : []
+            model: (root.dev && !root.networkTab) ? root.visibleTabs : []
             delegate: RailButton {
               required property var modelData
               icon: modelData.icon
@@ -554,11 +554,11 @@ Item {
           }
         }
 
-        // Tabs
+        // Tabs (device-scoped; hidden on Network — those pages need a selected device)
         Column {
           width: parent.width
           spacing: 2
-          visible: !!root.dev
+          visible: !!root.dev && !root.networkTab
           Repeater {
             model: root.visibleTabs
             delegate: Rectangle {
@@ -706,10 +706,9 @@ Item {
         anchors.right: actions.left
         anchors.rightMargin: 14
         anchors.verticalCenter: title.verticalCenter
-        visible: !root.compactHeader && (root.networkTab || !!root.dev)
-        text: root.networkTab
-              ? ((root.selfDevice.name || "This computer") + " · " + Fmt.typeName(root.selfDevice.type || "desktop"))
-              : (root.dev ? root.devName + " · " + (root.dev.ip || "—") : "")
+        // Network keeps device context on the This computer card, not in the header.
+        visible: !root.compactHeader && !root.networkTab && !!root.dev
+        text: root.dev ? root.devName + " · " + (root.dev.ip || "—") : ""
         color: Theme.dim
         font.pixelSize: 12
         elide: Text.ElideRight

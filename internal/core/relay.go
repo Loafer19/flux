@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"net"
 	"strings"
 	"time"
 
@@ -102,7 +103,8 @@ func (d *Daemon) registerOnce(ctx context.Context) {
 }
 
 // dialViaRelay JOINs the peer device ID on the rendezvous host, then runs
-// the outgoing Flux handshake on the spliced connection.
+// the outgoing Flux handshake on the spliced connection. Retries briefly
+// so a peer that just woke its REGISTER can finish dialing first.
 func (d *Daemon) dialViaRelay(id, name string) {
 	if d.lan == nil || !proto.ValidDeviceID(id) || id == d.selfID {
 		return
@@ -111,9 +113,28 @@ func (d *Daemon) dialViaRelay(id, name string) {
 	if addr == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(d.ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(d.ctx, 25*time.Second)
 	defer cancel()
-	conn, err := relay.DialJoin(ctx, addr, id)
+	var (
+		conn net.Conn
+		err  error
+	)
+	for attempt := 0; attempt < 8; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+		conn, err = relay.DialJoin(ctx, addr, id)
+		if err == nil {
+			break
+		}
+		// "no register for that device" is the usual race after invite.
+		select {
+		case <-ctx.Done():
+			d.logf("relay join %s: %v", nameOrID(name, id), err)
+			return
+		case <-time.After(time.Duration(attempt+1) * 250 * time.Millisecond):
+		}
+	}
 	if err != nil {
 		d.logf("relay join %s: %v", nameOrID(name, id), err)
 		return
@@ -147,16 +168,15 @@ func nameOrID(name, id string) string {
 	return id
 }
 
-// dialTargets sends either a relay JOIN or a normal DialAny for each offline
-// target. Desk peers use the relay when it is on; phones and others stay on
-// the direct path so a LAN phone still works while relay is enabled.
+// dialTarget dials one offline target. LAN/Tailscale hosts stay preferred
+// when known. Desk peers also JOIN the rendezvous host when relay is on so
+// invite/reconnect still works with no direct path. Phones stay direct-only.
 func (d *Daemon) dialTarget(hosts []string, port int, id proto.Identity, deskPeer bool) {
-	if d.useRelay() && deskPeer {
-		go d.dialViaRelay(id.DeviceID, id.DeviceName)
-		return
-	}
 	if port > 0 && len(hosts) > 0 {
 		d.lan.DialAny(d.ctx, hosts, port, id)
+	}
+	if d.useRelay() && deskPeer {
+		go d.dialViaRelay(id.DeviceID, id.DeviceName)
 	}
 }
 

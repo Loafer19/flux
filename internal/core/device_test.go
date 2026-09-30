@@ -17,24 +17,27 @@ func fluxIdentity() (in, out []string) {
 func TestLookupAmbiguousName(t *testing.T) {
 	a := newDevice("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	a.Name = "omarchy"
+	a.Paired = true
 	b := newDevice("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	b.Name = "Omarchy"
+	b.Paired = true
 	one := newDevice("cccccccccccccccccccccccccccccccc")
 	one.Name = "Pixel 8"
+	one.Paired = true
 	d := &Daemon{devices: map[string]*Device{a.ID: a, b.ID: b, one.ID: one}}
-	if _, err := d.lookup("omarchy"); err == nil {
+	if _, err := d.find("omarchy", nil); err == nil {
 		t.Fatal("two devices with one name were accepted")
 	}
-	dev, err := d.lookup(a.ID)
+	dev, err := d.find(a.ID, nil)
 	if err != nil || dev != a {
 		t.Fatalf("id lookup %v %v", dev, err)
 	}
-	dev, err = d.lookup("pixel 8")
+	dev, err = d.find("pixel 8", nil)
 	if err != nil || dev != one {
 		t.Fatalf("name lookup %v %v", dev, err)
 	}
-	dev, err = d.lookup("missing")
-	if err != nil || dev != nil {
+	dev, err = d.find("missing", nil)
+	if err == nil || dev != nil {
 		t.Fatalf("missing lookup %v %v", dev, err)
 	}
 }
@@ -105,8 +108,9 @@ func TestMDNSReportsStayOneDevice(t *testing.T) {
 	if len(d.devices) != 1 {
 		t.Fatalf("%d devices, want 1", len(d.devices))
 	}
-	if dev.Name != "other-desk" || dev.IP != "192.0.2.11" {
-		t.Fatalf("device name %q ip %s", dev.Name, dev.IP)
+	// A paired device keeps its address. mDNS only records a dial candidate.
+	if dev.Name != "other-desk" || dev.IP != "192.0.2.10" || dev.seenIP != "192.0.2.11" {
+		t.Fatalf("device name %q ip %s seen %s", dev.Name, dev.IP, dev.seenIP)
 	}
 	shown := 0
 	for _, item := range d.devices {
@@ -127,10 +131,11 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 		Paired: true, Incoming: in, Outgoing: out,
 	}
 	d.devices[dev.ID] = dev
+	dev.link = &lan.Link{}
 	d.cfg.RemoteInput = true
 	d.cfg.SyncDnd = true
 	d.input = &countingInput{}
-	d.inputQ = make(chan inputAction, 4)
+	d.inputQ = make(chan inputAction, 8)
 	d.dnd = &fakeDND{}
 
 	if err := d.approvals.add(&approval{
@@ -147,11 +152,11 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 		proto.New(proto.TypeRunCommandRequest, map[string]any{"key": "lock"}),
 	}
 	for _, p := range packets {
-		d.handlePacket(dev, nil, p)
+		d.handlePacket(dev, dev.link, p)
 	}
 
 	// Mousepad from a peer is allowed when remote_input is on (desk↔desk RD control).
-	d.handlePacket(dev, nil, proto.New(proto.TypeMousepadRequest, map[string]any{"dx": 10, "dy": 4}))
+	d.handlePacket(dev, dev.link, proto.New(proto.TypeMousepadRequest, map[string]any{"dx": 10, "dy": 4}))
 	if n := len(d.inputQ); n != 1 {
 		t.Fatalf("peer mousepad queued %d input actions, want 1", n)
 	}
@@ -165,7 +170,7 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 		t.Fatal("peer changed Do Not Disturb")
 	}
 
-	d.handlePacket(dev, nil, proto.New(proto.TypeClipboard, map[string]any{"content": "from the other desk"}))
+	d.handlePacket(dev, dev.link, proto.New(proto.TypeClipboard, map[string]any{"content": "from the other desk"}))
 	if len(d.clipboard) != 1 || d.clipboard[0].Text != "from the other desk" || d.clipboard[0].Dir != "in" {
 		t.Fatalf("clipboard %+v", d.clipboard)
 	}
@@ -173,12 +178,12 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 
 type countingInput struct{ n int }
 
-func (c *countingInput) Move(float64, float64) error           { c.n++; return nil }
-func (c *countingInput) Button(uint32, bool) error             { c.n++; return nil }
-func (c *countingInput) Scroll(float64, float64) error         { c.n++; return nil }
-func (c *countingInput) Type(string, []string) error           { c.n++; return nil }
-func (c *countingInput) Key(string, []string) error            { c.n++; return nil }
-func (c *countingInput) MoveTo(string, float64, float64) error { c.n++; return nil }
+func (c *countingInput) Move(float64, float64) error                  { c.n++; return nil }
+func (c *countingInput) Button(uint32, bool) error                    { c.n++; return nil }
+func (c *countingInput) Scroll(float64, float64) error                { c.n++; return nil }
+func (c *countingInput) Type(context.Context, string, []string) error { c.n++; return nil }
+func (c *countingInput) Key(context.Context, string, []string) error  { c.n++; return nil }
+func (c *countingInput) MoveTo(string, float64, float64) error        { c.n++; return nil }
 
 type fakeDND struct{ sets int }
 

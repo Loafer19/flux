@@ -20,7 +20,11 @@ type PeerListener struct {
 
 // ListenPeer opens a free payload port for a peer to dial.
 func (l *Link) ListenPeer(ctx context.Context) (*PeerListener, error) {
-	ln, port, err := listenPayload(ctx)
+	host := ""
+	if a, ok := l.LocalAddr().(*net.TCPAddr); ok {
+		host = (&net.IPAddr{IP: a.IP, Zone: a.Zone}).String()
+	}
+	ln, port, err := listenPayload(ctx, host)
 	if err != nil {
 		return nil, err
 	}

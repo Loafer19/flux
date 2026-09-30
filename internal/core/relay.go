@@ -171,9 +171,9 @@ func nameOrID(name, id string) string {
 // dialTarget dials one offline target. LAN/Tailscale hosts stay preferred
 // when known. Desk peers also JOIN the rendezvous host when relay is on so
 // invite/reconnect still works with no direct path. Phones stay direct-only.
-func (d *Daemon) dialTarget(hosts []string, port int, id proto.Identity, deskPeer bool) {
-	if port > 0 && len(hosts) > 0 {
-		d.lan.DialAny(d.ctx, hosts, port, id)
+func (d *Daemon) dialTarget(addrs []string, id proto.Identity, deskPeer bool) {
+	if d.lan != nil && len(addrs) > 0 {
+		d.lan.DialAddrs(d.ctx, addrs, id)
 	}
 	if d.useRelay() && deskPeer {
 		go d.dialViaRelay(id.DeviceID, id.DeviceName)

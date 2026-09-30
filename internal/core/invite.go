@@ -91,15 +91,11 @@ func (d *Daemon) MakeInvite(host string) (Invite, error) {
 	}
 	host = strings.TrimSpace(host)
 	if host == "" {
-		cands := d.inviteHostCandidates()
-		switch len(cands) {
-		case 0:
-			return Invite{}, apiErr("need_host", "Give --host with a reachable address, for example a Tailscale name. Run: flux-cli pair invite --host HOST")
-		case 1:
-			host = cands[0]
-		default:
-			return Invite{}, apiErr("need_host", "Give --host with one of: %s", strings.Join(cands, ", "))
+		picked, err := pickInviteHost(d.inviteHostCandidates())
+		if err != nil {
+			return Invite{}, err
 		}
+		host = picked
 	}
 	normalized, err := normalizeAddress(host)
 	if err != nil {
@@ -176,6 +172,35 @@ func (d *Daemon) connectEndpoint(id, name, host string, port int) error {
 		DeviceID: id, DeviceName: name, ProtocolVersion: proto.ProtocolVersion,
 	})
 	return nil
+}
+
+
+// pickInviteHost chooses a host when the user left it empty. Prefer the only
+// Tailscale IPv4 address even when LAN or docker addresses are also up, matching
+// the Network page copy and desktop-peer docs. Fall back to a single non-Tailscale
+// candidate. Several candidates require an explicit --host.
+func pickInviteHost(cands []string) (string, error) {
+	var tailscale []string
+	for _, c := range cands {
+		ip := net.ParseIP(c)
+		if ip == nil {
+			continue
+		}
+		ip4 := ip.To4()
+		if ip4 != nil && isTailscaleIP(ip4) {
+			tailscale = append(tailscale, c)
+		}
+	}
+	switch {
+	case len(tailscale) == 1:
+		return tailscale[0], nil
+	case len(cands) == 1:
+		return cands[0], nil
+	case len(cands) == 0:
+		return "", apiErr("need_host", "Give --host with a reachable address, for example a Tailscale name. Run: flux-cli pair invite --host HOST")
+	default:
+		return "", apiErr("need_host", "Give --host with one of: %s", strings.Join(cands, ", "))
+	}
 }
 
 // inviteHostCandidates lists addresses that another computer might reach:

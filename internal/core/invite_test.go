@@ -62,3 +62,24 @@ func TestFormatInviteStable(t *testing.T) {
 		t.Fatalf("%v %q", err, b.Code)
 	}
 }
+
+func TestPickInviteHost(t *testing.T) {
+	// Sole Tailscale wins even when LAN/docker addresses are listed too.
+	got, err := pickInviteHost([]string{"100.75.127.31", "192.168.1.8", "172.18.0.1", "172.17.0.1"})
+	if err != nil || got != "100.75.127.31" {
+		t.Fatalf("sole Tailscale: got %q err %v", got, err)
+	}
+	got, err = pickInviteHost([]string{"192.168.1.8"})
+	if err != nil || got != "192.168.1.8" {
+		t.Fatalf("sole other: got %q err %v", got, err)
+	}
+	if _, err := pickInviteHost(nil); err == nil {
+		t.Fatal("empty candidates should fail")
+	}
+	if _, err := pickInviteHost([]string{"192.168.1.8", "10.0.0.2"}); err == nil {
+		t.Fatal("ambiguous non-Tailscale should fail")
+	}
+	if _, err := pickInviteHost([]string{"100.64.0.1", "100.64.0.2"}); err == nil {
+		t.Fatal("ambiguous Tailscale should fail")
+	}
+}

@@ -783,7 +783,7 @@ Item {
           id: page
           width: parent.width
           height: item ? (item.fillHeight ? body.fillHeight : item.implicitHeight) : 0
-          readonly property string url: root.networkTab ? "pages/Network.qml" : (root.dev ? "pages/" + root.currentTab.page + ".qml" : "pages/Empty.qml")
+          readonly property string url: root.networkTab ? "pages/Network.qml" : (root.dev && root.currentTab ? "pages/" + root.currentTab.page + ".qml" : "pages/Empty.qml")
           // A host can set tab when it creates the view. The url then
           // changes before the view is complete, so load only the last url.
           property bool complete: false

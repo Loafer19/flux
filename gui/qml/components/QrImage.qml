@@ -28,9 +28,16 @@ Item {
       canvas.requestPaint()
       return
     }
-    var m = QrCode.matrix(t)
+    var m = null
+    try {
+      m = QrCode.matrix(t)
+    } catch (e) {
+      console.warn("QrImage: " + e)
+      m = null
+    }
     root.grid = m
     root.modules = m ? m.length : 0
+    // Keep layout height even while the canvas paints; opacity gates visibility.
     canvas.requestPaint()
   }
 

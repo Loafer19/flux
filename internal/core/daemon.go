@@ -86,10 +86,13 @@ type Daemon struct {
 	micErr    string
 	screen    *screenSession
 	screenErr string
-	// desktop streams this screen to a phone.
+	// desktop streams this screen to a phone or a peer.
 	desktop    *desktopSession
 	desktopErr string
-	approvals  approvalBook
+	// peerDesktop shows another fluxd screen on this computer.
+	peerDesktop    *peerDesktopSession
+	peerDesktopErr string
+	approvals      approvalBook
 
 	// pendingVersion is the version of a new fluxd binary on disk. fluxd
 	// restarts into it when no transfer or stream runs.

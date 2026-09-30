@@ -45,7 +45,7 @@ func TestPeerRole(t *testing.T) {
 	if peer.role() != "peer" || peer.fluxApp() {
 		t.Fatalf("fluxd role %s fluxApp %v", peer.role(), peer.fluxApp())
 	}
-	if got, want := peer.plugins(), []string{"clipboard", "share", "battery"}; !slices.Equal(got, want) {
+	if got, want := peer.plugins(), []string{"clipboard", "share", "battery", "desktop"}; !slices.Equal(got, want) {
 		t.Fatalf("peer plugins %v", got)
 	}
 	view := peer.view()
@@ -140,7 +140,6 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 	}
 
 	packets := []*proto.Packet{
-		proto.New(proto.TypeMousepadRequest, map[string]any{"dx": 10, "dy": 4}),
 		proto.New(proto.TypeFluxApprove, map[string]any{"kind": "response", "id": "req1", "denied": true}),
 		proto.New(proto.TypeFluxDnd, map[string]any{"on": true}),
 		proto.New(proto.TypeSftpRequest, map[string]any{"startBrowsing": true}),
@@ -151,8 +150,10 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 		d.handlePacket(dev, nil, p)
 	}
 
-	if n := len(d.inputQ); n != 0 {
-		t.Fatalf("peer queued %d input actions", n)
+	// Mousepad from a peer is allowed when remote_input is on (desk↔desk RD control).
+	d.handlePacket(dev, nil, proto.New(proto.TypeMousepadRequest, map[string]any{"dx": 10, "dy": 4}))
+	if n := len(d.inputQ); n != 1 {
+		t.Fatalf("peer mousepad queued %d input actions, want 1", n)
 	}
 	d.approvals.mu.Lock()
 	answered := d.approvals.byID["req1"].result != nil

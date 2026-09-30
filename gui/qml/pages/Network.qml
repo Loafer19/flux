@@ -6,6 +6,7 @@ import "../components"
 // This computer and the paired devices. A peer shows clipboard and files,
 // Do Not Disturb between desks off, and the configured screen edge.
 // Tap the edge chip on a peer to set or clear that seam.
+// Pair without discovery: generate a flux1 invite or paste one from another desk.
 Item {
   id: root
   property var view
@@ -26,6 +27,18 @@ Item {
   }
   readonly property var settings: view && view.backend ? (view.backend.settings || {}) : {}
   readonly property bool phoneDnd: settings.syncDnd !== false && paired.some(d => d.role !== "peer")
+
+  // Invite / join state for discovery-less first pairing (same as flux-cli pair invite|join).
+  property string inviteCode: ""
+  property string inviteHost: ""
+  property int invitePort: 0
+  property string inviteName: ""
+  property string hostDraft: ""
+  property string joinDraft: ""
+  property string joinStatus: ""
+  property string pendingJoinId: ""
+  property bool inviting: false
+  property bool joining: false
 
   implicitHeight: col.implicitHeight
 
@@ -56,6 +69,157 @@ Item {
     if (d.role === "peer") return "Peer · " + Fmt.typeName(d.type || "desktop")
     if (d.type === "phone" || d.type === "tablet") return Fmt.typeName(d.type)
     return "Remote · " + Fmt.typeName(d.type || "device")
+  }
+
+  function copyText(t) {
+    clipHelper.text = t
+    clipHelper.selectAll()
+    clipHelper.copy()
+    if (root.view) root.view.toast("Invite copied")
+  }
+
+  function generateInvite() {
+    if (!root.view || !root.view.call || root.inviting) return
+    root.inviting = true
+    root.inviteCode = ""
+    root.joinStatus = ""
+    var host = String(hostField.text || root.hostDraft || "").trim()
+    root.hostDraft = host
+    root.view.call("pair.invite", { host: host }, function (result) {
+      root.inviting = false
+      if (!result || !result.invite) {
+        if (root.view) root.view.toast("Could not build invite")
+        return
+      }
+      root.inviteCode = result.invite
+      root.inviteHost = result.host || ""
+      root.invitePort = result.port || 0
+      root.inviteName = result.name || ""
+      if (hostField.text === "" && root.inviteHost !== "")
+        hostField.text = root.inviteHost
+      if (root.view) root.view.toast("Invite ready")
+    })
+    // view.call toasts errors and skips cb; clear inviting on a short timer
+    // when the request fails (no cb). Success clears it in the cb above.
+    inviteBusyTimer.restart()
+  }
+
+  function clearInvite() {
+    root.inviteCode = ""
+    root.inviteHost = ""
+    root.invitePort = 0
+    root.inviteName = ""
+  }
+
+  function joinInvite() {
+    if (!root.view || !root.view.call || root.joining) return
+    var raw = String(joinField.text || root.joinDraft || "").trim()
+    root.joinDraft = raw
+    if (raw === "") {
+      root.view.toast("Paste a flux1 invite")
+      return
+    }
+    root.joining = true
+    root.pendingJoinId = ""
+    root.joinStatus = "Dialing…"
+    root.view.call("pair.connect", { invite: raw }, function (result) {
+      if (!result || !result.id) {
+        root.joining = false
+        root.joinStatus = ""
+        root.view.toast("Could not dial invite")
+        return
+      }
+      root.pendingJoinId = result.id
+      root.joinStatus = "Dialing " + (result.host || "") + (result.port ? (":" + result.port) : "") + "…"
+      joinWatch.restart()
+      tryPairPending()
+    })
+    joinBusyTimer.restart()
+  }
+
+  function findPendingDevice() {
+    if (!root.pendingJoinId || !root.view) return null
+    var all = root.view.allDevices || []
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].id === root.pendingJoinId) return all[i]
+    }
+    return null
+  }
+
+  function tryPairPending() {
+    if (!root.pendingJoinId || !root.view || !root.view.call) return
+    var d = findPendingDevice()
+    if (!d) return
+    if (d.paired) {
+      root.joinStatus = (d.name || "Peer") + " paired"
+      root.joining = false
+      root.pendingJoinId = ""
+      joinWatch.stop()
+      root.view.toast(root.joinStatus)
+      return
+    }
+    if (!d.online) return
+    if (d.pairState === "requested" || d.pairState === "incoming") {
+      root.joinStatus = d.pairKey
+                   ? ("Confirm " + d.pairKey + " on both screens")
+                   : ("Waiting for " + (d.name || "peer") + "…")
+      return
+    }
+    root.joinStatus = "Linked to " + (d.name || "peer") + ". Asking to pair…"
+    root.view.call("pair.request", { device: d.id }, function () {
+      root.joinStatus = "Confirm the key on both screens"
+    })
+  }
+
+  // view.call does not invoke cb on error; these clear busy flags after a beat.
+  Timer {
+    id: inviteBusyTimer
+    interval: 400
+    onTriggered: {
+      if (root.inviting && root.inviteCode === "") root.inviting = false
+    }
+  }
+  Timer {
+    id: joinBusyTimer
+    interval: 400
+    onTriggered: {
+      if (root.joining && root.pendingJoinId === "" && root.joinStatus === "Dialing…") {
+        root.joining = false
+        root.joinStatus = ""
+      }
+    }
+  }
+  Timer {
+    id: joinWatch
+    interval: 500
+    repeat: true
+    property int runs: 0
+    onRunningChanged: if (running) runs = 0
+    onTriggered: {
+      runs++
+      root.tryPairPending()
+      // Stop after ~30s with no link row yet.
+      if (root.pendingJoinId && !root.findPendingDevice() && runs > 60) {
+        root.joinStatus = "No answer yet. Check Tailscale or the host in the invite."
+        root.joining = false
+        stop()
+      }
+    }
+  }
+
+  // When fluxd pushes state, retry pair for an in-flight join.
+  Connections {
+    target: root.view
+    ignoreUnknownSignals: true
+    function onAllDevicesChanged() { root.tryPairPending() }
+  }
+
+  // Hidden field used only to put text on the system clipboard.
+  TextEdit {
+    id: clipHelper
+    visible: false
+    width: 1
+    height: 1
   }
 
   Column {
@@ -104,13 +268,158 @@ Item {
       }
     }
 
+    SectionLabel { text: "PAIR WITH INVITE" }
+
+    Card {
+      width: parent.width
+      implicitHeight: inviteCol.implicitHeight + 36
+      Column {
+        id: inviteCol
+        x: 18
+        y: 18
+        width: parent.width - 36
+        spacing: 10
+
+        Txt {
+          width: parent.width
+          text: "When the other computer does not appear on the network, share a flux1 invite. Same path as flux-cli pair invite and pair join. The invite is not a secret; you still confirm the 8-character key."
+          color: Theme.dim
+          font.pixelSize: 12
+          wrapMode: Text.Wrap
+        }
+
+        Txt {
+          text: "Share this computer"
+          font.weight: Font.DemiBold
+        }
+        Txt {
+          width: parent.width
+          text: "Host the other side can reach (Tailscale name or IP). Leave empty when fluxd can pick the only Tailscale address."
+          color: Theme.dim
+          font.pixelSize: 11
+          wrapMode: Text.Wrap
+        }
+        RowLayout {
+          width: parent.width
+          spacing: 8
+          Field {
+            id: hostField
+            Layout.fillWidth: true
+            placeholder: "e.g. dragon or 100.99.87.88"
+            onAccepted: root.generateInvite()
+          }
+          AccentButton {
+            text: root.inviting ? "…" : "Create invite"
+            icon: "link"
+            active: !root.inviting
+            onClicked: root.generateInvite()
+          }
+        }
+
+        Column {
+          visible: root.inviteCode !== ""
+          width: parent.width
+          spacing: 10
+          Txt {
+            width: parent.width
+            text: root.inviteName !== ""
+                  ? ("Invite for " + root.inviteName + (root.inviteHost ? (" @ " + root.inviteHost + (root.invitePort ? (":" + root.invitePort) : "")) : ""))
+                  : "Invite"
+            color: Theme.dim
+            font.pixelSize: 11
+            wrapMode: Text.Wrap
+          }
+          RowLayout {
+            width: parent.width
+            spacing: 8
+            Field {
+              Layout.fillWidth: true
+              text: root.inviteCode
+              input.readOnly: true
+            }
+            OutlineButton {
+              icon: "copy"
+              text: "Copy"
+              onClicked: root.copyText(root.inviteCode)
+            }
+            OutlineButton {
+              icon: "close"
+              text: "Clear"
+              onClicked: root.clearInvite()
+            }
+          }
+          QrImage {
+            id: inviteQr
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 168
+            height: 168
+            text: root.inviteCode
+            // Fixed black-on-white so phone cameras can scan in any theme.
+            dark: "#111111"
+            light: "#ffffff"
+          }
+          Txt {
+            width: parent.width
+            text: inviteQr.ready
+                  ? "Scan or paste on the other computer: Network → Join, then accept the matching key."
+                  : "On the other computer: Network → paste invite → Join, then accept the matching key."
+            color: Theme.dim
+            font.pixelSize: 11
+            wrapMode: Text.Wrap
+          }
+        }
+
+        Rectangle {
+          width: parent.width
+          height: 1
+          color: Theme.bg3
+        }
+
+        Txt {
+          text: "Join another computer"
+          font.weight: Font.DemiBold
+        }
+        Txt {
+          width: parent.width
+          text: "Paste a flux1:… invite from the other desk, then Join. Flux dials that host and asks to pair."
+          color: Theme.dim
+          font.pixelSize: 11
+          wrapMode: Text.Wrap
+        }
+        RowLayout {
+          width: parent.width
+          spacing: 8
+          Field {
+            id: joinField
+            Layout.fillWidth: true
+            placeholder: "flux1:…@host:port"
+            onAccepted: root.joinInvite()
+          }
+          AccentButton {
+            text: root.joining ? "…" : "Join"
+            icon: "link"
+            active: !root.joining
+            onClicked: root.joinInvite()
+          }
+        }
+        Txt {
+          visible: root.joinStatus !== ""
+          width: parent.width
+          text: root.joinStatus
+          color: Theme.accent
+          font.pixelSize: 12
+          wrapMode: Text.Wrap
+        }
+      }
+    }
+
     SectionLabel { text: "DEVICES" }
 
     Txt {
       visible: root.paired.length === 0
       width: parent.width
       wrapMode: Text.Wrap
-      text: "No paired devices. Pair a phone or another computer."
+      text: "No paired devices. Pair a phone on the LAN, or pair another computer with an invite above."
       color: Theme.dim
     }
 

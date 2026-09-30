@@ -348,8 +348,12 @@ func (d *Daemon) handleDesktop(dev *Device, l *lan.Link, p *proto.Packet) {
 		go d.runDesktop(dev, l, b)
 	case "stop":
 		d.endDesktop(dev.ID)
-	case "error":
-		d.logf("%s: remote desktop: %s", dev.Name, b.Message)
+		d.onPeerDesktopReply(dev, b)
+	case "live", "error":
+		d.onPeerDesktopReply(dev, b)
+		if b.State == "error" {
+			d.logf("%s: remote desktop: %s", dev.Name, b.Message)
+		}
 	}
 }
 
@@ -456,7 +460,7 @@ func (d *Daemon) runDesktop(dev *Device, l *lan.Link, b desktopStart) {
 		}))
 		notice := d.notify(desktop.Notification{
 			AppName: "Flux", Title: dev.Name + " shows this screen",
-			Body:    "The phone sees " + mon.Name + ".",
+			Body:    "Remote desktop shows " + mon.Name + ".",
 			Actions: []desktop.Action{{Key: "desktop-stop", Label: "Stop"}},
 		})
 		d.mu.Lock()

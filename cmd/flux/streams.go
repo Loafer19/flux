@@ -70,7 +70,7 @@ func remoteInput(args []string) error {
 		if _, err := setRemote("remoteInput", true); err != nil {
 			return err
 		}
-		fmt.Println("Remote input is on. A paired phone or Mac can move the pointer and type on this computer.")
+		fmt.Println("Remote input is on. A paired phone, Mac, or desk peer can move the pointer and type on this computer.")
 		return nil
 	case "off":
 		if _, err := setRemote("remoteInput", false); err != nil {
@@ -102,12 +102,24 @@ func remoteDesktop(args []string) error {
 	switch first(args) {
 	case "stop":
 		return call("desktop.stop", nil)
+	case "view":
+		dev := ""
+		if len(args) > 1 {
+			dev = args[1]
+		}
+		if err := call("desktop.view", map[string]any{"device": dev}); err != nil {
+			return err
+		}
+		fmt.Println("Showing the peer desktop. Close the player window, or run: flux-cli desktop view-stop")
+		return nil
+	case "view-stop":
+		return call("desktop.viewStop", nil)
 	case "on":
 		s, err := setRemote("remoteDesktop", true)
 		if err != nil {
 			return err
 		}
-		fmt.Println("The remote desktop is on. A paired phone or Mac can show this screen.")
+		fmt.Println("The remote desktop is on. A paired phone, Mac, or desk peer can show this screen.")
 		if !s.RemoteInput {
 			fmt.Println("To also control this computer from it, run: flux-cli input on")
 		}
@@ -120,7 +132,7 @@ func remoteDesktop(args []string) error {
 		return nil
 	case "":
 	default:
-		return fmt.Errorf("unknown argument %q. Usage: flux-cli desktop [on|off|stop]", first(args))
+		return fmt.Errorf("unknown argument %q. Usage: flux-cli desktop [on|off|stop|view|view-stop]", first(args))
 	}
 	var s struct {
 		Settings remoteSettings `json:"settings"`
@@ -132,9 +144,35 @@ func remoteDesktop(args []string) error {
 			Height  int    `json:"height"`
 			Error   string `json:"error"`
 		} `json:"desktop"`
+		PeerDesktop *struct {
+			Active   bool   `json:"active"`
+			FromName string `json:"fromName"`
+			Monitor  string `json:"monitor"`
+			Width    int    `json:"width"`
+			Height   int    `json:"height"`
+			Player   string `json:"player"`
+			Error    string `json:"error"`
+		} `json:"peerDesktop"`
 	}
 	if err := callInto("state", nil, &s); err != nil {
 		return err
+	}
+	if pv := s.PeerDesktop; pv != nil {
+		switch {
+		case pv.Error != "":
+			fmt.Println("Peer desktop failed:", pv.Error)
+		case pv.Active:
+			fmt.Printf("Showing %s", pv.FromName)
+			if pv.Monitor != "" {
+				fmt.Printf(" (%s)", pv.Monitor)
+			}
+			if pv.Width > 0 && pv.Height > 0 {
+				fmt.Printf(", %dx%d", pv.Width, pv.Height)
+			}
+			fmt.Printf(" in %s. Stop with: flux-cli desktop view-stop\n", pv.Player)
+		default:
+			fmt.Printf("Starting peer desktop of %s\n", pv.FromName)
+		}
 	}
 	v := s.Desktop
 	switch {
@@ -146,8 +184,8 @@ func remoteDesktop(args []string) error {
 		fmt.Printf("%s is starting the remote desktop of %s\n", v.ToName, v.Monitor)
 	case !s.Settings.RemoteDesktop:
 		fmt.Println("The remote desktop is off. Turn it on with: flux-cli desktop on")
-	default:
-		fmt.Println("No phone shows this screen. Start it in Flux for Android: Remote desktop.")
+	case s.PeerDesktop == nil:
+		fmt.Println("No one shows this screen. A phone uses Remote desktop; a peer: flux-cli desktop view NAME")
 	}
 	return nil
 }

@@ -22,3 +22,4 @@ CameraCard 1.0 CameraCard.qml
 RemoteCard 1.0 RemoteCard.qml
 KeyedModel 1.0 KeyedModel.qml
 NoticeBar 1.0 NoticeBar.qml
+QrImage 1.0 QrImage.qml

@@ -257,7 +257,7 @@ func assertPeer(t *testing.T, s state, name string) {
 		if d.Name != name {
 			continue
 		}
-		if d.Role != "peer" || !slices.Equal(d.Plugins, []string{"clipboard", "share", "battery"}) {
+		if d.Role != "peer" || !slices.Equal(d.Plugins, []string{"clipboard", "share", "battery", "desktop"}) {
 			t.Fatalf("%s role %q plugins %v", name, d.Role, d.Plugins)
 		}
 		if slices.Contains(d.Plugins, "sftp") || slices.Contains(d.Plugins, "sms") {

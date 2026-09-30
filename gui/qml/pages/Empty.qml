@@ -71,6 +71,12 @@ Item {
     }
     Txt {
       width: parent.width
+      text: "To pair another computer when it never appears here, open Network and share or paste a flux1 invite."
+      color: Theme.dim
+      wrapMode: Text.Wrap
+    }
+    Txt {
+      width: parent.width
       text: "To check the setup, run flux-cli doctor."
       color: Theme.dim
       wrapMode: Text.Wrap

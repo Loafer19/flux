@@ -124,14 +124,16 @@ func (dev *Device) role() string {
 
 // peerIgnores reports a packet that a desktop peer must not apply on this
 // computer. Clipboard, share, ping, battery, and notifications stay.
-// A peer also must not run this computer's commands.
+// Remote desktop (flux.desktop) and remote input (mousepad) are allowed
+// when the matching settings are on: runDesktop and handleMousepad gate them.
+// A peer still must not run this computer's commands, approve, or phone streams.
 func peerIgnores(typ string) bool {
 	switch typ {
-	case proto.TypeMousepadRequest, proto.TypeFluxApprove, proto.TypeFluxHerdr,
+	case proto.TypeFluxApprove, proto.TypeFluxHerdr,
 		proto.TypeFluxShortcuts, proto.TypeSftp, proto.TypeSftpRequest,
 		proto.TypeNotificationRequest, proto.TypeFluxDnd, proto.TypeTelephony,
 		proto.TypeSmsMessages, proto.TypeFluxWebcam, proto.TypeFluxMic,
-		proto.TypeFluxScreen, proto.TypeFluxDesktop, proto.TypeRunCommandRequest:
+		proto.TypeFluxScreen, proto.TypeRunCommandRequest:
 		return true
 	}
 	return false
@@ -140,7 +142,7 @@ func peerIgnores(typ string) bool {
 // plugins returns the features that the device offers to this computer.
 // The window uses them to show or hide tabs. Each check looks at the
 // direction that the feature needs.
-// A peer offers clipboard, share, and battery. It does not offer phone
+// A peer offers clipboard, share, battery, and desktop. It does not offer phone
 // storage, SMS, ring, or phone notifications.
 func (dev *Device) plugins() []string {
 	if dev.peer() {
@@ -153,6 +155,11 @@ func (dev *Device) plugins() []string {
 		}
 		if dev.supports(proto.TypeBattery) {
 			out = append(out, "battery")
+		}
+		// Peer remote desktop: this desk can ask the peer to stream when
+		// the peer accepts flux.desktop (every fluxd does).
+		if dev.accepts(proto.TypeFluxDesktop) {
+			out = append(out, "desktop")
 		}
 		return out
 	}

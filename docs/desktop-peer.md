@@ -103,7 +103,18 @@ In `flux-cli status --json` the same device has `"role": "peer"`.
 mDNS and UDP broadcasts do not cross NAT, guest Wi-Fi isolation, or Tailscale.
 When the other computer never appears in the list, share an invite instead of opening the firewall to the whole internet.
 
+### From the window
+
 1. Pick a host the other computer can already reach: a Tailscale name or IP, or a LAN address after both sides allow TCP 1716–1764 from each other only.
+2. On the computer that listens at that host, open **Network**.
+3. Under **Pair with invite**, set the host (or leave empty when fluxd can pick the only Tailscale address), then **Create invite**.
+4. Copy the `flux1:…` code, or show the QR when the window draws one.
+5. On the other computer, open **Network**, paste the invite, and select **Join**.
+6. Compare the 8-character key on both screens and accept.
+
+### From the terminal
+
+1. Pick the same reachable host.
 2. On the computer that listens at that host:
 
    ```sh
@@ -184,6 +195,47 @@ Received files use `download_dir`.
 `flux-cli notify` can show a notification on the other computer.
 Browse storage stays off.
 `flux-cli ring` returns an error for a computer.
+
+
+## Remote desktop between desks
+
+A paired desk can show the other desk screen when both sides allow it.
+
+1. On the computer that will be watched, turn the stream on:
+
+   ```sh
+   flux-cli desktop on
+   flux-cli input on   # optional: let the viewer move the pointer and type
+   ```
+
+2. On the computer that watches, with the peer online:
+
+   ```sh
+   flux-cli desktop view vivobook
+   ```
+
+   Flux opens a TLS listener on a port from 1739 to 1764, sends `flux.desktop`
+   start (same packet a phone sends), and the peer captures with
+   `gpu-screen-recorder` or `wf-recorder`. This computer feeds Annex-B H.264
+   into `mpv` or `ffplay`. With `mpv`, move and click in the window to control
+   the peer when that desk has `remote_input` on.
+
+3. Close the player window, or run `flux-cli desktop view-stop`.
+
+The peer role still hides phone-only features (Browse, ring, SMS, approve).
+Remote desktop and remote input between desks reuse the phone packets and
+the existing `remote_desktop` / `remote_input` switches. Screen-edge pointer
+share (`flux-cli edge`) stays separate: it moves the cursor without a video
+stream and does not need `remote_input`.
+
+With `mpv`, the viewer window sends mouse and keys as `flux.mousepad.request`
+(same packets as the phone). The watched desk runs them only while
+`remote_input` is on (`flux-cli input on`). `ffplay` shows the stream only;
+install `mpv` for control. Screen-edge pointer share stays separate and does
+not use these packets.
+
+Firewall: the watched desk dials back to the viewer's payload port, so both
+sides still need TCP 1716–1764 open toward each other (same as file share).
 
 ## Tailscale
 

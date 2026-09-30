@@ -155,11 +155,12 @@ func (d *Daemon) Snapshot() json.RawMessage {
 			"edgeSide":         strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide)),
 			"edgeDevice":       strings.TrimSpace(d.cfg.EdgeDevice),
 		},
-		"webcam":  d.webcamViewLocked(),
-		"mic":     d.micViewLocked(),
-		"screen":  d.screenViewLocked(),
-		"desktop": d.desktopViewLocked(),
-		"herdr":   d.herdrViewLocked(),
+		"webcam":      d.webcamViewLocked(),
+		"mic":         d.micViewLocked(),
+		"screen":      d.screenViewLocked(),
+		"desktop":     d.desktopViewLocked(),
+		"peerDesktop": d.peerDesktopViewLocked(),
+		"herdr":       d.herdrViewLocked(),
 	})
 }
 
@@ -234,6 +235,10 @@ func (d *Daemon) Call(ctx context.Context, method string, raw json.RawMessage) (
 		return ok, d.StopScreen()
 	case "desktop.stop":
 		return ok, d.StopDesktop()
+	case "desktop.view":
+		return ok, d.StartPeerDesktop(p.Device)
+	case "desktop.viewStop":
+		return ok, d.StopPeerDesktop()
 	case "approve.request":
 		return d.ApproveRequest(raw)
 	case "approve.enroll":

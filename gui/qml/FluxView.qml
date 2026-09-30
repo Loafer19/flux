@@ -547,7 +547,7 @@ Item {
             topPadding: 2
             leftPadding: 4
             rightPadding: 4
-            text: "Searching. Open Flux on the phone and join the same network."
+            text: "Searching the LAN. For another computer over Tailscale, open Network and share an invite."
             color: Theme.dim
             font.pixelSize: 11
             wrapMode: Text.Wrap

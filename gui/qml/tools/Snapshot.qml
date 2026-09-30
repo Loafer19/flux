@@ -287,6 +287,12 @@ Window {
     }, function () {
       setField("Text message via Pixel 8", "See you at the station at 6")
       pageItem().send()
+    }],
+    // The confirm dialog of the Unpair button in the header.
+    ["54-unpair-confirm", function () {
+      view.selectedId = pixel
+      view.tab = "overview"
+      view.unpair()
     }]
   ]
 

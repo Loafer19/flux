@@ -124,9 +124,9 @@ The `ios` job in `build.yml` also runs `make ios-release`.
 Then it checks that the built `Info.plist` has a text for each permission and lists `_flux._udp`.
 It also checks that the app and the share extension each contain `PrivacyInfo.xcprivacy`.
 
-Pull requests skip the `macos` and `ios` jobs, because macOS runners are slow and use GitHub minutes at a high rate.
-Pushes to `master` run them.
-To compile the Swift code of a branch before the merge, start a manual run:
+Pull requests run no build, to save GitHub minutes.
+Each push to `master` runs all jobs, and macOS runners use the minutes at a high rate.
+To build and test a branch before the merge, start a manual run:
 
 ```sh
 gh workflow run build.yml --ref BRANCH

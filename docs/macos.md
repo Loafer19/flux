@@ -40,7 +40,7 @@ If `/Applications/Flux.app` does not have the bundle ID `org.omarchy.flux.mac`, 
 Add `--no-open` when you run the script directly to skip the last step.
 
 The `macos` job in `.github/workflows/build.yml` runs `swift test` and builds a universal Release app for each push to `master` and each release.
-Pull requests skip it, because macOS runners use GitHub minutes at a high rate.
+Pull requests run no build.
 Each release attaches the same build as `flux-macos-VERSION.zip`.
 The window on the computer shows an update notice only for the Android app.
 To find a newer Mac app, check `https://github.com/bjarneo/flux/releases`.

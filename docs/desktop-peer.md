@@ -208,7 +208,8 @@ A paired desk can show the other desk screen when both sides allow it.
    flux-cli input on   # optional: let the viewer move the pointer and type
    ```
 
-2. On the computer that watches, with the peer online:
+2. On the computer that watches, with the peer online, either open **Network**,
+   select **View** on the peer row, or run:
 
    ```sh
    flux-cli desktop view vivobook
@@ -220,7 +221,8 @@ A paired desk can show the other desk screen when both sides allow it.
    into `mpv` or `ffplay`. With `mpv`, move and click in the window to control
    the peer when that desk has `remote_input` on.
 
-3. Close the player window, or run `flux-cli desktop view-stop`.
+3. Close the player window, tap **Stop** on the Network peer row, or run
+   `flux-cli desktop view-stop`.
 
 The peer role still hides phone-only features (Browse, ring, SMS, approve).
 Remote desktop and remote input between desks reuse the phone packets and

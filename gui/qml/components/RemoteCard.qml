@@ -42,7 +42,7 @@ Card {
     Setting {
       objectName: "remoteDesktopToggle"
       text: "Remote desktop"
-      detail: "A paired phone or Mac can show this screen."
+      detail: "A paired phone, Mac, or desk peer can show this screen."
       checked: !!root.settings.remoteDesktop
       onToggled: function (checked) { root.set("remoteDesktop", checked) }
     }
@@ -50,7 +50,7 @@ Card {
     Setting {
       objectName: "remoteInputToggle"
       text: "Remote input"
-      detail: "A paired phone or Mac can move the pointer and type."
+      detail: "A paired phone, Mac, or desk peer can move the pointer and type."
       checked: !!root.settings.remoteInput
       onToggled: function (checked) { root.set("remoteInput", checked) }
     }

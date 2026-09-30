@@ -6,6 +6,7 @@ import "../components"
 // This computer and the paired devices. A peer shows clipboard and files,
 // Do Not Disturb between desks off, and the configured screen edge.
 // Tap the edge chip on a peer to set or clear that seam.
+// View opens desk↔desk remote desktop (desktop.view); Stop ends it.
 // Pair without discovery: generate a flux1 invite or paste one from another desk.
 Item {
   id: root
@@ -26,6 +27,11 @@ Item {
     return list
   }
   readonly property var settings: view && view.backend ? (view.backend.settings || {}) : {}
+  // state.peerDesktop while this computer shows another desk (desktop.view).
+  readonly property var peerDesktop: {
+    if (!view || !view.backend || !view.backend.state) return null
+    return view.backend.state.peerDesktop || null
+  }
   readonly property bool phoneDnd: settings.syncDnd !== false && paired.some(d => d.role !== "peer")
 
   // Invite / join state for discovery-less first pairing (same as flux-cli pair invite|join).
@@ -168,6 +174,33 @@ Item {
     root.joinStatus = "Linked to " + (d.name || "peer") + ". Asking to pair…"
     root.view.call("pair.request", { device: d.id }, function () {
       root.joinStatus = "Confirm the key on both screens"
+    })
+  }
+
+  function viewingPeer(d) {
+    var pd = root.peerDesktop
+    if (!pd || !d) return false
+    var from = String(pd.from || "")
+    var name = String(pd.fromName || "").toLowerCase()
+    return from === String(d.id || "") || name === String(d.name || "").toLowerCase()
+  }
+
+  function startPeerView(d) {
+    if (!root.view || !root.view.call || !d) return
+    if (!d.online) {
+      root.view.toast((d.name || "Peer") + " is offline")
+      return
+    }
+    var key = d.name || d.id
+    root.view.call("desktop.view", { device: key }, function () {
+      if (root.view) root.view.toast("Showing " + (d.name || "peer") + " desktop")
+    })
+  }
+
+  function stopPeerView() {
+    if (!root.view || !root.view.call) return
+    root.view.call("desktop.viewStop", {}, function () {
+      if (root.view) root.view.toast("Stopped peer desktop")
     })
   }
 
@@ -429,6 +462,7 @@ Item {
         id: card
         required property var modelData
         readonly property bool peer: modelData.role === "peer"
+        readonly property bool viewing: root.viewingPeer(modelData)
         readonly property string edgeLabel: {
           var side = String(root.settings.edgeSide || "")
           var who = String(root.settings.edgeDevice || "").toLowerCase()
@@ -541,6 +575,43 @@ Item {
                   cursorShape: Qt.PointingHandCursor
                   onClicked: card.cycleEdge()
                 }
+              }
+            }
+            RowLayout {
+              width: parent.width
+              spacing: 8
+              Txt {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                text: {
+                  if (card.viewing) {
+                    var pd = root.peerDesktop || ({})
+                    var bits = ["Viewing"]
+                    if (pd.monitor) bits.push(pd.monitor)
+                    if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
+                    if (pd.player) bits.push(pd.player)
+                    return bits.join(" · ")
+                  }
+                  return modelData.online
+                    ? "Remote desktop (same as flux-cli desktop view)"
+                    : "Remote desktop when online"
+                }
+                color: card.viewing ? Theme.fg : Theme.dim
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+              }
+              AccentButton {
+                visible: !card.viewing
+                text: "View"
+                icon: "monitor"
+                active: !!modelData.online
+                onClicked: root.startPeerView(modelData)
+              }
+              OutlineButton {
+                visible: card.viewing
+                text: "Stop"
+                icon: "stop"
+                onClicked: root.stopPeerView()
               }
             }
           }

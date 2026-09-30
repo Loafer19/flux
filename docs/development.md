@@ -29,6 +29,18 @@ To set the version in all desktop binaries:
 make build VERSION=0.1.0
 ```
 
+## Local checkout install
+
+For day-to-day use of this checkout (bins in `~/.local/bin`, omarchy plugin, PATH ahead of `/usr`, systemd running `bin/fluxd` from the tree):
+
+```sh
+make build
+make install-local
+```
+
+See [Install from a local checkout](install.md#install-from-a-local-checkout) for what it changes and how to update.
+Do not remove an `omarchy-flux` package without a password when sudo is required; the install uses a user override instead.
+
 ## Run from the checkout
 
 `make dev` starts the daemon in the foreground with your normal Flux data paths.

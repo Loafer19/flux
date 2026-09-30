@@ -20,7 +20,7 @@ define copy-plugin
 		while read -r f; do install -Dm644 "$$f" "$(1)/Flux/$$f"; done
 endef
 
-.PHONY: build build-go build-gui test vet install install-user install-plugin uninstall uninstall-user uninstall-plugin dev open snapshot android macos test-macos install-macos ios ios-release test-ios clean
+.PHONY: build build-go build-gui test vet install install-user install-local install-plugin uninstall uninstall-user uninstall-plugin dev open snapshot android macos test-macos install-macos ios ios-release test-ios clean
 
 build: build-go build-gui
 
@@ -130,6 +130,68 @@ uninstall-user:
 	rm -rf $(USER_PREFIX)/share/flux/omarchy-plugin
 	rm -f $(USER_PREFIX)/share/applications/flux.desktop
 	rm -f $(USER_PREFIX)/share/icons/hicolor/scalable/apps/flux.svg $(USER_PREFIX)/share/icons/hicolor/symbolic/apps/flux-symbolic.svg
+
+# install-local is the one checkout install: ~/.local bins + omarchy plugin,
+# PATH prefers ~/.local over /usr, and fluxd.service runs this checkout's
+# fluxd. Leaves an omarchy-flux package in place (override instead of remove).
+install-local: install-user install-plugin
+	@test -x bin/fluxd || { echo "missing bin/fluxd; run make build"; exit 1; }
+	mkdir -p $(HOME)/.config/environment.d
+	printf 'PATH=%s/bin:$${PATH}\n' $(USER_PREFIX) >$(HOME)/.config/environment.d/99-local-bin.conf
+	install -Dm644 dist/local-path.bashrc $(USER_PREFIX)/share/flux/local-path.bashrc
+	@# Interactive shells: keep ~/.local/bin first (Omarchy appends it).
+	@line='[ -r "$$HOME/.local/share/flux/local-path.bashrc" ] && . "$$HOME/.local/share/flux/local-path.bashrc"'; \
+	bashrc=$(HOME)/.bashrc; \
+	touch "$$bashrc"; \
+	if ! grep -qF 'local-path.bashrc' "$$bashrc"; then \
+		printf '\n# Flux local install (make install-local)\n%s\n' "$$line" >>"$$bashrc"; \
+		echo "  ✓ sourced local-path.bashrc from $$bashrc"; \
+	else \
+		echo "  ✓ $$bashrc already sources local-path.bashrc"; \
+	fi
+	@# Desktop entry with absolute Exec so launchers ignore PATH order.
+	sed -i 's|^Exec=.*|Exec=$(USER_PREFIX)/bin/flux-cli open|' $(USER_PREFIX)/share/applications/flux.desktop
+	@# systemd: point at this checkout. Override when the package unit exists.
+	@unit_dir=$(HOME)/.config/systemd/user; mkdir -p "$$unit_dir"; \
+	if [ -f /usr/lib/systemd/user/fluxd.service ]; then \
+		mkdir -p "$$unit_dir/fluxd.service.d"; \
+		printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=$(CURDIR)/bin/fluxd' \
+			>"$$unit_dir/fluxd.service.d/override.conf"; \
+		echo "  ✓ override ExecStart=$(CURDIR)/bin/fluxd"; \
+	else \
+		printf '%s\n' \
+			'[Unit]' \
+			'Description=Flux daemon that connects this computer to your phone' \
+			'PartOf=graphical-session.target' \
+			'After=graphical-session.target' \
+			'' \
+			'[Service]' \
+			'ExecStart=$(CURDIR)/bin/fluxd' \
+			'ExecReload=/bin/kill -HUP $$MAINPID' \
+			'Restart=on-failure' \
+			'RestartSec=2' \
+			'SuccessExitStatus=75' \
+			'RestartForceExitStatus=75' \
+			'' \
+			'[Install]' \
+			'WantedBy=graphical-session.target' \
+			>"$$unit_dir/fluxd.service"; \
+		echo "  ✓ wrote $$unit_dir/fluxd.service -> $(CURDIR)/bin/fluxd"; \
+	fi
+	systemctl --user daemon-reload
+	systemctl --user enable fluxd.service >/dev/null
+	@if systemctl --user is-active --quiet fluxd.service; then \
+		systemctl --user restart fluxd.service; \
+		echo "  ✓ restarted fluxd.service"; \
+	fi
+	@echo ""
+	@echo "install-local checks (PATH with ~/.local/bin first):"
+	@env -i HOME="$(HOME)" USER="$(USER)" PATH="$(USER_PREFIX)/bin:/usr/bin:/bin" \
+		bash -lc 'printf "  fluxd:    %s\n  flux-cli: %s\n  flux-gui: %s\n" \
+			"$$(command -v fluxd)" "$$(command -v flux-cli)" "$$(command -v flux-gui)"'
+	@systemctl --user show fluxd.service -p ExecStart --value 2>/dev/null | sed 's/^/  ExecStart: /'
+	@echo "Update: git pull --ff-only && make build && make install-local"
+	@echo "New login applies environment.d; new shells apply ~/.bashrc PATH."
 
 # Run fluxd from the checkout in the foreground.
 dev: build-go

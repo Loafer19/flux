@@ -116,6 +116,42 @@ flux-cli doctor
 Root does not need Go on its `PATH`.
 This method installs into `/usr` and does not register a pacman package.
 
+## Install from a local checkout
+
+Use this path when you develop from `~/Work/flux` (or any clone) and want one command that keeps local binaries ahead of a system `omarchy-flux` package, without removing that package.
+
+```sh
+make build
+make install-local
+```
+
+`make install-local` does the following:
+
+| Step | Result |
+| --- | --- |
+| Binaries | Copies `fluxd`, `flux-cli`, and `flux-gui` into `~/.local/bin`. |
+| Plugin | Installs the omarchy-shell plugin into `~/.config/omarchy/plugins/flux`. |
+| PATH | Writes `~/.config/environment.d/99-local-bin.conf` and sources `~/.local/share/flux/local-path.bashrc` from `~/.bashrc`, so `~/.local/bin` comes before `/usr/bin` (Omarchy otherwise appends it). |
+| Desktop | Sets `Exec=` on `~/.local/share/applications/flux.desktop` to the absolute `~/.local/bin/flux-cli`. |
+| systemd | Points `fluxd.service` at this checkout's `bin/fluxd`. With a package unit, that is a user drop-in override; without one, it writes a user unit. Restarts the service when it is already active. |
+
+Leave the `omarchy-flux` package installed when it is present.
+The override and PATH order prefer the checkout without `sudo pacman -R`.
+
+### Update a local checkout install
+
+```sh
+git pull --ff-only
+make build
+make install-local
+```
+
+A new login applies `environment.d`.
+A new shell applies the `~/.bashrc` PATH helper.
+`systemctl --user restart fluxd` is enough when only `bin/fluxd` changed and you already ran `install-local` once for PATH and the unit.
+
+For a thinner copy of only the binaries and desktop files, see [Install for your user](#install-for-your-user).
+
 ## Install for your user
 
 From the repository root:
@@ -294,6 +330,8 @@ git pull --ff-only
 make build
 make install-user
 ```
+
+For the full local checkout path (plugin, PATH, and systemd override), use `make install-local` instead. See [Install from a local checkout](#install-from-a-local-checkout).
 
 ## Remove
 

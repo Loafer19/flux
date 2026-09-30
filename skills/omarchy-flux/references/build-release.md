@@ -53,7 +53,14 @@ The short name `flux` is the link `/usr/lib/flux/bin/flux`.
 `/etc/profile.d/flux-path.sh` adds that directory to the end of `PATH`.
 Call `flux-cli` in desktop entries, key bindings, menu actions, and printed hints.
 
-For a user-only install:
+For a local checkout install (bins, plugin, PATH, systemd override to this tree):
+
+```sh
+make build
+make install-local
+```
+
+For a thinner user-only copy of binaries only:
 
 ```sh
 make build
@@ -62,7 +69,7 @@ export PATH="$HOME/.local/bin:$PATH"
 flux-cli setup --no-plugin
 ```
 
-To add the plugin from that checkout, run `make install-plugin` and follow its printed shell commands.
+To add the plugin from that checkout without `install-local`, run `make install-plugin` and follow its printed shell commands.
 The user-only install omits the root PAM helper and webcam system setup.
 
 ## Android builds

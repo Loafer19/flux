@@ -147,3 +147,70 @@ func TestEdgeButtonForward(t *testing.T) {
 		t.Fatal("button after leave still applied")
 	}
 }
+
+func TestEdgeKickClearsReceiveAndSignalsLease(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "other-desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	d.devices[peer.ID] = peer
+	d.cfg.EdgeSide = "left"
+	d.cfg.EdgeDevice = "other-desk"
+	d.input = &countingInput{}
+	d.edgeKick = make(chan struct{}, 1)
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "enter"}))
+	if !d.edgeReceiving() {
+		t.Fatal("expected receiving after enter")
+	}
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "kick"}))
+	if d.edgeReceiving() {
+		t.Fatal("kick left receiving on")
+	}
+	select {
+	case <-d.edgeKick:
+	default:
+		t.Fatal("kick did not signal edgeKick")
+	}
+}
+
+func TestYieldEdgeToLocalClearsWithoutWarp(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "other-desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	d.devices[peer.ID] = peer
+	d.cfg.EdgeSide = "left"
+	d.cfg.EdgeDevice = "other-desk"
+	rec := &countingInput{}
+	d.input = rec
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "enter"}))
+	before := rec.n
+	d.yieldEdgeToLocal()
+	if d.edgeReceiving() {
+		t.Fatal("yield left receiving on")
+	}
+	// No further input applied by yield itself.
+	if rec.n != before {
+		t.Fatalf("yield applied input: %d -> %d", before, rec.n)
+	}
+	// Later peer moves must not apply.
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "move", "dx": 9, "dy": 0}))
+	if rec.n != before {
+		t.Fatal("move after yield still applied")
+	}
+}
+
+func TestEdgeCursorDiverged(t *testing.T) {
+	if edgeCursorDiverged(100, 100, 105, 100, 10) {
+		t.Fatal("5px should stay under 10px threshold")
+	}
+	if !edgeCursorDiverged(100, 100, 120, 100, 10) {
+		t.Fatal("20px should exceed 10px threshold")
+	}
+}

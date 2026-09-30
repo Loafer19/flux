@@ -55,6 +55,13 @@ type Daemon struct {
 	// HyprEndPointerLease, warp on-screen). Buffered so settings can
 	// signal without blocking.
 	edgeKick chan struct{}
+	// edgeRemote* tracks the last pointer sample while a peer drives this
+	// desk, so local mouse motion can take the pointer back.
+	edgeRemoteX, edgeRemoteY float64
+	edgeRemoteAt             time.Time
+	edgeRemoteSet            bool
+	// localInput watches /dev/input for physical keys/mouse when readable.
+	localInput *desktop.LocalInput
 	// input moves the pointer and types for the phone. It is nil in a
 	// headless daemon. inputQ holds the actions in order.
 	input    inputBackend
@@ -441,6 +448,7 @@ func (d *Daemon) Run() error {
 	removeClipImages(d.clipDir)
 	go d.clip.Watch(ctx, d.onLocalClipboard, d.onLocalImage)
 	go d.inputLoop(ctx)
+	d.localInput = desktop.StartLocalInput()
 	go d.edgeLoop(ctx)
 	go d.publishLoop(ctx)
 	go d.discoveryLoop(ctx)
@@ -451,6 +459,10 @@ func (d *Daemon) Run() error {
 	d.closeLinks()
 	removeClipImages(d.clipDir)
 	_ = os.Remove(d.clipDir)
+	if d.localInput != nil {
+		d.localInput.Stop()
+		d.localInput = nil
+	}
 	if in, ok := d.input.(*desktop.Input); ok {
 		in.Close()
 	}

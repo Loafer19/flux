@@ -15,6 +15,12 @@ const (
 	edgeMargin = 6.0
 	edgeReturn = 48.0
 	edgeTick   = 20 * time.Millisecond
+	// edgeLocalGrace ignores cursor jitter while a remote packet is still
+	// landing in the compositor.
+	edgeLocalGrace = 50 * time.Millisecond
+	// edgeLocalThresh is how far the cursor may drift from the last remote
+	// baseline before local mouse takes the pointer back (logical px).
+	edgeLocalThresh = 10.0
 )
 
 // edgeLoop watches the cursor. When it crosses the configured edge onto a
@@ -129,8 +135,12 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 		case <-tick.C:
 		}
 		if d.edgeReceiving() {
-			// The other desk drives this pointer. Do not capture the edge
-			// back until it sends leave.
+			// Peer drives this pointer. Local mouse/keyboard takes it back
+			// immediately without warping control to the peer; return to the
+			// peer still needs the configured screen edge.
+			if d.edgeLocalInput() {
+				d.yieldEdgeToLocal()
+			}
 			continue
 		}
 		side, dev, link := d.edgeAim()
@@ -367,6 +377,13 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 	switch body.Op {
 	case "leave":
 		d.setEdgeActive(false)
+		d.clearEdgeRemoteMark()
+	case "kick":
+		// Peer took local control on their desk. Drop our outbound lease
+		// (overlay + Hypr lease) and leave their cursor where they moved it.
+		d.setEdgeActive(false)
+		d.clearEdgeRemoteMark()
+		d.resetEdgePointer()
 	case "enter":
 		d.mu.Lock()
 		side := strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide))
@@ -397,6 +414,7 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 			return v
 		}
 		_ = d.input.MoveTo("", pad(x), pad(y))
+		d.markEdgeRemoteInput()
 	case "move":
 		if !d.edgeReceiving() {
 			return
@@ -404,11 +422,13 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 		dx := max(-maxInputDelta, min(maxInputDelta, body.DX))
 		dy := max(-maxInputDelta, min(maxInputDelta, body.DY))
 		_ = d.input.Move(dx, dy)
+		d.markEdgeRemoteInput()
 	case "button":
 		if !d.edgeReceiving() {
 			return
 		}
 		_ = d.input.Button(body.Button, body.Pressed)
+		d.markEdgeRemoteInput()
 	}
 }
 
@@ -431,6 +451,68 @@ func (d *Daemon) setEdgeActive(on bool) {
 	d.mu.Lock()
 	d.edgeActive = on
 	d.mu.Unlock()
+}
+
+func (d *Daemon) markEdgeRemoteInput() {
+	d.mu.Lock()
+	d.edgeRemoteAt = time.Now()
+	d.edgeRemoteSet = true
+	d.mu.Unlock()
+}
+
+func (d *Daemon) clearEdgeRemoteMark() {
+	d.mu.Lock()
+	d.edgeRemoteSet = false
+	d.mu.Unlock()
+}
+
+
+// edgeCursorDiverged reports whether cur is farther than thresh from baseline.
+func edgeCursorDiverged(bx, by, cx, cy, thresh float64) bool {
+	return math.Hypot(cx-bx, cy-by) > thresh
+}
+
+// edgeLocalInput reports local mouse (cursor divergence after remote quiet)
+// or physical key/mouse activity from LocalInput when /dev/input is readable.
+func (d *Daemon) edgeLocalInput() bool {
+	d.mu.Lock()
+	set := d.edgeRemoteSet
+	at := d.edgeRemoteAt
+	bx, by := d.edgeRemoteX, d.edgeRemoteY
+	d.mu.Unlock()
+	if !set {
+		return false
+	}
+	if d.localInput != nil && d.localInput.ActiveSince(at) {
+		return true
+	}
+	cur, _, err := desktop.HyprLayout()
+	if err != nil {
+		return false
+	}
+	if time.Since(at) < edgeLocalGrace {
+		// Remote motion may still be landing; chase as baseline.
+		d.mu.Lock()
+		d.edgeRemoteX, d.edgeRemoteY = cur.X, cur.Y
+		d.mu.Unlock()
+		return false
+	}
+	return edgeCursorDiverged(bx, by, cur.X, cur.Y, edgeLocalThresh)
+}
+
+// yieldEdgeToLocal drops peer control of this pointer and tells the peer to
+// release their outbound lease. The local cursor stays where the user moved
+// it — no warp to the peer.
+func (d *Daemon) yieldEdgeToLocal() {
+	if !d.edgeReceiving() {
+		return
+	}
+	d.setEdgeActive(false)
+	d.clearEdgeRemoteMark()
+	_, _, link := d.edgeAim()
+	if link != nil {
+		d.sendEdge(link, "kick", 0, 0)
+	}
 }
 
 // edgeFrom reports whether dev is the computer this desk named for its seam.

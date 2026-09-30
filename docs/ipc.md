@@ -191,4 +191,5 @@ An address that the device does not have returns `not_found` from `addresses.rem
 ```
 
 The invite is not authentication.
+When `settings.relay` is on and `relayURL` is set, `pair.invite` without a host uses that rendezvous address, and `pair.connect` to that same host speaks the `FLUXRELAY1` JOIN handshake before the Flux identity line.
 The TLS certificate must still match the device ID, and both sides confirm the verification key.

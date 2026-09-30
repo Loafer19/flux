@@ -72,6 +72,7 @@ The addresses are in `~/.local/share/flux/devices.json`. Change them with the CL
 Tailscale does not carry mDNS or UDP discovery.
 A phone still pairs on the local network first.
 Two computers can first-pair over Tailscale with `flux-cli pair invite --host NAME` and `flux-cli pair join INVITE`.
+When there is no LAN or Tailscale path, `flux-cli relay on` with `flux-cli relay url HOST:PORT` and a `flux-cli relay serve` helper can splice the first pair. Leave relay off when a direct path works.
 Read `docs/desktop-peer.md` and `docs/tailscale.md`.
 
 ## Notifications and commands

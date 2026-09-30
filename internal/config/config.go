@@ -69,6 +69,13 @@ type Config struct {
 	EdgeSide string `toml:"edge_side,omitempty"`
 	// EdgeDevice is the name or id of the paired computer on that edge.
 	EdgeDevice string `toml:"edge_device,omitempty"`
+	// Relay lets pairing and desk-peer dials use a TCP rendezvous host when
+	// there is no direct LAN or Tailscale path. Off by default. Prefer a
+	// direct path; see docs/desktop-peer.md.
+	Relay bool `toml:"relay"`
+	// RelayURL is host:port (or tcp://host:port) of the rendezvous helper.
+	// Empty with Relay on means pair invite cannot use the relay yet.
+	RelayURL string `toml:"relay_url,omitempty"`
 	// ApproveTimeout is how long an approval waits for the phone, in
 	// seconds, from 5 to 120. Zero means 20.
 	ApproveTimeout int       `toml:"approve_timeout,omitempty"`

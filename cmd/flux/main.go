@@ -69,6 +69,10 @@ Commands:
   desktop view-stop      Stop showing a peer desktop
   input [on|off]         Show whether a paired phone or Mac can move the pointer
                          and type on this computer, or turn that on or off
+  relay [on|off]         Show or set the optional TCP rendezvous for pairing
+                         when there is no LAN or Tailscale path (default off)
+  relay url HOST:PORT    Set the rendezvous host for flux-cli relay on
+  relay serve            Run a local rendezvous helper for testing
   approve [status]       Show whether a phone can approve sudo with a fingerprint
   approve setup [SVC…]   Enroll the phone and turn approval on for sudo, or for
                          polkit-1 and hyprlock. Run it with sudo.
@@ -151,6 +155,8 @@ func main() {
 		err = remoteDesktop(args)
 	case "input":
 		err = remoteInput(args)
+	case "relay":
+		err = relayCmd(args)
 	case "approve":
 		err = approveCmd(args, device)
 	case "watch":

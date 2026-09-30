@@ -348,6 +348,23 @@ func (p *Provider) acceptLoop(ctx context.Context) {
 	}
 }
 
+// AcceptConn runs the incoming Flux handshake on an already-open TCP
+// connection, for example one returned by a relay REGISTER. Same path as
+// a peer that dialed this computer's TCP port.
+func (p *Provider) AcceptConn(conn net.Conn) {
+	p.accept(conn)
+}
+
+// OpenConn runs the outgoing Flux handshake on an already-open TCP
+// connection, for example one returned by a relay JOIN. Same path as
+// DialAny after the TCP connect succeeds.
+func (p *Provider) OpenConn(conn net.Conn, target proto.Identity) bool {
+	if target.ProtocolVersion == 0 {
+		target.ProtocolVersion = proto.ProtocolVersion
+	}
+	return p.open(conn, target)
+}
+
 // accept handles a TCP connection from a device that received our UDP
 // broadcast. The device sends its identity in plain text, and this side
 // acts as the TLS client.

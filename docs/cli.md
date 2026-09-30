@@ -95,6 +95,19 @@ flux-cli unpair "Pixel 8"
 Compare the verification key on both devices before you accept.
 See [phone pairing](features.md#pair-a-phone).
 `pair invite` and `pair join` skip mDNS when two computers already share a reachable host, for example through Tailscale.
+
+When neither side can reach the other (NAT, guest Wi-Fi, no Tailscale), turn on the optional relay and point both computers at the same rendezvous helper:
+
+```sh
+flux-cli relay serve --listen :17777   # on any reachable host
+flux-cli relay url HOST:17777
+flux-cli relay on
+flux-cli pair invite                   # invite host becomes the relay
+flux-cli pair join 'flux1:…@HOST:17777'
+```
+
+Leave `relay` off when LAN or Tailscale works. `flux-cli relay serve` is a local test helper, not a public TURN service.
+
 See [Pair without discovery](desktop-peer.md#pair-without-discovery).
 
 ## Reach a device away from the local network

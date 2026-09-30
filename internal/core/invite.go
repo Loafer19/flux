@@ -10,6 +10,7 @@ import (
 
 	"flux/internal/lan"
 	"flux/internal/proto"
+	"flux/internal/relay"
 )
 
 // invitePrefix marks a discovery-less pair invite. The rest is
@@ -90,12 +91,33 @@ func (d *Daemon) MakeInvite(host string) (Invite, error) {
 		return Invite{}, apiErr("not_ready", "fluxd is not listening yet")
 	}
 	host = strings.TrimSpace(host)
-	if host == "" {
+	d.mu.Lock()
+	relayOn := d.cfg != nil && d.cfg.Relay
+	relayURL := ""
+	if d.cfg != nil {
+		relayURL = strings.TrimSpace(d.cfg.RelayURL)
+	}
+	d.mu.Unlock()
+	// Prefer the rendezvous host when relay is on and the user did not pass
+	// an explicit --host. Direct LAN/Tailscale invites still work with --host.
+	if relayOn && host == "" {
+		if relayURL == "" {
+			return Invite{}, apiErr("need_relay", "Relay is on but relay_url is empty. Run: flux-cli relay url HOST:PORT")
+		}
+		rHost, rPort, err := relay.HostPort(relayURL)
+		if err != nil {
+			return Invite{}, apiErr("bad_relay", "%v", err)
+		}
+		host, port = rHost, rPort
+		d.wakeRelay()
+	} else if host == "" {
 		picked, err := pickInviteHost(d.inviteHostCandidates())
 		if err != nil {
 			return Invite{}, err
 		}
 		host = picked
+	} else if relayOn && relayURL != "" {
+		d.wakeRelay()
 	}
 	normalized, err := normalizeAddress(host)
 	if err != nil {
@@ -168,12 +190,15 @@ func (d *Daemon) connectEndpoint(id, name, host string, port int) error {
 	if online {
 		return nil
 	}
+	if d.connectShouldRelay(host, port) {
+		go d.dialViaRelay(id, name)
+		return nil
+	}
 	d.lan.DialAny(d.ctx, []string{host}, port, proto.Identity{
 		DeviceID: id, DeviceName: name, ProtocolVersion: proto.ProtocolVersion,
 	})
 	return nil
 }
-
 
 // pickInviteHost chooses a host when the user left it empty. Prefer the only
 // Tailscale IPv4 address even when LAN or docker addresses are also up, matching

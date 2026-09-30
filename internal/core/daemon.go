@@ -107,6 +107,9 @@ type Daemon struct {
 	releaseTried time.Time
 	releaseWake  chan struct{}
 
+	// relayWake asks relayLoop to re-read relay / relay_url.
+	relayWake chan struct{}
+
 	// herdrPath is the API socket of herdr. herdrRunning, herdrAgents,
 	// herdrTerms, herdrPlaces, and herdrKinds are the last state that the
 	// herdr loop read. herdrHistory keeps the last plain history of each
@@ -219,6 +222,7 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		herdrWake:   make(chan struct{}, 1),
 		dndWake:     make(chan struct{}, 1),
 		releaseWake: make(chan struct{}, 1),
+		relayWake:   make(chan struct{}, 1),
 		edgeKick:    make(chan struct{}, 1),
 	}
 	if exe, err := os.Executable(); err == nil {
@@ -337,6 +341,7 @@ func (d *Daemon) Run() error {
 	}
 	d.logf("fluxd %s listening on TCP %d as %q", d.selfID, d.lan.TCPPort(), d.Name())
 	go d.releaseLoop(ctx)
+	go d.relayLoop(ctx)
 	if d.opts.Headless {
 		go d.publishLoop(ctx)
 		go d.discoveryLoop(ctx)
@@ -581,6 +586,7 @@ func (d *Daemon) dialKnown() {
 		hosts []string
 		port  int
 		id    proto.Identity
+		desk  bool
 	}
 	var targets []target
 	var refresh []string
@@ -613,19 +619,17 @@ func (d *Daemon) dialKnown() {
 		if !dev.Paired && now.Sub(dev.mdnsSeen) > 10*time.Minute {
 			continue
 		}
-		targets = append(targets, target{dev.IP, hosts, dev.dialPort(), proto.Identity{DeviceID: dev.ID, DeviceName: dev.Name, ProtocolVersion: dev.Version}})
+		targets = append(targets, target{dev.IP, hosts, dev.dialPort(), proto.Identity{DeviceID: dev.ID, DeviceName: dev.Name, ProtocolVersion: dev.Version}, isDeskType(dev.Type) || dev.role() == "peer"})
 	}
 	d.mu.Unlock()
 	for _, id := range refresh {
 		m.Refresh(id)
 	}
 	for _, t := range targets {
-		if t.ip != "" {
+		if t.ip != "" && !t.desk {
 			d.lan.Announce(t.ip)
 		}
-		if t.port > 0 {
-			d.lan.DialAny(d.ctx, t.hosts, t.port, t.id)
-		}
+		d.dialTarget(t.hosts, t.port, t.id, t.desk)
 	}
 }
 

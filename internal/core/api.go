@@ -154,6 +154,8 @@ func (d *Daemon) Snapshot() json.RawMessage {
 			"checkUpdates":     d.cfg.CheckUpdates,
 			"edgeSide":         strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide)),
 			"edgeDevice":       strings.TrimSpace(d.cfg.EdgeDevice),
+			"relay":            d.cfg.Relay,
+			"relayURL":         strings.TrimSpace(d.cfg.RelayURL),
 		},
 		"webcam":      d.webcamViewLocked(),
 		"mic":         d.micViewLocked(),
@@ -484,6 +486,18 @@ func (d *Daemon) setSetting(key string, value any) error {
 		d.cfg.EdgeSide = side
 	case key == "edgeDevice" && isString:
 		d.cfg.EdgeDevice = strings.TrimSpace(s)
+	case key == "relay" && isBool:
+		d.cfg.Relay = b
+	case key == "relayURL" && isString:
+		url := strings.TrimSpace(s)
+		if url != "" {
+			if _, err := normalizeRelayURL(url); err != nil {
+				d.mu.Unlock()
+				return apiErr("bad_setting", "%v", err)
+			}
+			url, _ = normalizeRelayURL(url)
+		}
+		d.cfg.RelayURL = url
 	default:
 		d.mu.Unlock()
 		return apiErr("bad_setting", "Unknown setting %q or wrong value type", key)
@@ -513,6 +527,9 @@ func (d *Daemon) setSetting(key string, value any) error {
 		// show cursor, restore follow_mouse, destroy overlay, leave peer.
 		d.resetEdgePointer()
 	}
+	if key == "relay" || key == "relayURL" {
+		d.wakeRelay()
+	}
 	d.markDirty()
 	return nil
 }
@@ -535,6 +552,7 @@ func (d *Daemon) Reload() error {
 	d.inputChanged()
 	d.wakeDnd()
 	d.wakeRelease()
+	d.wakeRelay()
 	// Edge cleared or changed in config.toml: drop any stuck pointer lease.
 	if prevSide != cfg.EdgeSide || prevDev != cfg.EdgeDevice {
 		d.resetEdgePointer()

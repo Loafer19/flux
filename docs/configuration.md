@@ -31,6 +31,8 @@ gui = ""
 approve_timeout = 20
 edge_side = ""
 edge_device = ""
+relay = false
+relay_url = ""
 
 [[commands]]
 id = "lock"
@@ -55,6 +57,8 @@ command = "omarchy-system-lock"
 | `remote_input` | Let the phone or the Mac move the pointer and type on this computer. Defaults to `false`. `flux-cli input on` and `flux-cli input off` change it. See [Touchpad and keyboard](remote-input.md). |
 | `edge_side` | `left`, `right`, `top`, or `bottom`. The pointer that crosses that edge continues on `edge_device`. Empty leaves the pointer here. Set with `flux-cli edge SIDE DEVICE` or IPC `settings.set` key `edgeSide`. |
 | `edge_device` | Name or id of the paired computer on that edge. Set with `flux-cli edge` or IPC key `edgeDevice`. |
+| `relay` | Optional TCP rendezvous for pairing when there is no LAN or Tailscale path. Defaults to `false`. Prefer a direct path. `flux-cli relay on` / `off` change it. See [Pair without discovery](desktop-peer.md#pair-without-discovery). |
+| `relay_url` | Rendezvous `host:port` (or `tcp://host:port`) used when `relay` is on. Set with `flux-cli relay url HOST:PORT` or IPC key `relayURL`. |
 | `remote_desktop` | Let the phone or the Mac show the screen of this computer. Defaults to `false`. The touches and the mouse on the screen also need `remote_input`. `flux-cli desktop on` and `flux-cli desktop off` change it. See [Remote desktop](remote-desktop.md). |
 | `check_updates` | Ask GitHub once a day for the latest release. Defaults to `true`. See [release check](#release-check). |
 | `gui` | Use `app`, `plugin`, or an empty value for automatic host selection. |

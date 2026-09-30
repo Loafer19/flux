@@ -110,6 +110,15 @@ Item {
     inviteBusyTimer.restart()
   }
 
+
+  function saveRelayURL() {
+    if (!root.view || !root.view.call) return
+    var url = String(relayURLField.text || "").trim()
+    root.view.call("settings.set", { key: "relayURL", value: url }, function () {
+      if (root.view) root.view.toast(url ? ("Relay URL saved") : "Relay URL cleared")
+    })
+  }
+
   function clearInvite() {
     root.inviteCode = ""
     root.inviteHost = ""
@@ -301,6 +310,62 @@ Item {
       }
     }
 
+    SectionLabel { text: "RELAY" }
+
+    Card {
+      width: parent.width
+      implicitHeight: relayCol.implicitHeight + 36
+      Column {
+        id: relayCol
+        x: 18
+        y: 18
+        width: parent.width - 36
+        spacing: 10
+        Txt {
+          width: parent.width
+          text: "Optional TCP rendezvous when there is no direct LAN or Tailscale path. Leave off when either computer can reach the other. Both sides need the same relay host URL."
+          color: Theme.dim
+          font.pixelSize: 12
+          wrapMode: Text.Wrap
+        }
+        RowLayout {
+          width: parent.width
+          spacing: 12
+          Toggle {
+            id: relayToggle
+            text: "Use relay"
+            checked: !!root.settings.relay
+            onToggled: function (checked) {
+              if (root.view) root.view.call("settings.set", { key: "relay", value: checked })
+            }
+          }
+        }
+        Txt {
+          width: parent.width
+          text: "Rendezvous host (host:port). Run flux-cli relay serve on a reachable machine for a local test."
+          color: Theme.dim
+          font.pixelSize: 11
+          wrapMode: Text.Wrap
+        }
+        RowLayout {
+          width: parent.width
+          spacing: 8
+          Field {
+            id: relayURLField
+            Layout.fillWidth: true
+            placeholder: "e.g. 100.64.0.1:17777"
+            text: root.settings.relayURL || ""
+            onAccepted: root.saveRelayURL()
+          }
+          OutlineButton {
+            text: "Save"
+            icon: "link"
+            onClicked: root.saveRelayURL()
+          }
+        }
+      }
+    }
+
     SectionLabel { text: "PAIR WITH INVITE" }
 
     Card {
@@ -315,7 +380,7 @@ Item {
 
         Txt {
           width: parent.width
-          text: "When the other computer does not appear on the network, share a flux1 invite. Same path as flux-cli pair invite and pair join. The invite is not a secret; you still confirm the 8-character key."
+          text: "When the other computer does not appear on the network, share a flux1 invite. Same path as flux-cli pair invite and pair join. Prefer LAN or Tailscale; turn on Relay above only for NAT or cross-network with no direct path. The invite is not a secret; you still confirm the 8-character key."
           color: Theme.dim
           font.pixelSize: 12
           wrapMode: Text.Wrap

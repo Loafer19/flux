@@ -136,6 +136,31 @@ The invite carries the device ID, host, and port. It is not a secret.
 Pairing still needs the verification key.
 Flux dials only that host; it does not add a firewall rule and does not accept "pair by any IP" without the ID from the invite.
 
+### Optional relay
+
+Prefer LAN or Tailscale. Use a relay only when neither computer can dial the other.
+
+1. On a host both sides can reach (or on one desk for a local test):
+
+   ```sh
+   flux-cli relay serve --listen :17777
+   ```
+
+2. On **both** computers:
+
+   ```sh
+   flux-cli relay url THAT_HOST:17777
+   flux-cli relay on
+   ```
+
+3. Create and join an invite as above, without `--host` (the invite points at the relay).
+
+4. Compare the 8-character key and accept.
+
+`relay` defaults to off. The Network page has the same toggle and URL field.
+The helper splices TCP only; Flux still runs its TLS handshake end to end.
+A full STUN/TURN mesh is out of scope; this is a small rendezvous scaffold you can self-host for NAT/cross-network pairing.
+
 After the pair, keep a Tailscale name as an extra address on both sides when you leave the LAN:
 
 ```sh

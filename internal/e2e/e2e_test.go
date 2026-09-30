@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"flux/internal/ipc"
+	"flux/internal/relay"
 )
 
 type node struct {
@@ -482,6 +483,82 @@ func TestInvitePairWithoutDiscovery(t *testing.T) {
 		return ps == "incoming"
 	})
 	sb = beta.wait(t, "requested", func(s state) bool {
+		_, _, _, ps, _ := device(s, "alpha")
+		return ps == "requested"
+	})
+	_, _, _, _, keyA := device(sa, "beta")
+	_, _, _, _, keyB := device(sb, "alpha")
+	if keyA == "" || keyA != keyB {
+		t.Fatalf("keys %q %q", keyA, keyB)
+	}
+	alpha.call(t, "pair.accept", map[string]any{"device": "beta"}, nil)
+	alpha.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "beta"); return p })
+	beta.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "alpha"); return p })
+}
+
+// TestRelayPair pairs two daemons through a local TCP rendezvous with no
+// shared discovery port and no direct invite host. Both sides turn relay on
+// and point at the same helper.
+func TestRelayPair(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts 2 processes")
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	srv := relay.NewServer()
+	go func() { _ = srv.Serve(ln) }()
+	relayAddr := ln.Addr().String()
+
+	bin := buildFluxd(t)
+	udpA, udpB := freePort(t, "udp"), freePort(t, "udp")
+	tcpA, tcpB := freePort(t, "tcp"), freePort(t, "tcp")
+	alpha := start(t, bin, "alpha", udpA, tcpA)
+	beta := start(t, bin, "beta", udpB, tcpB)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("alpha log:\n%s\nbeta log:\n%s", alpha.log, beta.log)
+		}
+	})
+
+	for _, n := range []*node{alpha, beta} {
+		n.call(t, "settings.set", map[string]any{"key": "relayURL", "value": relayAddr}, nil)
+		n.call(t, "settings.set", map[string]any{"key": "relay", "value": true}, nil)
+	}
+
+	var inv struct {
+		ID     string `json:"id"`
+		Invite string `json:"invite"`
+		Host   string `json:"host"`
+		Port   int    `json:"port"`
+	}
+	alpha.call(t, "pair.invite", map[string]any{}, &inv)
+	wantHost, wantPort, err := relay.HostPort(relayAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Invite == "" || inv.Host != wantHost || inv.Port != wantPort {
+		t.Fatalf("invite %+v, want relay %s", inv, relayAddr)
+	}
+
+	beta.call(t, "pair.connect", map[string]any{"invite": inv.Invite}, nil)
+	beta.wait(t, "alpha online via relay", func(s state) bool {
+		_, on, _, _, _ := device(s, "alpha")
+		return on
+	})
+	alpha.wait(t, "beta online via relay", func(s state) bool {
+		_, on, _, _, _ := device(s, "beta")
+		return on
+	})
+
+	beta.call(t, "pair.request", map[string]any{"device": "alpha"}, nil)
+	sa := alpha.wait(t, "incoming", func(s state) bool {
+		_, _, _, ps, _ := device(s, "beta")
+		return ps == "incoming"
+	})
+	sb := beta.wait(t, "requested", func(s state) bool {
 		_, _, _, ps, _ := device(s, "alpha")
 		return ps == "requested"
 	})

@@ -127,6 +127,30 @@ func EdgeInside(side string, along HyprCursor, screens []Monitor, inset float64)
 	return (minX + maxX) / 2, (minY + maxY) / 2, true
 }
 
+// FracToAbs maps 0..1 fractions on the combined screen bounds to logical
+// pixels. Used to track where a remote enter placed the pointer so local
+// mouse motion can reclaim without /dev/input.
+func FracToAbs(fx, fy float64, screens []Monitor) (x, y float64, ok bool) {
+	minX, minY, maxX, maxY, ok := ScreenBounds(screens)
+	if !ok {
+		return 0, 0, false
+	}
+	w, h := maxX-minX, maxY-minY
+	if w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	clamp01 := func(v float64) float64 {
+		if v < 0 {
+			return 0
+		}
+		if v > 1 {
+			return 1
+		}
+		return v
+	}
+	return minX + clamp01(fx)*w, minY + clamp01(fy)*h, true
+}
+
 // ValidEdge reports whether side names a screen edge.
 func ValidEdge(side string) bool {
 	switch strings.ToLower(strings.TrimSpace(side)) {

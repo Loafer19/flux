@@ -563,9 +563,19 @@ func (d *Daemon) setSetting(key string, value any) error {
 			return apiErr("bad_setting", "edgeSide must be left, right, top, bottom, or empty")
 		}
 		d.cfg.EdgeSide = side
+		// Clearing the side turns the seam off: drop a stale edge_device so
+		// config.toml cannot keep a device with no side (partial "edge off").
+		if side == "" {
+			d.cfg.EdgeDevice = ""
+		}
 	case key == "edgeDevice" && isString:
 		d.cfg.EdgeDevice = strings.TrimSpace(s)
 	case key == "relay" && isBool:
+		if b && strings.TrimSpace(d.cfg.RelayURL) == "" {
+			d.mu.Unlock()
+			cfgSaves.Unlock()
+			return apiErr("need_relay", "Set relay_url first (flux-cli relay url HOST:PORT), then turn relay on")
+		}
 		d.cfg.Relay = b
 	case key == "relayURL" && isString:
 		url := strings.TrimSpace(s)
@@ -576,6 +586,9 @@ func (d *Daemon) setSetting(key string, value any) error {
 				return apiErr("bad_setting", "%v", err)
 			}
 			url, _ = normalizeRelayURL(url)
+		} else if d.cfg.Relay {
+			// Empty URL with relay on would leave REGISTER broken; drop relay.
+			d.cfg.Relay = false
 		}
 		d.cfg.RelayURL = url
 	default:

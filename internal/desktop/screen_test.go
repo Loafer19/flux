@@ -51,3 +51,18 @@ func TestScreenPark(t *testing.T) {
 		t.Fatalf("park %v %v %v", x, y, ok)
 	}
 }
+
+func TestFracToAbs(t *testing.T) {
+	screens := []Monitor{{X: 0, Y: 0, W: 1920, H: 1080}}
+	x, y, ok := FracToAbs(0.02, 0.5, screens)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if x < 30 || x > 50 || y < 530 || y > 550 {
+		t.Fatalf("got %g,%g", x, y)
+	}
+	_, _, ok = FracToAbs(0, 0, nil)
+	if ok {
+		t.Fatal("empty screens should fail")
+	}
+}

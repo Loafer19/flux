@@ -110,3 +110,15 @@ func TestJoinWithoutRegister(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestSameEndpoint(t *testing.T) {
+	if !SameEndpoint("127.0.0.1", 9, "127.0.0.1", 9) {
+		t.Fatal("equal")
+	}
+	if SameEndpoint("127.0.0.1", 9, "10.0.0.1", 9) {
+		t.Fatal("different IP")
+	}
+	if !SameEndpoint("HOST", 1, "host", 1) {
+		t.Fatal("case")
+	}
+}

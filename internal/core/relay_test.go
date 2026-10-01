@@ -2,6 +2,8 @@ package core
 
 import (
 	"testing"
+
+	"flux/internal/relay"
 )
 
 func TestConnectShouldRelayMatchesURL(t *testing.T) {
@@ -33,5 +35,34 @@ func TestUseRelayNeedsURL(t *testing.T) {
 	d.cfg.RelayURL = "100.64.0.1:17777"
 	if !d.useRelay() {
 		t.Fatal("relay on with URL must be true")
+	}
+}
+
+func TestSetRelayRequiresURL(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	d.cfg.RelayURL = ""
+	if err := d.setSetting("relay", true); err == nil {
+		t.Fatal("relay on without URL should fail")
+	}
+	if err := d.setSetting("relayURL", "127.0.0.1:17777"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.setSetting("relay", true); err != nil {
+		t.Fatal(err)
+	}
+	if !d.cfg.Relay {
+		t.Fatal("relay should be on")
+	}
+}
+
+func TestSameEndpoint(t *testing.T) {
+	if !relay.SameEndpoint("127.0.0.1", 17777, "127.0.0.1", 17777) {
+		t.Fatal("same IP")
+	}
+	if relay.SameEndpoint("127.0.0.1", 17777, "127.0.0.1", 9) {
+		t.Fatal("port mismatch")
+	}
+	if !relay.SameEndpoint("Relay.Example", 1, "relay.example", 1) {
+		t.Fatal("case fold")
 	}
 }

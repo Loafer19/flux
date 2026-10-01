@@ -110,6 +110,10 @@ func (d *Daemon) MakeInvite(host string) (Invite, error) {
 		if err != nil {
 			return Invite{}, apiErr("bad_relay", "%v", err)
 		}
+		// REGISTER must already be waiting so the joiner's JOIN succeeds.
+		if err := d.waitRelayReady(8 * time.Second); err != nil {
+			return Invite{}, apiErr("relay_down", "%v", err)
+		}
 		host, port = rHost, rPort
 	} else if host == "" {
 		picked, err := pickInviteHost(d.inviteHostCandidates())
@@ -189,18 +193,22 @@ func (d *Daemon) connectEndpoint(id, name, host string, port int) error {
 	if online {
 		return nil
 	}
-	// Relay invite (host:port is the rendezvous): JOIN only. Otherwise dial
-	// the invite host directly, and when relay is on also JOIN by device ID
-	// so a UI toggle + URL still rendezvous if the direct path is dead.
+	// Relay invite (host:port is the rendezvous): JOIN only, using the invite
+	// endpoint so both sides share one URL. Otherwise dial the invite host
+	// directly, and when relay is on also JOIN by device ID so a UI toggle +
+	// URL still rendezvous if the direct path is dead.
 	if d.connectShouldRelay(host, port) {
-		go d.dialViaRelay(id, name)
+		addr := net.JoinHostPort(host, strconv.Itoa(port))
+		if err := d.dialViaRelayAddr(addr, id, name, 25*time.Second); err != nil {
+			return apiErr("relay_join", "%v", err)
+		}
 		return nil
 	}
 	d.lan.DialAny(d.ctx, []string{host}, port, proto.Identity{
 		DeviceID: id, DeviceName: name, ProtocolVersion: proto.ProtocolVersion,
 	})
 	if d.useRelay() {
-		go d.dialViaRelay(id, name)
+		go func() { _ = d.dialViaRelay(id, name) }()
 	}
 	return nil
 }

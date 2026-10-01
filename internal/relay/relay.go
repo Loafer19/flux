@@ -114,16 +114,22 @@ func readResponse(r *bufio.Reader) error {
 // DialRegister opens a connection to the relay and waits until a peer JOINs
 // deviceID. The returned connection is ready for Flux accept().
 func DialRegister(ctx context.Context, addr, deviceID string) (net.Conn, error) {
-	return dialRole(ctx, addr, "REGISTER", deviceID, 10*time.Minute)
+	return DialRegisterReady(ctx, addr, deviceID, nil)
+}
+
+// DialRegisterReady is DialRegister plus an optional onWaiting callback
+// invoked after the REGISTER hello is accepted by the relay (before JOIN).
+func DialRegisterReady(ctx context.Context, addr, deviceID string, onWaiting func()) (net.Conn, error) {
+	return dialRole(ctx, addr, "REGISTER", deviceID, 10*time.Minute, onWaiting)
 }
 
 // DialJoin opens a connection to the relay and pairs with a peer that
 // REGISTERed deviceID. The returned connection is ready for Flux open().
 func DialJoin(ctx context.Context, addr, deviceID string) (net.Conn, error) {
-	return dialRole(ctx, addr, "JOIN", deviceID, handshakeTimeout)
+	return dialRole(ctx, addr, "JOIN", deviceID, handshakeTimeout, nil)
 }
 
-func dialRole(ctx context.Context, addr, role, deviceID string, wait time.Duration) (net.Conn, error) {
+func dialRole(ctx context.Context, addr, role, deviceID string, wait time.Duration, onWaiting func()) (net.Conn, error) {
 	if !proto.ValidDeviceID(deviceID) {
 		return nil, fmt.Errorf("device ID is not valid")
 	}
@@ -134,7 +140,7 @@ func dialRole(ctx context.Context, addr, role, deviceID string, wait time.Durati
 	d := net.Dialer{Timeout: 10 * time.Second}
 	c, err := d.DialContext(ctx, "tcp", normalized)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial relay %s: %w", normalized, err)
 	}
 	done := make(chan struct{})
 	defer close(done)
@@ -148,7 +154,12 @@ func dialRole(ctx context.Context, addr, role, deviceID string, wait time.Durati
 	_ = c.SetDeadline(time.Now().Add(wait))
 	if err := writeLine(c, handshakeLine(role, deviceID)); err != nil {
 		c.Close()
-		return nil, err
+		return nil, fmt.Errorf("relay hello: %w", err)
+	}
+	// REGISTER is listed on the server as soon as the hello is parsed; JOIN
+	// can proceed. Signal before blocking on OK.
+	if role == "REGISTER" && onWaiting != nil {
+		onWaiting()
 	}
 	br := bufio.NewReader(c)
 	if err := readResponse(br); err != nil {
@@ -164,6 +175,28 @@ func dialRole(ctx context.Context, addr, role, deviceID string, wait time.Durati
 	}
 	_ = c.SetDeadline(time.Time{})
 	return c, nil
+}
+
+// SameEndpoint reports whether two host:port pairs name the same rendezvous
+// (case-insensitive host, equal port). Bare IPs compare equal after parsing.
+func SameEndpoint(hostA string, portA int, hostB string, portB int) bool {
+	if portA != portB || portA <= 0 {
+		return false
+	}
+	a := strings.TrimSpace(hostA)
+	b := strings.TrimSpace(hostB)
+	if a == "" || b == "" {
+		return false
+	}
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	ipA := net.ParseIP(a)
+	ipB := net.ParseIP(b)
+	if ipA != nil && ipB != nil {
+		return ipA.Equal(ipB)
+	}
+	return false
 }
 
 // Server matches REGISTER and JOIN by device ID and splices the two TCP

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -35,6 +36,64 @@ func (d *Daemon) wakeRelay() {
 	}
 }
 
+func (d *Daemon) markRelayWaiting(on bool) {
+	d.mu.Lock()
+	d.relayWaiting = on
+	ch := d.relayWaitCh
+	d.mu.Unlock()
+	if on && ch != nil {
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+	}
+}
+
+func (d *Daemon) resetRelayWaitCh() {
+	d.mu.Lock()
+	d.relayWaiting = false
+	d.relayWaitCh = make(chan struct{})
+	d.mu.Unlock()
+}
+
+// waitRelayReady waits until REGISTER is listed on the rendezvous host, or
+// until timeout / context cancel. Used before pair.invite so the joiner's
+// JOIN finds a waiter.
+func (d *Daemon) waitRelayReady(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		d.mu.Lock()
+		if d.relayWaiting {
+			d.mu.Unlock()
+			return nil
+		}
+		err := d.relayLastErr
+		ch := d.relayWaitCh
+		d.mu.Unlock()
+		remain := time.Until(deadline)
+		if remain <= 0 {
+			if err != nil {
+				return fmt.Errorf("relay host not ready: %w", err)
+			}
+			return fmt.Errorf("relay host not ready (is flux-cli relay serve running, and is relay_url reachable?)")
+		}
+		wait := 200 * time.Millisecond
+		if wait > remain {
+			wait = remain
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-d.ctx.Done():
+			timer.Stop()
+			return d.ctx.Err()
+		case <-ch:
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
+}
+
 // relayLoop keeps one REGISTER on the rendezvous host while relay is on,
 // so a joiner (or a reconnecting peer) can splice into this computer.
 func (d *Daemon) relayLoop(ctx context.Context) {
@@ -44,11 +103,15 @@ func (d *Daemon) relayLoop(ctx context.Context) {
 			cancel()
 			cancel = nil
 		}
+		d.markRelayWaiting(false)
 	}
 	defer stop()
 	for {
 		if !d.useRelay() {
 			stop()
+			d.mu.Lock()
+			d.relayLastErr = nil
+			d.mu.Unlock()
 			select {
 			case <-ctx.Done():
 				return
@@ -57,6 +120,7 @@ func (d *Daemon) relayLoop(ctx context.Context) {
 			}
 		}
 		stop()
+		d.resetRelayWaitCh()
 		rctx, c := context.WithCancel(ctx)
 		cancel = c
 		go d.registerOnce(rctx)
@@ -76,13 +140,23 @@ func (d *Daemon) registerOnce(ctx context.Context) {
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
+			d.markRelayWaiting(false)
 			return
 		}
-		conn, err := relay.DialRegister(ctx, addr, d.selfID)
+		conn, err := relay.DialRegisterReady(ctx, addr, d.selfID, func() {
+			d.mu.Lock()
+			d.relayLastErr = nil
+			d.mu.Unlock()
+			d.markRelayWaiting(true)
+		})
+		d.markRelayWaiting(false)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
+			d.mu.Lock()
+			d.relayLastErr = err
+			d.mu.Unlock()
 			d.logf("relay register: %v", err)
 			select {
 			case <-ctx.Done():
@@ -95,25 +169,32 @@ func (d *Daemon) registerOnce(ctx context.Context) {
 			continue
 		}
 		backoff = time.Second
+		d.mu.Lock()
+		d.relayLastErr = nil
+		d.mu.Unlock()
 		d.logf("relay: peer joined through %s", addr)
 		d.lan.AcceptConn(conn)
 		// AcceptConn returns when the handshake finishes or fails. Register
 		// again so the next joiner can connect while relay stays on.
+		d.resetRelayWaitCh()
 	}
 }
 
-// dialViaRelay JOINs the peer device ID on the rendezvous host, then runs
-// the outgoing Flux handshake on the spliced connection. Retries briefly
-// so a peer that just woke its REGISTER can finish dialing first.
-func (d *Daemon) dialViaRelay(id, name string) {
+// dialViaRelay JOINs the peer device ID on the configured rendezvous host.
+func (d *Daemon) dialViaRelay(id, name string) error {
+	return d.dialViaRelayAddr(d.relayAddr(), id, name, 25*time.Second)
+}
+
+// dialViaRelayAddr JOINs id on an explicit rendezvous address (invite host).
+func (d *Daemon) dialViaRelayAddr(addr, id, name string, timeout time.Duration) error {
 	if d.lan == nil || !proto.ValidDeviceID(id) || id == d.selfID {
-		return
+		return fmt.Errorf("relay join is not available")
 	}
-	addr := d.relayAddr()
+	addr = strings.TrimSpace(addr)
 	if addr == "" {
-		return
+		return fmt.Errorf("relay URL is empty")
 	}
-	ctx, cancel := context.WithTimeout(d.ctx, 25*time.Second)
+	ctx, cancel := context.WithTimeout(d.ctx, timeout)
 	defer cancel()
 	var (
 		conn net.Conn
@@ -121,7 +202,7 @@ func (d *Daemon) dialViaRelay(id, name string) {
 	)
 	for attempt := 0; attempt < 8; attempt++ {
 		if ctx.Err() != nil {
-			return
+			return fmt.Errorf("relay join %s: %w", nameOrID(name, id), ctx.Err())
 		}
 		conn, err = relay.DialJoin(ctx, addr, id)
 		if err == nil {
@@ -131,20 +212,22 @@ func (d *Daemon) dialViaRelay(id, name string) {
 		select {
 		case <-ctx.Done():
 			d.logf("relay join %s: %v", nameOrID(name, id), err)
-			return
+			return fmt.Errorf("relay join %s: %w", nameOrID(name, id), err)
 		case <-time.After(time.Duration(attempt+1) * 250 * time.Millisecond):
 		}
 	}
 	if err != nil {
 		d.logf("relay join %s: %v", nameOrID(name, id), err)
-		return
+		return fmt.Errorf("relay join %s: %w", nameOrID(name, id), err)
 	}
 	ok := d.lan.OpenConn(conn, proto.Identity{
 		DeviceID: id, DeviceName: name, ProtocolVersion: proto.ProtocolVersion,
 	})
 	if !ok {
 		d.logf("relay: Flux handshake with %s failed", nameOrID(name, id))
+		return fmt.Errorf("relay: Flux handshake with %s failed", nameOrID(name, id))
 	}
+	return nil
 }
 
 // connectShouldRelay is true when the invite endpoint is this computer's
@@ -158,7 +241,7 @@ func (d *Daemon) connectShouldRelay(host string, port int) bool {
 	if err != nil {
 		return false
 	}
-	return strings.EqualFold(host, rHost) && port == rPort
+	return relay.SameEndpoint(host, port, rHost, rPort)
 }
 
 func nameOrID(name, id string) string {
@@ -176,7 +259,7 @@ func (d *Daemon) dialTarget(addrs []string, id proto.Identity, deskPeer bool) {
 		d.lan.DialAddrs(d.ctx, addrs, id)
 	}
 	if d.useRelay() && deskPeer {
-		go d.dialViaRelay(id.DeviceID, id.DeviceName)
+		go func() { _ = d.dialViaRelay(id.DeviceID, id.DeviceName) }()
 	}
 }
 

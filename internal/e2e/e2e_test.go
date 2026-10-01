@@ -519,6 +519,12 @@ func TestInvitePairWithoutDiscovery(t *testing.T) {
 	}
 	alpha.call(t, "pair.accept", map[string]any{"device": "beta"}, nil)
 	alpha.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "beta"); return p })
+	// Requester must confirm the matching key after the peer accepts.
+	beta.wait(t, "confirm", func(s state) bool {
+		_, _, _, ps, _ := device(s, "alpha")
+		return ps == "confirm"
+	})
+	beta.call(t, "pair.accept", map[string]any{"device": "alpha"}, nil)
 	beta.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "alpha"); return p })
 }
 
@@ -595,5 +601,11 @@ func TestRelayPair(t *testing.T) {
 	}
 	alpha.call(t, "pair.accept", map[string]any{"device": "beta"}, nil)
 	alpha.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "beta"); return p })
+	// Requester must confirm the matching key after the peer accepts.
+	beta.wait(t, "confirm", func(s state) bool {
+		_, _, _, ps, _ := device(s, "alpha")
+		return ps == "confirm"
+	})
+	beta.call(t, "pair.accept", map[string]any{"device": "alpha"}, nil)
 	beta.wait(t, "paired", func(s state) bool { _, _, p, _, _ := device(s, "alpha"); return p })
 }

@@ -55,13 +55,18 @@ type Daemon struct {
 	// HyprEndPointerLease, warp on-screen). Buffered so settings can
 	// signal without blocking.
 	edgeKick chan struct{}
-	// edgeRemote* tracks the last pointer sample while a peer drives this
-	// desk, so local mouse motion can take the pointer back.
+	// edgeRemote* tracks where the peer last placed this pointer so local
+	// mouse can reclaim without /dev/input. X/Y are the expected logical
+	// position from enter+moves (not a chased live sample).
 	edgeRemoteX, edgeRemoteY float64
 	edgeRemoteAt             time.Time
 	edgeRemoteSet            bool
+	edgeRemoteHasExpect      bool
 	// localInput watches /dev/input for physical keys/mouse when readable.
 	localInput *desktop.LocalInput
+	// edgeKeys grabs the keyboard via Wayland layer-shell while a peer
+	// drives this pointer, so local keys reclaim without the input group.
+	edgeKeys edgeKeyWatcher
 	// input moves the pointer and types for the phone. It is nil in a
 	// headless daemon. inputQ holds the actions in order.
 	input    inputBackend
@@ -118,6 +123,10 @@ type Daemon struct {
 
 	// relayWake asks relayLoop to re-read relay / relay_url.
 	relayWake chan struct{}
+	// relayWaiting is true while REGISTER is listed on the rendezvous host.
+	relayWaiting bool
+	relayWaitCh  chan struct{} // closed when waiting becomes true
+	relayLastErr error         // last REGISTER dial/hello failure
 
 	// herdrPath is the API socket of herdr. herdrRunning, herdrAgents,
 	// herdrTerms, herdrPlaces, and herdrKinds are the last state that the
@@ -261,6 +270,7 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		dndWake:     make(chan struct{}, 1),
 		releaseWake: make(chan struct{}, 1),
 		relayWake:   make(chan struct{}, 1),
+		relayWaitCh: make(chan struct{}),
 		edgeKick:    make(chan struct{}, 1),
 	}
 	d.ready = make(chan struct{})

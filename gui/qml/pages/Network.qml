@@ -803,6 +803,11 @@ Item {
             text: "Use relay host"
             checked: !!root.settings.relay
             onToggled: function (checked) {
+              if (checked && !String(root.settings.relayURL || "").trim()) {
+                root.relayUserExpanded = true
+                if (root.view) root.view.toast("Save a relay host:port first, then turn relay on")
+                return
+              }
               if (root.view) root.view.call("settings.set", { key: "relay", value: checked })
               if (checked) root.relayUserExpanded = true
             }

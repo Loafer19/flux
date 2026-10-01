@@ -118,6 +118,42 @@ func TestSetEdgeSettings(t *testing.T) {
 	if err := d.setSetting("edgeSide", ""); err != nil {
 		t.Fatal(err)
 	}
+	if d.cfg.EdgeSide != "" || d.cfg.EdgeDevice != "" {
+		t.Fatalf("clearing edgeSide left device %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+}
+
+func TestEdgeRemoteExpectTracksMoves(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	d.setEdgeRemoteExpect(100, 200)
+	d.bumpEdgeRemoteExpect(12, -4)
+	d.mu.Lock()
+	x, y := d.edgeRemoteX, d.edgeRemoteY
+	has := d.edgeRemoteHasExpect
+	d.mu.Unlock()
+	if !has || x != 112 || y != 196 {
+		t.Fatalf("expect %v @ %g,%g want 112,196", has, x, y)
+	}
+	d.clearEdgeRemoteMark()
+	d.mu.Lock()
+	set, has := d.edgeRemoteSet, d.edgeRemoteHasExpect
+	d.mu.Unlock()
+	if set || has {
+		t.Fatal("clear left remote mark set")
+	}
+}
+
+func TestEdgeLocalInputNeedsExpectOrLocalInput(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	// No mark: never local.
+	if d.edgeLocalInput() {
+		t.Fatal("unmarked session reported local input")
+	}
+	// Touch without expect: only /dev/input could reclaim; none here.
+	d.touchEdgeRemote()
+	if d.edgeLocalInput() {
+		t.Fatal("touch-only mark should not reclaim without expect or LocalInput")
+	}
 }
 
 func TestEdgeButtonForward(t *testing.T) {
@@ -212,5 +248,35 @@ func TestEdgeCursorDiverged(t *testing.T) {
 	}
 	if !edgeCursorDiverged(100, 100, 120, 100, 10) {
 		t.Fatal("20px should exceed 10px threshold")
+	}
+}
+
+type stubKeyWatcher struct {
+	at      time.Time
+	stopped bool
+}
+
+func (s *stubKeyWatcher) ActiveSince(t time.Time) bool {
+	return !s.at.IsZero() && !s.at.Before(t)
+}
+
+func (s *stubKeyWatcher) Stop() { s.stopped = true }
+
+func TestEdgeLocalInputUsesKeyWatcher(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	d.touchEdgeRemote()
+	// Without expect or keys: false
+	if d.edgeLocalInput() {
+		t.Fatal("expected no local input")
+	}
+	w := &stubKeyWatcher{at: time.Now()}
+	d.edgeKeys = w
+	if !d.edgeLocalInput() {
+		t.Fatal("key watcher should reclaim")
+	}
+	d.setEdgeActive(true)
+	d.setEdgeActive(false)
+	if !w.stopped {
+		t.Fatal("setEdgeActive(false) should stop key watcher")
 	}
 }

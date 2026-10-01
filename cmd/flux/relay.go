@@ -19,8 +19,7 @@ func relayCmd(args []string) error {
 			return err
 		}
 		fmt.Println("Relay is on. Prefer LAN or Tailscale when either works.")
-		fmt.Println("Set the rendezvous host with: flux-cli relay url HOST:PORT")
-		fmt.Println("Run a local helper with: flux-cli relay serve")
+		fmt.Println("Both computers need the same URL. Run a helper with: flux-cli relay serve")
 		return nil
 	case "off":
 		if _, err := setRelay(false); err != nil {
@@ -32,14 +31,23 @@ func relayCmd(args []string) error {
 		if len(args) < 2 {
 			return fmt.Errorf("Usage: flux-cli relay url HOST:PORT")
 		}
-		addr, err := relay.NormalizeAddr(args[1])
-		if err != nil {
-			return err
+		raw := strings.TrimSpace(args[1])
+		addr := ""
+		if raw != "" {
+			var err error
+			addr, err = relay.NormalizeAddr(raw)
+			if err != nil {
+				return err
+			}
 		}
 		if err := call("settings.set", map[string]any{"key": "relayURL", "value": addr}); err != nil {
 			return err
 		}
-		fmt.Printf("Relay URL is %s\n", addr)
+		if addr == "" {
+			fmt.Println("Relay URL cleared")
+		} else {
+			fmt.Printf("Relay URL is %s\n", addr)
+		}
 		return nil
 	case "serve":
 		return relayServe(args[1:])

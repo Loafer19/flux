@@ -11,15 +11,21 @@ import (
 	"flux/internal/proto"
 )
 
+// edgeKeyWatcher records local key activity while a peer drives this pointer.
+type edgeKeyWatcher interface {
+	ActiveSince(t time.Time) bool
+	Stop()
+}
+
 const (
 	edgeMargin = 6.0
 	edgeReturn = 48.0
 	edgeTick   = 20 * time.Millisecond
-	// edgeLocalGrace ignores cursor jitter while a remote packet is still
-	// landing in the compositor.
+	// edgeLocalGrace ignores compositor lag after a remote enter/move before
+	// comparing the live cursor to the expected remote position.
 	edgeLocalGrace = 50 * time.Millisecond
-	// edgeLocalThresh is how far the cursor may drift from the last remote
-	// baseline before local mouse takes the pointer back (logical px).
+	// edgeLocalThresh is how far the live cursor may drift from the expected
+	// remote position before local mouse takes the pointer back (logical px).
 	edgeLocalThresh = 10.0
 )
 
@@ -413,47 +419,94 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 			}
 			return v
 		}
-		_ = d.input.MoveTo("", pad(x), pad(y))
-		d.markEdgeRemoteInput()
+		fx, fy := pad(x), pad(y)
+		_ = d.input.MoveTo("", fx, fy)
+		// Remember where we placed the pointer so local mouse reclaim does
+		// not need /dev/input (often unreadable without the input group).
+		if _, screens, err := desktop.HyprLayout(); err == nil {
+			if ax, ay, ok := desktop.FracToAbs(fx, fy, screens); ok {
+				d.setEdgeRemoteExpect(ax, ay)
+			} else {
+				d.touchEdgeRemote()
+			}
+		} else {
+			d.touchEdgeRemote()
+		}
+		// Local keys reclaim without /dev/input via a Wayland keyboard grab.
+		d.startEdgeKeys()
 	case "move":
 		if !d.edgeReceiving() {
 			return
 		}
 		dx := max(-maxInputDelta, min(maxInputDelta, body.DX))
 		dy := max(-maxInputDelta, min(maxInputDelta, body.DY))
+		d.bumpEdgeRemoteExpect(dx, dy)
 		_ = d.input.Move(dx, dy)
-		d.markEdgeRemoteInput()
 	case "button":
 		if !d.edgeReceiving() {
 			return
 		}
 		_ = d.input.Button(body.Button, body.Pressed)
-		d.markEdgeRemoteInput()
+		// Buttons do not move the cursor; only refresh the quiet timer so
+		// compositor lag after a click is not mistaken for local motion.
+		d.touchEdgeRemote()
 	}
 }
 
 // edgeReceiving reports whether the named peer currently drives this pointer.
 func (d *Daemon) edgeReceiving() bool {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if !d.edgeActive {
+		d.mu.Unlock()
 		return false
 	}
 	// A cleared edge config drops a stale lease so this desk can capture again.
 	if d.cfg == nil || !desktop.ValidEdge(d.cfg.EdgeSide) || strings.TrimSpace(d.cfg.EdgeDevice) == "" {
 		d.edgeActive = false
+		d.mu.Unlock()
+		d.stopEdgeKeys()
 		return false
 	}
+	d.mu.Unlock()
 	return true
 }
 
 func (d *Daemon) setEdgeActive(on bool) {
 	d.mu.Lock()
+	was := d.edgeActive
 	d.edgeActive = on
+	d.mu.Unlock()
+	if !on && was {
+		d.stopEdgeKeys()
+	}
+}
+
+// setEdgeRemoteExpect records the absolute pointer position the peer just
+// commanded. Divergence from this expectation means local mouse took over.
+func (d *Daemon) setEdgeRemoteExpect(x, y float64) {
+	d.mu.Lock()
+	d.edgeRemoteX, d.edgeRemoteY = x, y
+	d.edgeRemoteAt = time.Now()
+	d.edgeRemoteSet = true
+	d.edgeRemoteHasExpect = true
 	d.mu.Unlock()
 }
 
-func (d *Daemon) markEdgeRemoteInput() {
+// bumpEdgeRemoteExpect advances the expected position by a remote move delta.
+func (d *Daemon) bumpEdgeRemoteExpect(dx, dy float64) {
+	d.mu.Lock()
+	if d.edgeRemoteHasExpect {
+		d.edgeRemoteX += dx
+		d.edgeRemoteY += dy
+	}
+	d.edgeRemoteAt = time.Now()
+	d.edgeRemoteSet = true
+	d.mu.Unlock()
+}
+
+// touchEdgeRemote refreshes the quiet timer without changing the expected
+// position (buttons, or enter when layout is unavailable).
+func (d *Daemon) touchEdgeRemote() {
 	d.mu.Lock()
 	d.edgeRemoteAt = time.Now()
 	d.edgeRemoteSet = true
@@ -463,20 +516,23 @@ func (d *Daemon) markEdgeRemoteInput() {
 func (d *Daemon) clearEdgeRemoteMark() {
 	d.mu.Lock()
 	d.edgeRemoteSet = false
+	d.edgeRemoteHasExpect = false
 	d.mu.Unlock()
 }
-
 
 // edgeCursorDiverged reports whether cur is farther than thresh from baseline.
 func edgeCursorDiverged(bx, by, cx, cy, thresh float64) bool {
 	return math.Hypot(cx-bx, cy-by) > thresh
 }
 
-// edgeLocalInput reports local mouse (cursor divergence after remote quiet)
-// or physical key/mouse activity from LocalInput when /dev/input is readable.
+// edgeLocalInput reports local mouse or key activity while a peer drives this
+// pointer. Order: /dev/input when readable, Wayland EdgeKeyGrab (no input
+// group), then live cursor vs expected remote position. Do not chase the live
+// cursor into the baseline — that absorbed local motion and blocked reclaim.
 func (d *Daemon) edgeLocalInput() bool {
 	d.mu.Lock()
 	set := d.edgeRemoteSet
+	has := d.edgeRemoteHasExpect
 	at := d.edgeRemoteAt
 	bx, by := d.edgeRemoteX, d.edgeRemoteY
 	d.mu.Unlock()
@@ -486,18 +542,52 @@ func (d *Daemon) edgeLocalInput() bool {
 	if d.localInput != nil && d.localInput.ActiveSince(at) {
 		return true
 	}
+	d.mu.Lock()
+	keys := d.edgeKeys
+	d.mu.Unlock()
+	if keys != nil && keys.ActiveSince(at) {
+		return true
+	}
+	if !has {
+		return false
+	}
+	if time.Since(at) < edgeLocalGrace {
+		// Remote motion may still be landing in the compositor.
+		return false
+	}
 	cur, _, err := desktop.HyprLayout()
 	if err != nil {
 		return false
 	}
-	if time.Since(at) < edgeLocalGrace {
-		// Remote motion may still be landing; chase as baseline.
-		d.mu.Lock()
-		d.edgeRemoteX, d.edgeRemoteY = cur.X, cur.Y
-		d.mu.Unlock()
-		return false
-	}
 	return edgeCursorDiverged(bx, by, cur.X, cur.Y, edgeLocalThresh)
+}
+
+// startEdgeKeys begins a Wayland exclusive keyboard grab for local reclaim.
+// Idempotent: replaces any prior grab.
+func (d *Daemon) startEdgeKeys() {
+	g, err := desktop.StartEdgeKeyGrab()
+	if err != nil {
+		d.logf("screen edge keys: %v", err)
+		return
+	}
+	d.mu.Lock()
+	old := d.edgeKeys
+	d.edgeKeys = g
+	d.mu.Unlock()
+	if old != nil {
+		old.Stop()
+	}
+}
+
+// stopEdgeKeys drops the receive-side keyboard grab.
+func (d *Daemon) stopEdgeKeys() {
+	d.mu.Lock()
+	g := d.edgeKeys
+	d.edgeKeys = nil
+	d.mu.Unlock()
+	if g != nil {
+		g.Stop()
+	}
 }
 
 // yieldEdgeToLocal drops peer control of this pointer and tells the peer to

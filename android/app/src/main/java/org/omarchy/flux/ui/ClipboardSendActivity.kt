@@ -13,16 +13,12 @@ import org.omarchy.flux.service.FluxService
 /**
  * The clipboard sender: no UI. It takes window focus, so Flux may read the
  * clipboard, sends it to each connected paired computer, and finishes. The
- * Quick Settings tile, the service notification, and the automatic reader
- * start it. It uses Theme.Flux.Invisible, which draws nothing but keeps a
- * focusable window.
+ * Quick Settings tile and the service notification start it. It uses
+ * Theme.Flux.Invisible, which draws nothing but keeps a focusable window.
  */
 class ClipboardSendActivity : ComponentActivity() {
     private var done = false
     private val giveUp = Handler(Looper.getMainLooper())
-
-    /** True for a user action, which shows a toast with the result. */
-    private val manual: Boolean get() = intent?.getBooleanExtra(EXTRA_MANUAL, true) ?: true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,7 +28,7 @@ class ClipboardSendActivity : ComponentActivity() {
         giveUp.postDelayed({
             if (!done) {
                 done = true
-                if (manual) toast(applicationContext, "Flux could not read the clipboard. Try again")
+                toast(applicationContext, "Flux could not read the clipboard. Try again")
                 finish()
             }
         }, GIVE_UP_MS)
@@ -44,7 +40,7 @@ class ClipboardSendActivity : ComponentActivity() {
         done = true
         giveUp.removeCallbacksAndMessages(null)
         val app = applicationContext
-        Plugins.sendClipboardToAll(FluxCore, manual = manual) { toast(app, it) }
+        Plugins.sendClipboardToAll(FluxCore, manual = true) { toast(app, it) }
         finish()
     }
 
@@ -54,9 +50,6 @@ class ClipboardSendActivity : ComponentActivity() {
     }
 
     companion object {
-        /** True for a user action, which shows a toast. False for the automatic reader. */
-        const val EXTRA_MANUAL = "flux.clip.manual"
-
         /** The read must not wait forever for window focus. */
         private const val GIVE_UP_MS = 2_000L
 

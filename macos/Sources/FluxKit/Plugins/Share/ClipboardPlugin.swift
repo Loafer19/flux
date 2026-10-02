@@ -18,6 +18,9 @@ public final class ClipboardModel {
 
     /// True when a copy from another app goes out when the iOS app opens.
     public internal(set) var sendOnOpen = true
+
+    /// The last clip that this device sent or received, for the Inbox. Only in memory.
+    public internal(set) var last: ClipEvent?
 }
 
 /// Clipboard sync: flux.clipboard and flux.clipboard.connect in
@@ -346,6 +349,21 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
         ClipboardText.write(text)
         markSeen(ClipboardText.changeCount)
         remoteCopy = RemoteCopy(device: deviceId, count: changeCount)
+        if let name = core?.withDevice(deviceId, { $0.name }) {
+            model.last = ClipEvent.received(from: deviceId, computer: name, text: text)
+        }
+    }
+
+    /// Keeps a clip that went out for the Inbox. A send that reached no computer changes nothing.
+    @MainActor
+    private func noteSentClip(_ event: ClipEvent?) {
+        if let event { model.last = event }
+    }
+
+    /// The ID and the name of each computer in `ids` that Flux knows.
+    private func computers(_ ids: [String]) -> [(id: String, name: String)] {
+        guard let core else { return [] }
+        return ids.compactMap { id in core.withDevice(id, { $0.name }).map { (id: id, name: $0) } }
     }
 
     /// Notes that Flux saw the clipboard at `count`, so that neither the
@@ -442,16 +460,21 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
             core.toast("The clipboard is empty")
             return false
         }
+        // The user sends a secret on purpose, but the Inbox does not show it.
+        // A copy that changed after `count` counts as a secret too, because
+        // the text and the types can then come from 2 different copies.
+        let secret = ClipboardText.holdsPrivate || ClipboardText.changeCount != count
         timestamp = Packet.now()
         let p = Packet(PacketType.clipboard, ["content": text])
-        let names = known.filter { core.send(p, to: $0) }.compactMap { id in core.withDevice(id, { $0.name }) }
-        guard !names.isEmpty else {
+        let got = computers(known.filter { core.send(p, to: $0) })
+        guard !got.isEmpty else {
             core.toast("Not connected. Try again in a moment")
             return false
         }
         noteSent(text)
         sentCount = count
-        core.toast("Clipboard sent to \(names.joined(separator: ", "))")
+        noteSentClip(ClipEvent.sent(to: got, text: text, secret: secret))
+        core.toast("Clipboard sent to \(got.map { $0.name }.joined(separator: ", "))")
         return true
     }
 
@@ -559,7 +582,11 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
         timestamp = Packet.now()
         noteSent(text)
         let p = Packet(PacketType.clipboard, ["content": text])
-        for id in core.connectedPairedIds() { core.send(p, to: id) }
+        var sent: [String] = []
+        for id in core.connectedPairedIds() {
+            if core.send(p, to: id) { sent.append(id) }
+        }
+        noteSentClip(ClipEvent.sent(to: computers(sent), text: text))
         return true
     }
 
@@ -636,6 +663,7 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
                     plugin.lastRemoteImage = ClipboardImage.digest(data)
                     ClipboardImage.write(data, mime: mime)
                     plugin.markSeen(ClipboardText.changeCount)
+                    plugin.model.last = ClipEvent.received(from: id, computer: name, text: nil)
                     core.toast("Image from \(name) is on the clipboard")
                 }
             } catch {
@@ -667,7 +695,11 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
             return false
         }
         timestamp = Packet.now()
-        Task.detached { [self] in _ = await send(image, to: ids) }
+        Task.detached { [self] in
+            let got = await send(image, to: ids)
+            guard !got.isEmpty else { return }
+            onMain { plugin in plugin.noteSentClip(ClipEvent.sent(to: plugin.computers(got), text: nil)) }
+        }
         return true
     }
 
@@ -692,16 +724,18 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
         }
         timestamp = Packet.now()
         Task.detached { [self] in
-            let sent = await send(image, to: [id])
-            core.toast(sent > 0 ? "Image sent to \(name)" : "Sending the image failed")
+            let got = await send(image, to: [id])
+            core.toast(got.isEmpty ? "Sending the image failed" : "Image sent to \(name)")
+            guard !got.isEmpty else { return }
+            onMain { plugin in plugin.noteSentClip(ClipEvent.sent(to: plugin.computers(got), text: nil)) }
         }
         return true
     }
 
     /// Sends the image to the computers one after the other and returns the
-    /// number of computers that got it.
-    private func send(_ image: ClipboardImage.Image, to ids: [String]) async -> Int {
-        guard let core else { return 0 }
+    /// IDs of the computers that got it.
+    private func send(_ image: ClipboardImage.Image, to ids: [String]) async -> [String] {
+        guard let core else { return [] }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("flux-clip-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("image")
@@ -710,14 +744,14 @@ public final class ClipboardPlugin: FluxPlugin, @unchecked Sendable {
             try image.data.write(to: file)
         } catch {
             FluxLog.plugin.error("cannot write the clipboard image: \(String(describing: error), privacy: .public)")
-            return 0
+            return []
         }
-        var sent = 0
+        var sent: [String] = []
         for id in ids {
             guard let cert = core.withDevice(id, { $0.certificate }) ?? nil else { continue }
             do {
                 try await ClipImageTransfer.send(file, size: Int64(image.data.count), mime: image.mime, to: id, cert: cert, core: core)
-                sent += 1
+                sent.append(id)
             } catch {
                 FluxLog.plugin.error("send clipboard image to \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
@@ -784,11 +818,18 @@ enum ClipboardText {
         NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType"),
     ]
 
+    /// True when the pasteboard holds a secret.
+    @MainActor
+    static var holdsPrivate: Bool {
+        guard let types = NSPasteboard.general.types else { return false }
+        return !privateTypes.isDisjoint(with: types)
+    }
+
+    /// The text, or nil for a secret unless `includingPrivate`.
     @MainActor
     static func text(includingPrivate: Bool) -> String? {
-        let pb = NSPasteboard.general
-        if !includingPrivate, let types = pb.types, !privateTypes.isDisjoint(with: types) { return nil }
-        return pb.string(forType: .string)
+        if !includingPrivate, holdsPrivate { return nil }
+        return NSPasteboard.general.string(forType: .string)
     }
 
     @MainActor

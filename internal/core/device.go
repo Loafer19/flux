@@ -243,7 +243,7 @@ func (dev *Device) role() string {
 func peerIgnores(typ string) bool {
 	switch typ {
 	case proto.TypeFluxApprove, proto.TypeFluxHerdr,
-		proto.TypeFluxShortcuts, proto.TypeSftp, proto.TypeSftpRequest,
+		proto.TypeFluxShortcuts,
 		proto.TypeNotificationRequest, proto.TypeFluxDnd, proto.TypeTelephony,
 		proto.TypeSmsMessages, proto.TypeFluxWebcam, proto.TypeFluxMic,
 		proto.TypeFluxScreen, proto.TypeRunCommandRequest:
@@ -255,8 +255,8 @@ func peerIgnores(typ string) bool {
 // plugins returns the features that the device offers to this computer.
 // The window uses them to show or hide tabs. Each check looks at the
 // direction that the feature needs.
-// A peer offers clipboard, share, battery, and desktop. It does not offer phone
-// storage, SMS, ring, or phone notifications.
+// A peer offers clipboard, share, battery, desktop, and Browse (home share).
+// It does not offer phone SMS, ring, or phone notifications.
 func (dev *Device) plugins() []string {
 	if dev.peer() {
 		out := []string{}
@@ -273,6 +273,10 @@ func (dev *Device) plugins() []string {
 		// the peer accepts flux.desktop (every fluxd does).
 		if dev.accepts(proto.TypeFluxDesktop) {
 			out = append(out, "desktop")
+		}
+		// Desk↔desk Browse: the peer accepts flux.sftp.request (every fluxd does).
+		if dev.accepts(proto.TypeSftpRequest) {
+			out = append(out, "browse")
 		}
 		return out
 	}

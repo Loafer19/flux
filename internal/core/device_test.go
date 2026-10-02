@@ -48,7 +48,7 @@ func TestPeerRole(t *testing.T) {
 	if peer.role() != "peer" || peer.fluxApp() {
 		t.Fatalf("fluxd role %s fluxApp %v", peer.role(), peer.fluxApp())
 	}
-	if got, want := peer.plugins(), []string{"clipboard", "share", "battery", "desktop"}; !slices.Equal(got, want) {
+	if got, want := peer.plugins(), []string{"clipboard", "share", "battery", "desktop", "browse"}; !slices.Equal(got, want) {
 		t.Fatalf("peer plugins %v", got)
 	}
 	view := peer.view()
@@ -147,7 +147,7 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 	packets := []*proto.Packet{
 		proto.New(proto.TypeFluxApprove, map[string]any{"kind": "response", "id": "req1", "denied": true}),
 		proto.New(proto.TypeFluxDnd, map[string]any{"on": true}),
-		proto.New(proto.TypeSftpRequest, map[string]any{"startBrowsing": true}),
+		// flux.sftp.request is allowed from peers (desk↔desk Browse).
 		proto.New(proto.TypeFluxHerdr, map[string]any{"kind": "request"}),
 		proto.New(proto.TypeRunCommandRequest, map[string]any{"key": "lock"}),
 	}

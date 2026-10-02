@@ -117,7 +117,10 @@ type Daemon struct {
 	// peerDesktop shows another fluxd screen on this computer.
 	peerDesktop    *peerDesktopSession
 	peerDesktopErr string
-	approvals      approvalBook
+	// peerBrowse is this computer browsing a peer's shared home (SFTP client).
+	peerBrowse    *peerBrowseSession
+	peerBrowseGen uint64
+	approvals     approvalBook
 
 	// pendingVersion is the version of a new fluxd binary on disk. fluxd
 	// restarts into it when no transfer or stream runs.

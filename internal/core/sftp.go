@@ -73,10 +73,14 @@ func (d *Daemon) browseViewLocked() []BrowseView {
 	return out
 }
 
-// handleBrowseRequest answers flux.sftp.request from a Flux phone.
-// The SFTP server does not listen on the network. The phone opens a tunnel
-// listener, fluxd connects out to it, and the SSH session runs inside the
-// tunnel, so Browse PC works with a firewall that blocks incoming traffic.
+// handleBrowseRequest answers flux.sftp.request from a Flux phone or a
+// desktop peer. The SFTP server does not listen on the public network.
+//
+// A phone or Mac opens a tunnel listener; fluxd connects out and runs SSH
+// inside the tunnel (firewall-friendly). A desktop peer cannot send
+// flux.tunnel without losing the peer role, so for peers this computer
+// listens with ListenPeer and the browsing desk dials in — same pattern as
+// peer remote desktop.
 func (d *Daemon) handleBrowseRequest(dev *Device, l *lan.Link, p *proto.Packet) {
 	var b struct {
 		Start bool `json:"startBrowsing"`
@@ -87,13 +91,10 @@ func (d *Daemon) handleBrowseRequest(dev *Device, l *lan.Link, p *proto.Packet) 
 	d.mu.Lock()
 	allowed := d.cfg.ShareHome && dev.Paired
 	downloads := d.cfg.DownloadPath()
+	isPeer := dev.peer()
 	d.mu.Unlock()
 	if !allowed {
 		_ = l.Send(proto.New(proto.TypeSftp, map[string]any{"errorMessage": "Browsing is off on this computer. Set share_home = true in ~/.config/flux/config.toml"}))
-		return
-	}
-	if !l.CanTunnel() {
-		_ = l.Send(proto.New(proto.TypeSftp, map[string]any{"errorMessage": "Browsing this computer needs Flux for Android"}))
 		return
 	}
 	cfg, password, err := browseConfig()
@@ -111,21 +112,44 @@ func (d *Daemon) handleBrowseRequest(dev *Device, l *lan.Link, p *proto.Packet) 
 	for _, r := range fsys.roots {
 		roots, names = append(roots, r.path), append(names, r.name)
 	}
-	id := l.NewTunnelID()
-	if err := l.Send(proto.New(proto.TypeSftp, map[string]any{
-		"tunnel": id, "user": "flux", "password": password,
+	body := map[string]any{
+		"user": "flux", "password": password,
 		"path": fsys.start, "multiPaths": roots, "pathNames": names,
-	})); err != nil {
-		l.CancelTunnel(id)
+	}
+	if l.CanTunnel() {
+		id := l.NewTunnelID()
+		body["tunnel"] = id
+		if err := l.Send(proto.New(proto.TypeSftp, body)); err != nil {
+			l.CancelTunnel(id)
+			fsys.Close()
+			return
+		}
+		d.startBrowse(dev, l, fsys, cfg, func(ctx context.Context) (net.Conn, error) {
+			return l.OpenTunnel(ctx, id)
+		})
+		return
+	}
+	if !isPeer {
+		_ = l.Send(proto.New(proto.TypeSftp, map[string]any{"errorMessage": "Browsing this computer needs Flux for Android"}))
+		fsys.Close()
+		return
+	}
+	pl, err := l.ListenPeer(d.ctx)
+	if err != nil {
+		_ = l.Send(proto.New(proto.TypeSftp, map[string]any{"errorMessage": err.Error()}))
+		fsys.Close()
+		return
+	}
+	body["port"] = pl.Port()
+	if err := l.Send(proto.New(proto.TypeSftp, body)); err != nil {
+		_ = pl.Close()
 		fsys.Close()
 		return
 	}
 	d.startBrowse(dev, l, fsys, cfg, func(ctx context.Context) (net.Conn, error) {
-		tc, err := l.OpenTunnel(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		return tc, nil
+		tc, err := pl.Accept(ctx)
+		_ = pl.Close()
+		return tc, err
 	})
 }
 

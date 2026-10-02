@@ -188,6 +188,7 @@ func (d *Daemon) Snapshot() json.RawMessage {
 		"desktop":     d.desktopViewLocked(),
 		"peerDesktop": d.peerDesktopViewLocked(),
 		"browse":      d.browseViewLocked(),
+		"peerBrowse":  d.peerBrowseViewLocked(),
 		"herdr":       d.herdrViewLocked(),
 	}
 	d.mu.Unlock()
@@ -279,6 +280,14 @@ func (d *Daemon) Call(ctx context.Context, method string, raw json.RawMessage) (
 		return ok, d.StopPeerDesktop()
 	case "browse.stop":
 		return ok, d.StopBrowse(p.Device)
+	case "browse.open":
+		return ok, d.OpenPeerBrowse(p.Device)
+	case "browse.list":
+		return ok, d.ListPeerBrowse(p.Path)
+	case "browse.download":
+		return d.DownloadPeerBrowse(p.Path)
+	case "browse.close":
+		return ok, d.ClosePeerBrowse()
 	case "approve.request", "approve.enroll":
 		return d.startApproval(ctx, method, raw)
 	case "approve.wait":

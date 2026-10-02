@@ -14,13 +14,19 @@ type EdgeButton struct {
 	Pressed bool
 }
 
+// EdgeScroll is one axis event observed while the local cursor is leased.
+type EdgeScroll struct {
+	DX, DY float64
+}
+
 // EdgeGrab is a fullscreen transparent overlay that sits above windows while
-// the peer holds the pointer. Apps under it should not see hover. Button
-// events on the overlay are forwarded through Buttons.
+// the peer holds the pointer. Apps under it should not see hover. Button and
+// scroll events on the overlay are forwarded through Buttons and Scrolls.
 type EdgeGrab struct {
 	mu      sync.Mutex
 	conn    *wlConn
 	buttons chan EdgeButton
+	scrolls chan EdgeScroll
 	stop    chan struct{}
 	done    chan struct{}
 }
@@ -48,6 +54,7 @@ const (
 	pointerSetCursor = 0
 	pointerEnter     = 0
 	pointerButton    = 3
+	pointerAxis      = 4
 
 	layerShellGetSurface = 0
 	layerOverlay         = 3
@@ -67,7 +74,8 @@ const (
 	seatCapPointer = 2
 )
 
-// StartEdgeGrab maps a fullscreen overlay and listens for pointer buttons.
+// StartEdgeGrab maps a fullscreen overlay and listens for pointer buttons
+// and scroll axes.
 func StartEdgeGrab() (*EdgeGrab, error) {
 	w, err := dialWayland()
 	if err != nil {
@@ -181,6 +189,7 @@ func StartEdgeGrab() (*EdgeGrab, error) {
 	g := &EdgeGrab{
 		conn:    w,
 		buttons: make(chan EdgeButton, 32),
+		scrolls: make(chan EdgeScroll, 32),
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
@@ -190,6 +199,9 @@ func StartEdgeGrab() (*EdgeGrab, error) {
 
 // Buttons is the stream of presses and releases on the overlay.
 func (g *EdgeGrab) Buttons() <-chan EdgeButton { return g.buttons }
+
+// Scrolls is the stream of axis events on the overlay.
+func (g *EdgeGrab) Scrolls() <-chan EdgeScroll { return g.scrolls }
 
 // Stop unmaps the overlay and closes the Wayland connection.
 func (g *EdgeGrab) Stop() {
@@ -212,6 +224,7 @@ func (g *EdgeGrab) loop(lsurf, surf, ptr uint32) {
 	defer close(g.done)
 	defer g.conn.close()
 	defer close(g.buttons)
+	defer close(g.scrolls)
 
 	for {
 		select {
@@ -252,6 +265,23 @@ func (g *EdgeGrab) loop(lsurf, surf, ptr uint32) {
 			ev := EdgeButton{Button: button, Pressed: state == 1}
 			select {
 			case g.buttons <- ev:
+			default:
+			}
+		case obj == ptr && op == pointerAxis:
+			_, rest := wlUint(body) // time
+			axis, rest := wlUint(rest)
+			val, _ := wlFixed(rest)
+			ev := EdgeScroll{}
+			if axis == 0 {
+				ev.DY = val
+			} else {
+				ev.DX = val
+			}
+			if ev.DX == 0 && ev.DY == 0 {
+				continue
+			}
+			select {
+			case g.scrolls <- ev:
 			default:
 			}
 		}

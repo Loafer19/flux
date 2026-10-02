@@ -16,8 +16,9 @@ import (
 // EdgeKeyGrab maps a fullscreen transparent layer that takes exclusive
 // keyboard focus while a peer drives this pointer. Local key presses are
 // recorded so fluxd can reclaim without reading /dev/input (no input group).
-// The pointer input region is empty so physical mouse still moves the real
-// cursor and the expected-position reclaim path keeps working.
+// The pointer input region is an empty wl_region so pointer events pass
+// through to windows below. A NULL region would mean infinite (whole
+// surface), which swallows remote clicks and blocks local mouse reclaim.
 type EdgeKeyGrab struct {
 	mu   sync.Mutex
 	last time.Time
@@ -87,6 +88,18 @@ func StartEdgeKeyGrab() (*EdgeKeyGrab, error) {
 		_ = c.Close()
 		return nil, err
 	}
+	// Empty region: no rects → surface accepts no pointer/touch (NULL would
+	// mean infinite and swallow clicks). Create it before the layer surface
+	// so the compositor accepts it on a fresh connection.
+	empty := w.newID()
+	if err := w.write(w.msg(comp, compositorCreateRegion, empty)); err != nil {
+		_ = c.Close()
+		return nil, err
+	}
+	if err := w.roundTrip(nil, nil); err != nil {
+		_ = c.Close()
+		return nil, err
+	}
 
 	surf := w.newID()
 	lsurf := w.newID()
@@ -129,11 +142,11 @@ func StartEdgeKeyGrab() (*EdgeKeyGrab, error) {
 
 	buf := w.newID()
 	kbd := w.newID()
-	// Transparent pixel; NULL input region so the real pointer still moves.
+	// Transparent pixel; apply the empty input region created above.
 	if err := w.write(
 		w.msg(lsurf, layerSurfaceAckConfigure, serial),
 		w.msg(spb, spbCreateU32RGBABuffer, buf, uint32(0), uint32(0), uint32(0), uint32(0)),
-		w.msg(surf, surfaceSetInputRegion, uint32(0)),
+		w.msg(surf, surfaceSetInputRegion, empty),
 		w.msg(surf, surfaceAttach, buf, int32(0), int32(0)),
 		w.msg(surf, surfaceDamageBuffer, int32(0), int32(0), int32(width), int32(height)),
 		w.msg(surf, surfaceCommit),

@@ -237,13 +237,15 @@ func (d *Daemon) edgeLoop(ctx context.Context) {
 			continue
 		}
 		if grab != nil {
-		drainButtons:
+		drainGrab:
 			for {
 				select {
 				case btn := <-grab.Buttons():
 					d.sendEdgeButton(link, btn.Button, btn.Pressed)
+				case sc := <-grab.Scrolls():
+					d.sendEdgeScroll(link, sc.DX, sc.DY)
 				default:
-					break drainButtons
+					break drainGrab
 				}
 			}
 		}
@@ -363,9 +365,18 @@ func (d *Daemon) sendEdgeButton(link *lan.Link, button uint32, pressed bool) {
 	}))
 }
 
+func (d *Daemon) sendEdgeScroll(link *lan.Link, dx, dy float64) {
+	if link == nil {
+		return
+	}
+	_ = link.Send(proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "scroll", "dx": dx, "dy": dy,
+	}))
+}
+
 // handleEdge applies a pointer seam from another fluxd. The peer must be
 // the computer named by edge_device. Keyboard packets stay ignored; mouse
-// buttons are applied when the sender forwards them.
+// buttons and scrolls are applied when the sender forwards them.
 func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 	if d.input == nil || !d.edgeFrom(dev) {
 		return
@@ -449,6 +460,14 @@ func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
 		_ = d.input.Button(body.Button, body.Pressed)
 		// Buttons do not move the cursor; only refresh the quiet timer so
 		// compositor lag after a click is not mistaken for local motion.
+		d.touchEdgeRemote()
+	case "scroll":
+		if !d.edgeReceiving() {
+			return
+		}
+		dx := max(-maxInputDelta, min(maxInputDelta, body.DX))
+		dy := max(-maxInputDelta, min(maxInputDelta, body.DY))
+		_ = d.input.Scroll(dx, dy)
 		d.touchEdgeRemote()
 	}
 }

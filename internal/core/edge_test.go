@@ -280,3 +280,30 @@ func TestEdgeLocalInputUsesKeyWatcher(t *testing.T) {
 		t.Fatal("setEdgeActive(false) should stop key watcher")
 	}
 }
+
+func TestEdgeScrollForward(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "other-desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	d.devices[peer.ID] = peer
+	d.cfg.EdgeSide = "left"
+	d.cfg.EdgeDevice = "other-desk"
+	rec := &countingInput{}
+	d.input = rec
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "enter"}))
+	before := rec.n
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "scroll", "dx": 0, "dy": 12}))
+	if rec.n != before+1 {
+		t.Fatalf("scroll calls %d, want 1", rec.n-before)
+	}
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "leave"}))
+	before = rec.n
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "scroll", "dx": 0, "dy": 3}))
+	if rec.n != before {
+		t.Fatal("scroll after leave still applied")
+	}
+}

@@ -474,6 +474,15 @@ func wlUint(b []byte) (uint32, []byte) {
 	return binary.NativeEndian.Uint32(b), b[4:]
 }
 
+// wlFixed decodes a wl_fixed_t (24.8) argument.
+func wlFixed(b []byte) (float64, []byte) {
+	if len(b) < 4 {
+		return 0, nil
+	}
+	v := int32(binary.NativeEndian.Uint32(b))
+	return float64(v) / 256, b[4:]
+}
+
 // wlString decodes a string argument: a length with the terminating 0, the
 // bytes, and padding to 4 bytes.
 func wlString(b []byte) (string, []byte) {

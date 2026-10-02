@@ -40,6 +40,7 @@ object Android {
     const val CHANNEL_APPROVE = "flux.approve"
     const val CHANNEL_AGENT_INPUT = "flux.agents.input"
     const val CHANNEL_AGENT_DONE = "flux.agents.done"
+    const val CHANNEL_STREAM = "flux.stream"
     private const val TAG_AGENT = "agent"
     const val ID_SERVICE = 1
     const val ID_PAIR = 2
@@ -202,9 +203,13 @@ object Android {
         nm.createNotificationChannel(NotificationChannel(CHANNEL_AGENT_DONE, "Agents that finish", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "A coding agent in herdr on a computer finished its work"
         })
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_STREAM, "Stream requests", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "A computer asks to start the webcam or the mic of this phone"
+        })
     }
 
-    private fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(
+    /** Opens Flux on its current screen. */
+    fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(
         context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
@@ -302,7 +307,12 @@ object Android {
         val id = agentId(deviceId, agent.pane)
         val blocked = agent.status == AgentStatus.Blocked
         val where = agent.project.ifEmpty { agent.workspace }.ifEmpty { agent.pane }
+        // The action and the identifier make this PendingIntent differ from
+        // each other PendingIntent of Flux, also when the hash of the pane
+        // is the same as another request code.
         val open = Intent(context, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_OPEN_AGENT)
+            .setIdentifier("$deviceId|${agent.pane}")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(MainActivity.EXTRA_DEVICE, deviceId)
             .putExtra(MainActivity.EXTRA_PANE, agent.pane)

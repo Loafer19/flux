@@ -26,6 +26,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
@@ -34,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -52,7 +54,12 @@ import org.omarchy.flux.core.FluxCore
 import org.omarchy.flux.core.PairState
 import org.omarchy.flux.core.RemoteInput
 import org.omarchy.flux.core.Ringer
+import org.omarchy.flux.core.StreamKind
+import org.omarchy.flux.core.StreamRequest
+import org.omarchy.flux.core.StreamRequests
+import org.omarchy.flux.mic.MicSession
 import org.omarchy.flux.service.FluxService
+import org.omarchy.flux.webcam.WebcamSession
 
 class MainActivity : ComponentActivity() {
     /** Debug builds only: the page that the `flux.debug.page` extra asks for. */
@@ -60,6 +67,9 @@ class MainActivity : ComponentActivity() {
 
     /** The device ID and the pane of the agent that a notification opens. */
     val openAgent = kotlinx.coroutines.flow.MutableStateFlow<Pair<String, String>?>(null)
+
+    /** The page of a stream that the Start action of a stream request notification opens. */
+    val openStream = kotlinx.coroutines.flow.MutableStateFlow<StreamOpen?>(null)
 
     /** What the Inbox shows about the notification permission. See [updateNotifyAsk]. */
     val notifyAsk = kotlinx.coroutines.flow.MutableStateFlow(NotifyAsk.None)
@@ -90,6 +100,7 @@ class MainActivity : ComponentActivity() {
         FluxService.start(this, if (savedInstanceState == null) FluxService.ACTION_SCAN else null)
         debugShowWhenLocked(intent)
         takeOpenAgent(intent)
+        takeOpenStream(intent)
         // The system splash screen shows the Flux mark until the first frame. The app plays no start animation.
         setContent { TiledTheme { FluxRoot(this) } }
     }
@@ -143,6 +154,36 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         debugShowWhenLocked(intent)
         takeOpenAgent(intent)
+        takeOpenStream(intent)
+    }
+
+    /**
+     * Reads the Start action of a stream request notification. The extras
+     * go, so that a new activity does not use them again. Another app can
+     * start this activity too, so only the one-time key of the notification
+     * opens the page and starts the stream. An intent without a valid key
+     * changes nothing: it opens no page and removes no notification.
+     */
+    private fun takeOpenStream(intent: android.content.Intent?) {
+        val device = intent?.getStringExtra(EXTRA_STREAM_DEVICE) ?: return
+        val kind = StreamKind.fromKey(intent.getStringExtra(EXTRA_STREAM_KIND))
+        val key = intent.getStringExtra(EXTRA_STREAM_KEY)
+        intent.removeExtra(EXTRA_STREAM_DEVICE)
+        intent.removeExtra(EXTRA_STREAM_KIND)
+        intent.removeExtra(EXTRA_STREAM_KEY)
+        if (intent.action != StreamRequests.ACTION_START || kind == null) return
+        if (!StreamRequests.redeem(this, key, device, kind)) return
+        openStream.value = StreamOpen(device, kind)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        StreamRequests.setOnScreen(this, true)
+    }
+
+    override fun onStop() {
+        StreamRequests.setOnScreen(this, false)
+        super.onStop()
     }
 
     /**
@@ -168,11 +209,23 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** The intent action of an agent notification. */
+        const val ACTION_OPEN_AGENT = "org.omarchy.flux.OPEN_AGENT"
+
         /** The device ID of the agent that a notification opens. */
         const val EXTRA_DEVICE = "flux.open.device"
 
         /** The herdr pane of the agent that a notification opens. */
         const val EXTRA_PANE = "flux.open.pane"
+
+        /** The device ID of the computer of a stream request that a notification opens. */
+        const val EXTRA_STREAM_DEVICE = "flux.stream.device"
+
+        /** The kind of the stream request, webcam or mic. */
+        const val EXTRA_STREAM_KIND = "flux.stream.kind"
+
+        /** The one-time key of the notification, see [StreamRequests.redeem]. */
+        const val EXTRA_STREAM_KEY = "flux.stream.key"
 
         /** The form of a herdr pane ID, such as w1:p2. */
         private val PANE_ID = Regex("^[A-Za-z0-9_.:-]{1,64}$")
@@ -244,6 +297,13 @@ enum class NotifyAsk {
     /** Android does not show its dialog again. The notification settings of Flux can turn the notifications on. */
     Settings,
 }
+
+/**
+ * The page of a stream that the Start action of a stream request
+ * notification opens. The page then starts the stream, see
+ * [MainActivity.takeOpenStream].
+ */
+data class StreamOpen(val deviceId: String, val kind: StreamKind)
 
 /** Keeps the navigation across a recreation of the activity, see [Nav.save]. */
 private val NavSaver = listSaver<Nav, String>(save = { it.save() }, restore = { Nav.restore(it) })
@@ -333,6 +393,7 @@ fun FluxRoot(activity: MainActivity) {
         showIcons = request == "icon"
         // Each page starts from a clean screen.
         FluxCore.setRinging(null)
+        StreamRequests.dismissAll(activity)
         outgoing = null
         unpairing = null
         welcome = null
@@ -389,6 +450,11 @@ fun FluxRoot(activity: MainActivity) {
             state.devices.firstOrNull { !it.paired && it.online }?.let { outgoing = Outgoing(it.id, 0, "5EE6825F974ED59A") }
         }
         if (page == "unpair" && d != null) unpairing = d.id
+        // "ask:<kind>" shows the prompt of a stream request, and "notify:<kind>" shows its notification.
+        val ask = page.startsWith(ASK_PAGE)
+        if ((ask || page.startsWith(NOTIFY_PAGE)) && d != null) {
+            StreamKind.fromKey(page.substringAfter(':'))?.let { StreamRequests.debugShow(activity, d.id, d.name, it, notification = !ask) }
+        }
         val (next, pageScope) = Nav.debug(page, d?.id.orEmpty())
         nav = next
         // A destination with @offline or @connecting shows the computer that is not reachable as the scope.
@@ -404,6 +470,20 @@ fun FluxRoot(activity: MainActivity) {
         nav = Nav.agent(id, pane)
         activity.openAgent.value = null
     }
+
+    // A tap on the Start action of a stream request notification opens the page of the stream above the current screen.
+    // The key of the notification proves the tap, so the process has the state of the computer already.
+    val openStream by activity.openStream.collectAsStateWithLifecycle()
+    LaunchedEffect(openStream) {
+        val o = openStream ?: return@LaunchedEffect
+        activity.openStream.value = null
+        // A tap for a computer that is no longer paired does nothing, also after a new pairing.
+        if (state.devices.none { it.id == o.deviceId && it.paired }) return@LaunchedEffect
+        if (!isDemo(o.deviceId)) StreamRequests.startAfterTap(o.deviceId, o.kind)
+        nav = nav.open(Route(o.deviceId, streamPage(o.kind)))
+    }
+    // The prompt shows the newest open request. After an answer, it shows the next one.
+    val streamAsks by StreamRequests.requests.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Tn.bg)) {
         if (!state.enabled) {
@@ -444,6 +524,14 @@ fun FluxRoot(activity: MainActivity) {
                 TiledPairSheet(d.name, d.pairKey, waiting = false, onCancel = { FluxCore.cancelPair(d.id) }, onPair = { FluxCore.acceptPair(d.id) })
             }
         }
+        // A stream request waits while a pairing sheet shows.
+        val pairShows = (out != null && outDevice != null) || state.devices.any { it.pairState == PairState.Incoming }
+        streamAsks.lastOrNull()?.takeIf { state.enabled && !pairShows }?.let { r ->
+            // Each request has its own sheet, so that a new request opens a new sheet and waits again before Start takes a tap.
+            key(r.deviceId, r.kind) {
+                StreamPrompt(r, state.devices.any { it.id == r.deviceId && it.paired }) { nav = nav.open(Route(r.deviceId, streamPage(r.kind))) }
+            }
+        }
         unpairing?.let { id ->
             val d = state.devices.firstOrNull { it.id == id }
             if (d == null) unpairing = null
@@ -475,4 +563,33 @@ fun FluxRoot(activity: MainActivity) {
         }
         state.ringingFrom?.let { from -> RingOverlay(from) { Ringer.stop(activity) } }
     }
+}
+
+/**
+ * The prompt of the stream request [r]. A tap on Start opens the page of
+ * the stream with [onOpen], and the page starts the stream. A request of a
+ * computer that is no longer [paired] ends. The request also ends when the
+ * stream of that kind to that computer starts in another way.
+ */
+@Composable
+private fun StreamPrompt(r: StreamRequest, paired: Boolean, onOpen: () -> Unit) {
+    val context = LocalContext.current
+    val webcam by WebcamSession.status.collectAsStateWithLifecycle()
+    val mic by MicSession.status.collectAsStateWithLifecycle()
+    val running = remember(r, webcam, mic) { StreamRequests.running(r.deviceId, r.kind) }
+    LaunchedEffect(running, paired) {
+        if (running || !paired) StreamRequests.dismiss(context, r.deviceId, r.kind)
+    }
+    if (running || !paired) return
+    StreamRequestSheet(
+        r,
+        onStart = {
+            // A request that ended or is too old starts nothing.
+            if (StreamRequests.accept(context, r)) {
+                if (isDemo(r.deviceId)) FluxCore.toast("This is a sample request") else StreamRequests.startAfterTap(r.deviceId, r.kind)
+                onOpen()
+            }
+        },
+        onDismiss = { StreamRequests.dismiss(context, r.deviceId, r.kind) },
+    )
 }

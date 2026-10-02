@@ -15,6 +15,22 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("syncClipboard", true)
         set(v) = prefs.edit().putBoolean("syncClipboard", v).apply()
 
+    /**
+     * The automatic clipboard sync: Flux reads the system log for each copy
+     * in another app. It is off until the user turns it on in the setup
+     * sheet. While it is off, Flux starts no log reader, so Android shows no
+     * log access dialog. It works only while [syncClipboard] is on. An
+     * update from a version without the switch keeps the sync on, see
+     * [ClipGate.keepsAutoSync].
+     */
+    var autoClipboard: Boolean
+        get() = prefs.getBoolean("autoClipboard", false)
+        set(v) = prefs.edit().putBoolean("autoClipboard", v).apply()
+
+    /** True when the store holds [autoClipboard]. Without it, [FluxCore.init] sets the value once. */
+    val hasAutoClipboard: Boolean
+        get() = prefs.contains("autoClipboard")
+
     /** False after the user turns Flux off. Flux then starts no service and uses no network. */
     var enabled: Boolean
         get() = prefs.getBoolean("enabled", true)
@@ -28,10 +44,19 @@ class Settings(context: Context) {
         get() = prefs.getString("pinnedShortcuts", null)?.split('\n')?.filter { it.isNotEmpty() }
         set(v) = prefs.edit().putString("pinnedShortcuts", v?.joinToString("\n")).apply()
 
-    /** The color theme of the app. */
+    /** The color theme of the app. Without a choice, it is [ThemeMode.Computer]. */
     var theme: ThemeMode
         get() = ThemeMode.fromKey(prefs.getString("theme", null))
         set(v) = prefs.edit().putString("theme", v.key).apply()
+
+    /**
+     * The theme of each computer and the last theme, in the JSON form of
+     * [org.omarchy.flux.theme.ThemeBook.toJson], or null. The next cold
+     * start draws the theme at once.
+     */
+    var computerThemes: String?
+        get() = prefs.getString("computerThemes", null)
+        set(v) = prefs.edit().putString("computerThemes", v).apply()
 
     /** Sends the calls of this phone to the computers. It needs the phone permission. */
     var callAlerts: Boolean

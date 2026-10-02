@@ -227,7 +227,7 @@ Missing icons usually indicate a missing Nerd Font or Qt SVG package.
 
 If the Messages page is missing, the phone does not offer its text messages.
 
-1. Open the device screen of the computer in Flux for Android.
+1. Open **Computers > Sync** in Flux for Android.
 2. Turn on **Text messages**.
 3. Allow SMS access when the phone asks.
 
@@ -246,13 +246,13 @@ update, or an app kill.
 Android does not keep the log access, so the automatic sync ends.
 
 To resume it, open Flux and tap **Allow one-time access**.
-The status line under the switches of **Sync with all computers** then shows **Automatic**.
+The status line under the switches of the **Sync** screen then shows **Automatic clipboard sync is on**.
 Flux checks the log access the first time that you leave the app after the automatic sync starts.
 If the access is off, the status line shows **Open Flux to resume automatic sync**.
 The service notification then shows **Open Flux to resume clipboard sync**.
 
 If the status line stays on **Only while Flux is open. Set up automatic sync**,
-Flux has no `READ_LOGS` permission or no overlay access.
+**Automatic sync** is off, or Flux has no `READ_LOGS` permission or no overlay access.
 Tap the status line to open the setup sheet.
 If the sheet shows **Allow drawing over apps**, tap it.
 To give the overlay access with adb, run:
@@ -261,11 +261,13 @@ To give the overlay access with adb, run:
 adb shell appops set org.omarchy.flux SYSTEM_ALERT_WINDOW allow
 ```
 
+When Flux has both accesses, turn on **Automatic sync** at the end of the sheet.
+
 To give the log access again, follow [set up the automatic clipboard](android-setup.md#automatic-clipboard-sync).
 
 A copy that its app marks as sensitive, for example a password, does not sync by itself.
 The **Send clipboard** tile does not send it either.
-To send such a copy, open Flux and tap **Send clipboard** on the page of the computer.
+To send such a copy, open Flux and tap **Send clipboard** in **Send**.
 
 ## Media controls do not show on the phone
 

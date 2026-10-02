@@ -1,9 +1,9 @@
 package org.omarchy.flux.core
 
-import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import kotlinx.serialization.json.JsonObject
 import org.omarchy.flux.protocol.Packet
 import org.omarchy.flux.protocol.Types
@@ -138,6 +138,7 @@ object Plugins {
             }
             Types.FLUX_DESKTOP -> org.omarchy.flux.desktop.DesktopSession.onPacket(core, d, p)
             Types.FLUX_SHORTCUTS -> d.shortcuts = Shortcuts.merge(d.shortcuts, p)
+            Types.FLUX_THEME -> ComputerThemes.onPacket(core, d, p)
             Types.SMS_REQUEST, Types.SMS_REQUEST_CONVERSATIONS, Types.SMS_REQUEST_CONVERSATION -> SmsSync.onPacket(core, d, p)
         }
     }
@@ -161,7 +162,7 @@ object Plugins {
         if (text.isNullOrEmpty() || !core.settings.syncClipboard) return
         if (timestamp != null && timestamp in 1..core.settings.clipboardTimestamp) return
         core.settings.clipboardTimestamp = if (timestamp != null && timestamp > 0) timestamp else System.currentTimeMillis()
-        putRemoteText(core, d.identity.deviceName, text)
+        if (putRemoteText(core, d.identity.deviceName, text)) InboxFeed.clipReceived(d.id, d.identity.deviceName, text)
     }
 
     /**
@@ -193,11 +194,12 @@ object Plugins {
             }
             core.settings.clipboardTimestamp = System.currentTimeMillis()
             ClipImage.send(core, listOf(d), uri, mime, manual = true) { sent ->
+                if (sent > 0) InboxFeed.clipSent(listOf(d.id to name), null)
                 core.toast(
                     when {
                         sent > 0 -> "Image sent to $name"
                         sent < 0 -> "The image is larger than ${ClipImage.MAX_BYTES shr 20} MB"
-                        else -> "Sending the image failed"
+                        else -> "Sending the image to $name failed"
                     },
                 )
             }
@@ -210,6 +212,7 @@ object Plugins {
         }
         core.settings.clipboardTimestamp = System.currentTimeMillis()
         d.send(Packet(Types.CLIPBOARD, bodyOf("content" to text)))
+        InboxFeed.clipSent(listOf(d.id to name), text)
         core.toast("Clipboard sent to ${d.identity.deviceName}")
         return true
     }
@@ -257,12 +260,17 @@ object Plugins {
             lastSentStamp = stamp
             core.settings.clipboardTimestamp = System.currentTimeMillis()
             ClipImage.send(core, targets, uri, mime, manual = manual) { sent ->
+                if (sent > 0) InboxFeed.clipSent(targets.map { it.id to it.identity.deviceName }, null)
+                // The message names the computer, so that the user knows where the image went.
+                val one = targets.singleOrNull()?.identity?.deviceName
                 if (manual) {
                     notify(
                         when {
-                            sent > 0 -> if (sent == 1) "Image sent to ${targets[0].identity.deviceName}" else "Image sent to $sent computers"
                             sent < 0 -> "The image is larger than ${ClipImage.MAX_BYTES shr 20} MB"
-                            else -> "Sending the image failed"
+                            one != null -> if (sent > 0) "Image sent to $one" else "Sending the image to $one failed"
+                            sent == targets.size -> "Image sent to $sent computers"
+                            sent > 0 -> "Image sent to $sent of ${targets.size} computers"
+                            else -> "Sending the image to ${targets.size} computers failed"
                         },
                     )
                 }
@@ -288,6 +296,7 @@ object Plugins {
         lastSentStamp = stamp
         core.settings.clipboardTimestamp = System.currentTimeMillis()
         computers.forEach { it.send(Packet(Types.CLIPBOARD, bodyOf("content" to text))) }
+        InboxFeed.clipSent(computers.map { it.id to it.identity.deviceName }, text)
         if (manual) {
             notify(if (computers.size == 1) "Clipboard sent to ${computers[0].identity.deviceName}" else "Clipboard sent to ${computers.size} computers")
         }
@@ -356,15 +365,18 @@ object Plugins {
         core.device(id)?.send(Packet(Types.RUN_COMMAND_REQUEST, bodyOf("requestCommandList" to true)))
     }
 
-    fun runCommand(core: FluxCore, id: String, cmd: RemoteCommand) {
+    /** Sends [cmd] to the computer. It returns false when no link is open, and then sends nothing. */
+    fun runCommand(core: FluxCore, id: String, cmd: RemoteCommand): Boolean {
         val d = core.device(id)
         if (d == null || !d.send(Packet(Types.RUN_COMMAND_REQUEST, bodyOf("key" to cmd.key)))) {
             Log.i("FluxCommands", "not sent: ${cmd.key}, no open link")
             core.toast("Not connected. Try again in a moment")
-            return
+            return false
         }
         Log.i("FluxCommands", "sent: ${cmd.key}")
-        core.toast("Ran “${cmd.name}”")
+        // The computer does not report the end of the command, so the phone tells only that it sent the command.
+        core.toast("Sent “${cmd.name}” to ${d.identity.deviceName}")
+        return true
     }
 
     // ------------------------------------------------------------------ media
@@ -453,5 +465,19 @@ internal fun mergePlayer(old: PlayerState, b: JsonObject, at: Long): PlayerState
     canGoNext = b.bool("canGoNext") ?: old.canGoNext,
     canGoPrevious = b.bool("canGoPrevious") ?: old.canGoPrevious,
     volume = if ("isPlaying" in b) b.long("volume")?.toInt()?.coerceIn(0, 100) else old.volume,
+    artUrl = b.str("albumArtUrl")?.let(::albumArtUrl) ?: old.artUrl,
     updatedAt = at,
 )
+
+/** The longest album art address that the phone loads. */
+private const val MAX_ART_URL = 2048
+
+/**
+ * The album art address that the phone loads: an https address, or empty.
+ * The computer sends only web addresses, and the phone loads no address
+ * without TLS.
+ */
+internal fun albumArtUrl(raw: String): String {
+    val url = raw.trim()
+    return if (url.length <= MAX_ART_URL && url.startsWith("https://", ignoreCase = true) && url.none { it.isWhitespace() }) url else ""
+}

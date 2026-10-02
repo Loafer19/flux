@@ -82,6 +82,28 @@ QtObject {
     else if (method === "screen.stop") setState(function (s) { s.screen = null })
     else if (method === "desktop.stop") setState(function (s) { s.desktop = null })
     else if (method === "browse.stop") setState(function (s) { s.browse = [] })
+    else if (method === "browse.close") setState(function (s) { s.peerBrowse = null })
+    else if (method === "browse.open") setState(function (s) {
+      var id = params.device || ""
+      var name = "Peer"
+      var devices = (s.devices || [])
+      for (var i = 0; i < devices.length; i++) if (devices[i].id === id) name = devices[i].name || name
+      s.peerBrowse = {
+        device: id, name: name, path: "/home/peer", loading: false, error: "",
+        roots: [{ name: "Home", path: "/home/peer" }],
+        entries: [
+          { name: "Documents", path: "/home/peer/Documents", dir: true, size: 0 },
+          { name: "notes.txt", path: "/home/peer/notes.txt", dir: false, size: 1200 }
+        ]
+      }
+    })
+    else if (method === "browse.list") setState(function (s) {
+      if (!s.peerBrowse) return
+      s.peerBrowse.path = params.path || s.peerBrowse.path
+      s.peerBrowse.loading = false
+      s.peerBrowse.entries = s.peerBrowse.entries || []
+    })
+    else if (method === "browse.download") { /* ok */ }
     else if (method === "settings.set") setState(function (s) { s.settings[params.key] = params.value })
     else if (method === "webcam.config") {
       var restarts = false

@@ -426,15 +426,17 @@ Item {
             width: 32
             height: 1
             color: Theme.bg3
-            visible: !!root.dev && !root.networkTab
+            // Keep page icons when a device is selected — also on Network —
+            // so Overview / Files stay reachable for desk peers like dragon.
+            visible: !!root.dev
           }
           Repeater {
-            model: (root.dev && !root.networkTab) ? root.visibleTabs : []
+            model: root.dev ? root.visibleTabs : []
             delegate: RailButton {
               required property var modelData
               icon: modelData.icon
               tip: modelData.label
-              selected: root.currentTab && root.currentTab.key === modelData.key
+              selected: !root.networkTab && root.currentTab && root.currentTab.key === modelData.key
               onClicked: root.tab = modelData.key
             }
           }
@@ -692,17 +694,18 @@ Item {
           }
         }
 
-        // Tabs (device-scoped; hidden on Network — those pages need a selected device)
+        // Tabs stay visible whenever a device is selected — including on Network —
+        // so Overview / Files are one click from a desk peer without re-picking it.
         Column {
           width: parent.width
           spacing: 2
-          visible: !!root.dev && !root.networkTab
+          visible: !!root.dev
           Repeater {
             model: root.visibleTabs
             delegate: Rectangle {
               required property var modelData
               required property int index
-              readonly property bool sel: root.currentTab && root.currentTab.key === modelData.key
+              readonly property bool sel: !root.networkTab && root.currentTab && root.currentTab.key === modelData.key
               width: side.width
               height: tabLabel.implicitHeight + 16
               color: sel ? Theme.alpha(Theme.accent, 0.18) : (tabArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")

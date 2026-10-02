@@ -12,6 +12,8 @@ Item {
   readonly property var dev: view ? view.dev : null
   readonly property bool online: !!dev && !!dev.online
   readonly property bool peer: !!dev && dev.role === "peer"
+  readonly property var settings: view && view.backend ? (view.backend.settings || ({})) : ({})
+  readonly property string edgeSide: root.edgeSideFor(root.dev)
   readonly property var notifs: dev && dev.notifications ? dev.notifications.slice(0, 3) : []
   // The phone camera as a webcam on this computer. Null when it is not used.
   readonly property var webcam: view && view.backend && view.backend.state ? (view.backend.state.webcam || null) : null
@@ -52,6 +54,58 @@ Item {
     if (!root.view || !root.view.call) return
     root.view.call("desktop.viewStop", {}, function () {
       if (root.view) root.view.toast("Stopped peer desktop")
+    })
+  }
+
+  function edgeSideFor(d) {
+    if (!d) return ""
+    var side = String(root.settings.edgeSide || "")
+    var who = String(root.settings.edgeDevice || "").toLowerCase()
+    var name = String(d.name || "").toLowerCase()
+    var id = String(d.id || "")
+    if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return ""
+    return side.toLowerCase()
+  }
+
+  function setPeerSetting(key, enabled, onText, offText) {
+    if (!root.view || !root.view.call) return
+    root.view.call("settings.set", { key: key, value: enabled })
+    root.view.toast(enabled ? onText : offText)
+  }
+
+  // Wire to settings.edgeSide / edgeDevice (same as flux-cli edge SIDE DEVICE).
+  function setEdgeSide(side) {
+    if (!root.view || !root.view.call || !root.dev) return
+    side = String(side || "").toLowerCase()
+    if (!side) {
+      root.view.call("settings.set", { key: "edgeSide", value: "" })
+      root.view.call("settings.set", { key: "edgeDevice", value: "" })
+      root.view.toast("Screen edge off")
+      return
+    }
+    var device = root.dev.name || root.dev.id
+    root.view.call("settings.set", { key: "edgeSide", value: side })
+    root.view.call("settings.set", { key: "edgeDevice", value: device })
+    root.view.toast(side.charAt(0).toUpperCase() + side.slice(1) + " edge → " + device)
+  }
+
+  // Browse opens the peer's shared home in Files (desk↔desk SFTP via browse.open).
+  // Home share on this computer is separate: it lets others browse us.
+  function browsePeerHome() {
+    if (!root.view || !root.dev) return
+    if (!root.online) {
+      root.view.toast((root.dev.name || "Peer") + " is offline")
+      return
+    }
+    var name = root.dev.name || "peer"
+    var id = root.dev.id
+    root.view.call("browse.open", { device: id }, function () {
+      if (root.view) {
+        root.view.toast("Opening " + name + " home…")
+        root.view.go("files")
+      }
+    }, function (err) {
+      if (root.view) root.view.toast((err && (err.message || err.code)) || ("Cannot browse " + name))
     })
   }
   // The Browse PC sessions of the devices on this computer. An earlier
@@ -251,7 +305,7 @@ Item {
       }
     }
 
-    // Quick actions — phone: Ring + Send file; desk peer: Send file then View desktop
+    // Quick actions — phone: Ring + Send file; desk peer: Send file + Browse home
     GridLayout {
       Layout.fillWidth: true
       Layout.fillHeight: true
@@ -277,10 +331,21 @@ Item {
       Tile {
         Layout.fillWidth: true
         Layout.fillHeight: true
-        Layout.columnSpan: ringTile.visible ? 1 : 2
+        Layout.columnSpan: (ringTile.visible || root.peer) ? 1 : 2
         icon: "upload"
         label: "Send file"
         onClicked: root.view.go("files")
+      }
+      Tile {
+        objectName: "browseHomeTile"
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.columnSpan: ringTile.visible ? 2 : 1
+        visible: root.peer
+        icon: "browse"
+        label: "Browse home"
+        active: root.online
+        onClicked: root.browsePeerHome()
       }
     }
 
@@ -368,6 +433,105 @@ Item {
               icon: "stop"
               text: "Stop"
               onClicked: root.stopPeerView()
+            }
+          }
+        }
+      }
+    }
+
+    // Per-peer transport and desktop integration settings.
+    Card {
+      visible: root.peer
+      Layout.fillWidth: true
+      Layout.fillHeight: true
+      Layout.preferredWidth: 320
+      implicitHeight: peerSettingsCol.implicitHeight + 38
+
+      Column {
+        id: peerSettingsCol
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 19
+        spacing: 12
+        SectionLabel { text: "PEER SETTINGS" }
+        Txt {
+          width: parent.width
+          text: "Quickly control the features shared with this computer."
+          color: Theme.dim
+          font.pixelSize: 12
+          wrapMode: Text.Wrap
+        }
+        Flow {
+          width: parent.width
+          spacing: 14
+          Toggle {
+            text: "Clipboard"
+            checked: root.settings.autoClipboard !== false
+            onToggled: function (enabled) { root.setPeerSetting("autoClipboard", enabled, "Clipboard on", "Clipboard off") }
+          }
+          Toggle {
+            text: "DND sync"
+            checked: root.settings.syncDnd !== false
+            onToggled: function (enabled) { root.setPeerSetting("syncDnd", enabled, "DND sync on", "DND sync off") }
+          }
+        }
+        // Home share (shareHome) + Browse — explicit action for peer files.
+        Column {
+          objectName: "homeShareBrowse"
+          width: parent.width
+          spacing: 8
+          Txt {
+            text: "HOME SHARE · BROWSE"
+            color: Theme.accent
+            font.pixelSize: 12
+            font.weight: Font.DemiBold
+          }
+          Row {
+            spacing: 12
+            Toggle {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Home share"
+              checked: root.settings.shareHome !== false
+              onToggled: function (enabled) { root.setPeerSetting("shareHome", enabled, "Home share on", "Home share off") }
+            }
+            AccentButton {
+              anchors.verticalCenter: parent.verticalCenter
+              icon: "browse"
+              text: "Browse"
+              active: root.online
+              onClicked: root.browsePeerHome()
+            }
+          }
+          Txt {
+            width: parent.width
+            text: root.settings.shareHome === false
+              ? "Off — paired devices cannot read this computer's home folders."
+              : "On — this computer shares its home. Browse opens " + ((root.dev && root.dev.name) ? root.dev.name : "this peer") + "'s shared folders (needs Home share on that desk)."
+            color: Theme.dim
+            font.pixelSize: 11
+            wrapMode: Text.Wrap
+          }
+        }
+        Column {
+          width: parent.width
+          spacing: 8
+          Txt {
+            text: "Screen edge"
+            color: Theme.dim
+            font.pixelSize: 12
+          }
+          Flow {
+            width: parent.width
+            spacing: 8
+            Repeater {
+              model: ["", "left", "right", "top", "bottom"]
+              delegate: Chip {
+                required property var modelData
+                text: modelData === "" ? "Off" : (modelData.charAt(0).toUpperCase() + modelData.slice(1))
+                selected: root.edgeSide === modelData
+                onClicked: root.setEdgeSide(modelData)
+              }
             }
           }
         }

@@ -4,8 +4,8 @@ import ".."
 import "../components"
 
 // This computer and the paired devices. Devices-first: pair and relay sit below.
-// Tap the edge chip on a peer to set or clear that seam.
-// View opens desk↔desk remote desktop (desktop.view); Stop ends it.
+// Overview owns peer settings (edges, clipboard) and desk↔desk remote desktop.
+// Browse peer home lives on Overview and Files — not on Network cards.
 Item {
   id: root
   property var view
@@ -30,8 +30,6 @@ Item {
     if (!view || !view.backend || !view.backend.state) return null
     return view.backend.state.peerDesktop || null
   }
-  readonly property bool phoneDnd: settings.syncDnd !== false && paired.some(d => d.role !== "peer")
-
   // Invite / join state for discovery-less first pairing.
   property string inviteCode: ""
   property string inviteHost: ""
@@ -93,28 +91,6 @@ Item {
       if (n >= 16 && n <= 31) return "LAN"
     }
     return ""
-  }
-
-  function edgeSideFor(d) {
-    var side = String(root.settings.edgeSide || "")
-    var who = String(root.settings.edgeDevice || "").toLowerCase()
-    var name = String(d.name || "").toLowerCase()
-    var id = String(d.id || "")
-    if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return ""
-    return side.toLowerCase()
-  }
-
-  function edgeIcon(side) {
-    if (side === "left") return "arrow-left"
-    if (side === "right") return "arrow-right"
-    if (side === "top") return "arrow-up"
-    if (side === "bottom") return "arrow-down"
-    return "monitor"
-  }
-
-  function edgeLabel(side) {
-    if (!side) return "Edges"
-    return side.charAt(0).toUpperCase() + side.slice(1) + " edge"
   }
 
   function copyText(t) {
@@ -233,34 +209,12 @@ Item {
     return from === String(d.id || "") || name === String(d.name || "").toLowerCase()
   }
 
-  function startPeerView(d) {
-    if (!root.view || !root.view.call || !d) return
-    if (!d.online) {
-      root.view.toast((d.name || "Peer") + " is offline")
-      return
-    }
-    var key = d.name || d.id
-    root.view.call("desktop.view", { device: key }, function () {
-      if (root.view) root.view.toast("Showing " + (d.name || "peer") + " desktop")
-    })
-  }
-
   function stopPeerView() {
     if (!root.view || !root.view.call) return
     root.view.call("desktop.viewStop", {}, function () {
       if (root.view) root.view.toast("Stopped peer desktop")
     })
   }
-
-  function unpairDevice(d) {
-    if (!root.view || !root.view.call || !d) return
-    var key = d.id || d.name
-    var name = d.name || "device"
-    root.view.call("pair.unpair", { device: key }, function () {
-      if (root.view) root.view.toast("Unpaired " + name)
-    })
-  }
-
 
   // view.call does not invoke cb on error; these clear busy flags after a beat.
   Timer {
@@ -354,12 +308,6 @@ Item {
         RowLayout {
           spacing: 18
           Status {
-            visible: root.phoneDnd
-            icon: "bell"
-            label: "Phones follow DND"
-            on: true
-          }
-          Status {
             visible: !!root.settings.relay
             icon: "wifi"
             label: "Relay on"
@@ -387,26 +335,7 @@ Item {
         required property var modelData
         readonly property bool peer: modelData.role === "peer"
         readonly property bool viewing: root.viewingPeer(modelData)
-        readonly property string edgeSide: root.edgeSideFor(modelData)
         readonly property string path: root.pathLabel(modelData)
-        property bool confirmUnpair: false
-        function cycleEdge() {
-          var order = ["", "left", "right", "top", "bottom"]
-          var cur = root.edgeSideFor(modelData)
-          var i = order.indexOf(cur)
-          var next = order[(i + 1) % order.length]
-          var device = modelData.name || modelData.id
-          if (!root.view || !root.view.call) return
-          if (!next) {
-            root.view.call("settings.set", { key: "edgeSide", value: "" })
-            root.view.call("settings.set", { key: "edgeDevice", value: "" })
-            root.view.toast("Screen edge off")
-            return
-          }
-          root.view.call("settings.set", { key: "edgeSide", value: next })
-          root.view.call("settings.set", { key: "edgeDevice", value: device })
-          root.view.toast(next.charAt(0).toUpperCase() + next.slice(1) + " edge → " + device)
-        }
         width: col.width
         implicitHeight: devCol.implicitHeight + 36
 
@@ -471,94 +400,17 @@ Item {
             }
             Item { Layout.fillWidth: true }
           }
-          // Phone / non-peer: battery when available
-          RowLayout {
-            visible: !card.peer && !!modelData.battery && modelData.battery.charge >= 0
-            spacing: 4
-            Icon {
-              Layout.alignment: Qt.AlignVCenter
-              Layout.preferredWidth: 14
-              Layout.preferredHeight: 14
-              name: Fmt.batteryIcon(modelData.battery)
-              size: 14
-              color: modelData.battery && modelData.battery.charge <= 15 && !modelData.battery.charging ? Theme.err : Theme.dim
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              text: Fmt.battery(modelData.battery)
-              color: Theme.dim
-              font.pixelSize: 12
-            }
-          }
+          // Desk peer: Stop only while viewing another desk's desktop (View is on Overview).
           Column {
-            visible: card.peer
+            visible: card.peer && card.viewing
+            width: parent.width
             spacing: 8
-            // Actionable chips: Clipboard / Home share / Edge.
-            RowLayout {
-              spacing: 18
-              Item {
-                Layout.preferredWidth: clipChip.implicitWidth
-                Layout.preferredHeight: clipChip.implicitHeight
-                Status {
-                  id: clipChip
-                  icon: "clipboard"
-                  label: root.settings.autoClipboard === false ? "Clipboard off" : "Clipboard"
-                  on: root.settings.autoClipboard !== false
-                }
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: {
-                    if (!root.view || !root.view.call) return
-                    var next = root.settings.autoClipboard === false
-                    root.view.call("settings.set", { key: "autoClipboard", value: next })
-                    root.view.toast(next ? "Clipboard on" : "Clipboard off")
-                  }
-                }
-              }
-              Item {
-                Layout.preferredWidth: filesChip.implicitWidth
-                Layout.preferredHeight: filesChip.implicitHeight
-                Status {
-                  id: filesChip
-                  icon: "file"
-                  label: root.settings.shareHome === false ? "Home share off" : "Home share"
-                  on: root.settings.shareHome !== false
-                }
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: {
-                    if (!root.view || !root.view.call) return
-                    var next = root.settings.shareHome === false
-                    root.view.call("settings.set", { key: "shareHome", value: next })
-                    root.view.toast(next ? "Home share on" : "Home share off")
-                  }
-                }
-              }
-              Item {
-                Layout.preferredWidth: edgeChip.implicitWidth
-                Layout.preferredHeight: edgeChip.implicitHeight
-                Status {
-                  id: edgeChip
-                  icon: root.edgeIcon(card.edgeSide)
-                  label: root.edgeLabel(card.edgeSide)
-                  on: card.edgeSide !== ""
-                }
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: card.cycleEdge()
-                }
-              }
-            }
             RowLayout {
               width: parent.width
               spacing: 8
               Txt {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                visible: card.viewing
                 text: {
                   var pd = root.peerDesktop || ({})
                   var bits = ["Viewing"]
@@ -571,53 +423,10 @@ Item {
                 font.pixelSize: 12
                 wrapMode: Text.Wrap
               }
-              Item {
-                Layout.fillWidth: true
-                visible: !card.viewing
-              }
               OutlineButton {
-                visible: !card.viewing
-                text: "View"
-                icon: "screen-share"
-                active: !!modelData.online
-                onClicked: root.startPeerView(modelData)
-              }
-              OutlineButton {
-                visible: card.viewing
                 text: "Stop"
                 icon: "stop"
                 onClicked: root.stopPeerView()
-              }
-              OutlineButton {
-                text: card.confirmUnpair ? "Confirm unpair" : "Unpair"
-                icon: "unlink"
-                onClicked: {
-                  if (!card.confirmUnpair) {
-                    card.confirmUnpair = true
-                    return
-                  }
-                  card.confirmUnpair = false
-                  root.unpairDevice(modelData)
-                }
-              }
-            }
-          }
-          // Non-peer devices: Unpair only
-          RowLayout {
-            visible: !card.peer
-            width: parent.width
-            spacing: 8
-            Item { Layout.fillWidth: true }
-            OutlineButton {
-              text: card.confirmUnpair ? "Confirm unpair" : "Unpair"
-              icon: "unlink"
-              onClicked: {
-                if (!card.confirmUnpair) {
-                  card.confirmUnpair = true
-                  return
-                }
-                card.confirmUnpair = false
-                root.unpairDevice(modelData)
               }
             }
           }

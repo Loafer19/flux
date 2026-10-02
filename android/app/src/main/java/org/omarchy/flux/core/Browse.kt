@@ -34,15 +34,24 @@ object Browse {
      */
     @Volatile private var generation = 0
 
-    fun start(core: FluxCore, id: String) {
+    /** The folder that the next session opens in place of the first root, or null. */
+    @Volatile private var resumePath: String? = null
+
+    /**
+     * Starts a session. It opens [path] when the computer shares it, else
+     * the first root. `fluxd` ends a session when the link drops, so the
+     * screen starts a new session at the same [path] after a reconnect.
+     */
+    fun start(core: FluxCore, id: String, path: String? = null) {
         val d = core.device(id) ?: return
         close()
+        resumePath = path
         core.setBrowse(BrowseState(deviceId = id, loading = true))
         d.send(Packet(Types.SFTP_REQUEST, bodyOf("startBrowsing" to true)))
         core.scheduler.schedule({
             val s = core.browseState()
             if (s != null && s.deviceId == id && s.loading && s.entries.isEmpty() && s.error == null) {
-                core.setBrowse(s.copy(loading = false, error = "${d.identity.deviceName} did not answer. Browse PC needs fluxd."))
+                core.setBrowse(s.copy(loading = false, error = "${d.identity.deviceName} did not answer. Get files needs fluxd."))
             }
         }, 10, java.util.concurrent.TimeUnit.SECONDS)
     }
@@ -89,8 +98,11 @@ object Browse {
                 if (!keep(gen, c, s)) return@execute
                 client = null
                 tunnel = null
+                val first = offer.roots.first().second
+                val open = resumePath?.takeIf { p -> offer.roots.any { (_, root) -> p == root || p.startsWith(root.trimEnd('/') + "/") } } ?: first
+                resumePath = null
                 core.setBrowse(state.copy(loading = false, roots = offer.roots))
-                list(core, offer.roots.first().second)
+                list(core, open)
             } catch (e: Exception) {
                 if (generation == gen) {
                     Log.w(TAG, "SFTP connect failed", e)

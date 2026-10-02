@@ -85,6 +85,17 @@ type Daemon struct {
 	dndGuard dndGuard
 	dndWake  chan struct{}
 
+	// themePath is the colors.toml file of the active Omarchy theme, or ""
+	// in a headless daemon, which sends no theme. themeBody is the JSON of
+	// the last theme that parsed, or nil when the file is missing or does
+	// not parse. themeErr is the last read error, so the log shows each
+	// error once. themeSend keeps the theme packets in order, so that a
+	// link never gets an old theme after a new one.
+	themePath string
+	themeBody json.RawMessage
+	themeErr  string
+	themeSend sync.Mutex
+
 	// mdns resolves the address of a paired device again. It is nil when
 	// Avahi is not available.
 	mdns *lan.MDNS
@@ -176,6 +187,13 @@ type Daemon struct {
 	// The first window that connects shows it, with a desktop
 	// notification.
 	trustNote string
+
+	// lastClipAt is the time of the newest clipboard that fluxd took from
+	// any source: a desktop copy, or a copied text, a shared text, or an
+	// image from a device. For a flux.clipboard.connect packet, it is the
+	// time of the copy on the device. A flux.clipboard.connect packet that
+	// is not newer is stale.
+	lastClipAt time.Time
 }
 
 // Options change how the daemon runs. The zero value is the normal mode.
@@ -317,6 +335,10 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		} else {
 			d.logf("media control off: %v", err)
 		}
+		// The first link can come before the theme watch starts, so the
+		// theme loads now.
+		d.themePath = desktop.ThemePath()
+		d.reloadTheme()
 	}
 	return d, nil
 }
@@ -464,6 +486,7 @@ func (d *Daemon) Run() error {
 	go d.discoveryLoop(ctx)
 	go d.batteryLoop(ctx)
 	go d.herdrLoop(ctx)
+	go d.themeLoop(ctx)
 
 	<-ctx.Done()
 	d.closeLinks()
@@ -1113,6 +1136,7 @@ func (d *Daemon) onPairedLink(dev *Device, l *lan.Link) {
 		d.mu.Unlock()
 		_ = l.Send(state)
 	}
+	d.sendThemeTo(dev, l)
 }
 
 // markDirty schedules a state event for all subscribers.

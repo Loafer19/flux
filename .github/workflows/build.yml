@@ -1,9 +1,10 @@
 name: Build
 
+# Pull requests run no build, to save GitHub minutes. Pushes to master,
+# manual runs, and releases run it.
 on:
   push:
     branches: [master]
-  pull_request:
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -124,12 +125,8 @@ jobs:
           name: android-reports
           path: android/app/build/reports/
 
-  # macOS runners are slow and use GitHub minutes at a high rate, so pull
-  # requests skip this job. Pushes to master and releases run it. A release
-  # calls this workflow, so its event is the push of the tag.
+  # The pinned Swift packages need Swift 6.2, which comes with Xcode 26.
   macos:
-    if: github.event_name != 'pull_request'
-    # The pinned Swift packages need Swift 6.2, which comes with Xcode 26.
     runs-on: macos-26
     defaults:
       run:
@@ -190,12 +187,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # The iOS app. Pull requests skip it, like the macos job. Releases build
-  # the app in the ipa job of release.yml, so release.yml turns this job off.
+  # The iOS app. Releases build the app in the ipa job of release.yml, so
+  # release.yml turns this job off.
   # A push has no inputs, and GitHub compares null and false as equal, so
   # the check compares the JSON text.
   ios:
-    if: github.event_name != 'pull_request' && toJSON(inputs.ios) != 'false'
+    if: toJSON(inputs.ios) != 'false'
     runs-on: macos-26
     timeout-minutes: 45
     steps:

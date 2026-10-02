@@ -235,7 +235,7 @@ Missing icons usually indicate a missing Nerd Font or Qt SVG package.
 
 If the Messages page is missing, the phone does not offer its text messages.
 
-1. Open the device screen of the computer in Flux for Android.
+1. Open **Computers > Sync** in Flux for Android.
 2. Turn on **Text messages**.
 3. Allow SMS access when the phone asks.
 
@@ -246,6 +246,26 @@ Then turn on **Text messages** again.
 If a sent message shows **Not sent**, the phone could not send it.
 Check the signal and the SMS app on the phone.
 Flux does not send messages to a group. Reply to a group on the phone.
+
+## A phone copy does not reach the computer
+
+Android lets only the app on the screen read the clipboard.
+Flux sends a phone copy by itself only while Flux is on the screen.
+For a copy in another app, use one of these paths:
+
+- The **Send clipboard** tile in Quick Settings.
+- The **Send clipboard** action on the service notification.
+- **Send to computer** in the text selection menu.
+- **Send with Flux** in the share sheet.
+
+See [send a copy from another app](features.md#send-a-copy-from-another-app).
+
+If a tap on **Send clipboard** shows the message **Turn on Sync clipboard first**, open **Computers > Sync**.
+Then turn on **Sync clipboard**.
+
+A copy that its app marks as sensitive, for example a password, does not sync by itself.
+The **Send clipboard** tile does not send it either.
+To send such a copy, open Flux and tap **Send clipboard** in **Send**.
 
 ## Media controls do not show on the phone
 

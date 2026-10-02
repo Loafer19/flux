@@ -40,6 +40,7 @@ object Android {
     const val CHANNEL_APPROVE = "flux.approve"
     const val CHANNEL_AGENT_INPUT = "flux.agents.input"
     const val CHANNEL_AGENT_DONE = "flux.agents.done"
+    const val CHANNEL_STREAM = "flux.stream"
     private const val TAG_AGENT = "agent"
     const val ID_SERVICE = 1
     const val ID_PAIR = 2
@@ -84,7 +85,7 @@ object Android {
      * returns null when the app has no focus. With [automatic], it reads
      * only plain text, and it returns null for a clip that the app marks as
      * sensitive, for example a password. A content address can stream
-     * without end, so the automatic sync does not read it on the main thread.
+     * without end, so the clipboard sync does not read it on the main thread.
      */
     fun clipboardText(context: Context, automatic: Boolean = false): String? {
         val cm = context.getSystemService(ClipboardManager::class.java) ?: return null
@@ -103,6 +104,26 @@ object Android {
     /** True when the app that made the clip marks it as sensitive. Android 13 names the flag, but earlier apps set it too. */
     private fun sensitive(desc: ClipDescription?): Boolean =
         desc?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true
+
+    /**
+     * True when the app that made the current clip marks it as sensitive.
+     * A manual send uses it to tell a sensitive clip from an empty clipboard.
+     */
+    fun clipboardSensitive(context: Context): Boolean {
+        val cm = context.getSystemService(ClipboardManager::class.java) ?: return false
+        return runCatching { sensitive(cm.primaryClipDescription) }.getOrDefault(false)
+    }
+
+    /**
+     * The time that ClipboardService set on the current clip, in
+     * milliseconds, or 0 when the clipboard is empty. The system sets a new
+     * time on each clip. The clipboard sync drops a clip whose time matches
+     * the last clip that Flux sent, so 1 copy goes out once.
+     */
+    fun clipTimestamp(context: Context): Long {
+        val cm = context.getSystemService(ClipboardManager::class.java) ?: return 0L
+        return runCatching { cm.primaryClipDescription?.timestamp ?: 0L }.getOrDefault(0L)
+    }
 
     /**
      * Puts text on the clipboard. It returns false when Android refuses the
@@ -144,12 +165,13 @@ object Android {
     /**
      * Android 12 and later: sets the night mode of the app, so that the
      * system splash screen and the -night resources match the theme.
-     * [ThemeMode.System] removes the override.
+     * [ThemeMode.System] removes the override. [ComputerThemes.applyNightMode]
+     * gives the night mode of [ThemeMode.Computer].
      */
     fun setNightMode(context: Context, mode: ThemeMode) {
         if (Build.VERSION.SDK_INT < 31) return
         val night = when (mode) {
-            ThemeMode.System -> UiModeManager.MODE_NIGHT_AUTO
+            ThemeMode.System, ThemeMode.Computer -> UiModeManager.MODE_NIGHT_AUTO
             ThemeMode.Light -> UiModeManager.MODE_NIGHT_NO
             ThemeMode.Dark -> UiModeManager.MODE_NIGHT_YES
         }
@@ -181,9 +203,13 @@ object Android {
         nm.createNotificationChannel(NotificationChannel(CHANNEL_AGENT_DONE, "Agents that finish", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "A coding agent in herdr on a computer finished its work"
         })
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_STREAM, "Stream requests", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "A computer asks to start the webcam or the mic of this phone"
+        })
     }
 
-    private fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(
+    /** Opens Flux on its current screen. */
+    fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(
         context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
@@ -281,7 +307,12 @@ object Android {
         val id = agentId(deviceId, agent.pane)
         val blocked = agent.status == AgentStatus.Blocked
         val where = agent.project.ifEmpty { agent.workspace }.ifEmpty { agent.pane }
+        // The action and the identifier make this PendingIntent differ from
+        // each other PendingIntent of Flux, also when the hash of the pane
+        // is the same as another request code.
         val open = Intent(context, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_OPEN_AGENT)
+            .setIdentifier("$deviceId|${agent.pane}")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(MainActivity.EXTRA_DEVICE, deviceId)
             .putExtra(MainActivity.EXTRA_PANE, agent.pane)

@@ -5,7 +5,7 @@
 This page describes Flux for Android.
 For the Mac app, see [Flux for macOS](macos.md#features). For the iPhone, see [Flux for iOS](ios.md#features).
 
-The switches under **Sync with all computers** on the page of a computer are settings of the phone.
+The switches on the **Sync** screen in **Computers** are settings of the phone.
 Each switch applies to every paired computer, not only to the computer whose page shows it.
 For example, **Text messages** lets each paired computer read your conversations.
 See [sync switches](android-setup.md#sync-switches) and [security](security.md).
@@ -135,7 +135,8 @@ A restart of `fluxd` after an update does not stop them.
 
 ## Browse PC
 
-With `share_home = true`, a paired phone can read these folders of the desktop:
+With `share_home = true`, a paired phone can read these folders of the desktop.
+On the phone, open **Send > Get files**.
 
 - The home folder.
 - The `download_dir` folder.
@@ -187,8 +188,9 @@ Both are on by default.
 - Copy an image on the phone, open Flux, and tap **Send clipboard**. Then paste it on the desktop.
 
 Android lets only the app on the screen read the clipboard.
-Flux sends a phone copy by itself only while Flux is on the screen.
-For a copy in another app, use **Send clipboard**.
+Flux sends a phone copy by itself while Flux is on the screen.
+For a copy in another app, use a 1-tap path.
+See [Send a copy from another app](#send-a-copy-from-another-app).
 
 The desktop sends PNG images.
 The phone sends PNG, JPEG, GIF, and WebP images.
@@ -203,6 +205,32 @@ The Clipboard page shows the last 10 images.
 Select **Copy** to put an image on the desktop clipboard again.
 `fluxd` keeps these images in `$XDG_RUNTIME_DIR/flux/clipboard`, which is in memory.
 It empties the folder when it starts and when it stops.
+
+## Send a copy from another app
+
+Android lets only the app on the screen read the clipboard, so a copy in
+another app does not reach the computer by itself.
+Flux offers 4 paths that need no setup:
+
+- **Send clipboard** tile. Add it to the Quick Settings panel, then tap it after a copy. See [add the tile](android-setup.md#send-clipboard-tile).
+- **Send clipboard** action on the Flux service notification, while a computer is connected.
+- **Send to computer** in the text selection menu of any app.
+- **Send with Flux** in the system share sheet.
+
+The tile and the notification action send the current clip to each connected paired computer.
+They skip a clip that its app marks as sensitive, for example a password, the same as **Sync clipboard**.
+When no computer is connected yet, for example because the tile started a stopped Flux, the tile keeps the text for 15 seconds and sends it to the first computer that connects.
+**Send to computer** and **Send with Flux** send the selected or shared text to the computer that you pick.
+A link opens in the browser of the desktop, and other text goes on the desktop clipboard.
+See [Files, clipboard, and links](#files-clipboard-and-links).
+
+While Flux is on the screen, **Sync clipboard** skips a sensitive clip and the echo of a text that a computer put on the clipboard.
+A later copy of the same text goes out.
+Flux sends phone text of up to 1 MiB.
+
+Android shows the message **Flux pasted from your clipboard** after each read.
+To hide it, turn off **Show clipboard access** in the privacy settings of Android.
+On a Samsung phone, the setting is **Alert when clipboard accessed**.
 
 ## Notifications
 
@@ -249,7 +277,7 @@ The desktop name identifies the sender.
 
 ## Text messages
 
-Turn on **Text messages** on the phone's device screen.
+Turn on **Text messages** in **Computers > Sync** on the phone.
 The switch applies to every paired computer: each of them can then read your conversations and send text messages.
 The phone asks for SMS access and contacts access.
 Flux needs SMS access. Contacts access adds names to the conversations.
@@ -281,13 +309,15 @@ Chat messages that an app keeps in its own database, for example RCS chats, do n
 ## Media and desktop commands
 
 The phone controls the media players on the desktop.
-Open **Media** on the phone to play, pause, skip, seek, and set the volume.
+Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume. The **Inbox** also shows what plays now, with play and pause.
 The controls show when a desktop player publishes its state over MPRIS.
 The phone selects the player that plays.
 If more than one player runs, select another player at the top of the screen.
 
 The volume control shows only for a player that accepts a new volume, such as mpv.
 Chromium does not accept one, so the phone shows no volume control for it.
+When a player reports album art at an `https` address, the phone loads the image from that address and shows it above the controls.
+Without album art, the controls move up.
 The desktop does not show or control the players on the phone.
 
 Add desktop commands in the Phone commands page or through the CLI:
@@ -299,10 +329,12 @@ flux-cli commands
 
 A new configuration has no commands.
 The phone can request only the commands configured on the desktop.
+A tap on a command shows **Sent** on the phone.
+The desktop does not report the end of a command, so the phone does not show **Done**.
 
 ## Calls
 
-Enable **Call alerts** on the phone's device screen.
+Enable **Call alerts** in **Computers > Sync** on the phone.
 Phone access reports call state.
 Call-log access supplies the number, and contacts access supplies the name.
 Without those optional details, the notification shows **Unknown caller**.
@@ -324,7 +356,7 @@ Reload with `systemctl --user reload fluxd`.
 
 ## Do Not Disturb
 
-Enable **Sync Do Not Disturb** on the phone's device page.
+Enable **Sync Do Not Disturb** in **Computers > Sync** on the phone.
 Android requests Do Not Disturb access the first time.
 Each side sends state only after a change, so daemon startup does not change either side.
 
@@ -342,7 +374,7 @@ Reload with `systemctl --user reload fluxd`.
 
 ## Automatic screenshots and photos
 
-Enable **Send new screenshots** or **Send new photos** on the phone's device page.
+Enable **Send new screenshots** or **Send new photos** in **Computers > Sync** on the phone.
 Both options default to off.
 Allow access to all photos when Android asks.
 Selected-photo access does not expose new captures.
@@ -372,7 +404,7 @@ See [camera and streams](camera.md) for direct capture and live media.
 
 ## herdr agents
 
-When [herdr](https://herdr.dev) runs on the computer, select **Agents** on the phone's device page.
+When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows first in the phone's **Inbox**. To see all agents, select **Agents and terminals** in **Control**.
 The phone shows the status and the colored output of each coding agent, and posts a notification when an agent needs input or finishes.
 
 To answer agents from the phone, set:
@@ -396,7 +428,7 @@ To allow it, turn on **Remote input** in the **Remote access** card of the Flux 
 flux-cli input on
 ```
 
-Then select **Touchpad and keyboard** on the phone's device page, or **Open Touchpad…** on the computer's page in Flux for macOS.
+Then select **Touchpad and keyboard** in **Control** on the phone or in Flux for macOS.
 See [Touchpad and keyboard](remote-input.md) for the gestures, the keys, and the slides.
 
 ## Remote desktop
@@ -409,8 +441,8 @@ flux-cli desktop on
 flux-cli input on
 ```
 
-Then select **Remote desktop** on the phone's device page. The phone turns to landscape.
-In Flux for macOS, select **Open Remote Desktop…** on the computer's page.
+Then select **Remote desktop** in **Control** on the phone. The phone turns to landscape.
+In Flux for macOS, select **Remote desktop** in **Control**.
 See [Remote desktop](remote-desktop.md) for the gestures, the monitors, and the stream.
 
 ## Dictation in text fields

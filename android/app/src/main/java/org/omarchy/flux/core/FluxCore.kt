@@ -2,6 +2,7 @@ package org.omarchy.flux.core
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,8 @@ import java.net.InetAddress
 import java.security.cert.X509Certificate
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "FluxCore"
 
@@ -54,6 +57,12 @@ object FluxCore {
     private var ringingFrom: String? = null
     private var initialized = false
 
+    /** The time of the last connection attempt, for [inConnectGrace], or 0. */
+    @Volatile private var connectFrom = 0L
+
+    /** The publish at the end of the connect grace. The core lock guards it. */
+    private var graceEnd: ScheduledFuture<*>? = null
+
     /**
      * True while an activity of the app is on screen. When the app comes to
      * the front, the phone sends its identity. A new computer then connects
@@ -85,11 +94,21 @@ object FluxCore {
     val listenPort: StateFlow<Int> = _listenPort
     private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val toasts: SharedFlow<String> = _toasts
+    private val _newPairing = MutableStateFlow<String?>(null)
+
+    /**
+     * The device ID of the last new pairing, until the UI takes it with
+     * [takeNewPairing]. The Inbox then shows a short success state for that
+     * computer. It waits while no UI shows.
+     */
+    val newPairing: StateFlow<String?> = _newPairing
 
     fun init(context: Context) {
         if (initialized) return
         initialized = true
         app = context.applicationContext
+        // The keys of the stream request notifications were in the memory of the last process.
+        StreamRequests.removeStale(app)
         local = LocalCertificate.loadOrCreate(File(app.filesDir, "identity")) { e ->
             Log.e(TAG, "the identity of this phone did not load. Flux made a new one.", e)
             Android.createChannels(app)
@@ -97,8 +116,6 @@ object FluxCore {
         }
         trust = TrustStore(app)
         settings = Settings(app)
-        // The system keeps the night mode of the app, but a restore or a data clear can change the setting.
-        Android.setNightMode(app, settings.theme)
         // The trust store holds only entries with a readable certificate.
         for (t in trust.all()) {
             val identity = Identity(t.id, t.name, t.type, 8, emptyList(), emptyList())
@@ -108,10 +125,30 @@ object FluxCore {
             d.certificate = trust.certificate(t.id)
             devices[t.id] = d
         }
+        // The saved computer themes draw at once. The system keeps the night
+        // mode of the app, but a restore or a data clear can change the setting.
+        ComputerThemes.load(settings) { it in devices }
+        ComputerThemes.applyNightMode(app)
         smsSupported = SmsSync.supported(app)
         refreshWifi()
         refreshAccess()
+        // The service starts the network after the first frame, so the paired computers show as connecting until then.
+        if (settings.enabled) startConnectGrace()
         publish()
+    }
+
+    /**
+     * Starts the time in which the paired computers that are not online show
+     * as connecting, see [UiState.connecting]. At its end, the state
+     * publishes again, so that the UI shows the computers that did not
+     * connect.
+     */
+    private fun startConnectGrace() {
+        connectFrom = SystemClock.elapsedRealtime()
+        synchronized(lock) {
+            graceEnd?.cancel(false)
+            graceEnd = scheduler.schedule({ publish() }, CONNECT_GRACE_MS, TimeUnit.MILLISECONDS)
+        }
     }
 
     /** Reads again whether the phone is on Wi-Fi. The network callback of the service calls it. */
@@ -162,6 +199,7 @@ object FluxCore {
 
     fun startNetwork() {
         if (backend != null) return
+        startConnectGrace()
         lateinit var b: LanBackend
         b = LanBackend(local, ::identity, object : LanBackend.Callbacks {
             override fun trustedCertificate(deviceId: String): X509Certificate? = trust.certificate(deviceId)
@@ -186,6 +224,7 @@ object FluxCore {
     fun stopNetwork() {
         backend?.stop()
         backend = null
+        connectFrom = 0L
         _listenPort.value = 0
         // Close the links outside the lock: each close removes an unpaired
         // device from the map. A close can write to the network, so it does
@@ -201,9 +240,17 @@ object FluxCore {
      */
     private fun discoverable(): Boolean = foreground || synchronized(lock) { scanning }
 
-    /** Sends the identity again, for example after the Wi-Fi network changes. */
+    /**
+     * Sends the identity again, for example after the Wi-Fi network changes
+     * or after a tap on Retry. The paired computers that are not online then
+     * show as connecting for [CONNECT_GRACE_MS].
+     */
     fun rediscover() {
-        backend?.broadcast()
+        val b = backend
+        if (b != null) {
+            startConnectGrace()
+            b.broadcast()
+        }
         publish()
     }
 
@@ -336,6 +383,7 @@ object FluxCore {
         d.herdrAction = null
         // The computer can no longer dismiss, answer, or press a button on a phone notification.
         NotificationSync.forgetDevice(id)
+        ComputerThemes.forget(this, id)
         val browsing = browse?.deviceId == id
         if (browsing) browse = null
         io.execute {
@@ -347,6 +395,7 @@ object FluxCore {
             if (browsing) Browse.close()
             Approvals.current.value?.takeIf { it.computerId == id }?.let { Approvals.clear(app, it.id) }
             Android.cancelFromComputer(app, id)
+            StreamRequests.forget(app, id)
         }
     }
 
@@ -382,8 +431,12 @@ object FluxCore {
                 browse = browse,
                 listeningUdp = backend?.listeningUdp ?: true,
                 scanning = scanning,
+                connecting = inConnectGrace(connectFrom, SystemClock.elapsedRealtime()),
                 enabled = settings.enabled,
                 theme = settings.theme,
+                computerTheme = ComputerThemes.current(),
+                themeScope = ComputerThemes.scope,
+                computerThemes = ComputerThemes.names(),
             )
         }
         _state.value = snapshot
@@ -396,6 +449,9 @@ object FluxCore {
     fun device(id: String): Device? = synchronized(lock) { devices[id] }
 
     fun connectedPaired(): List<Device> = synchronized(lock) { devices.values.filter { it.paired && it.online } }
+
+    /** True when the phone is paired with at least 1 computer, online or not. */
+    fun hasPaired(): Boolean = synchronized(lock) { devices.values.any { it.paired } }
 
     // ---------------------------------------------------------------- events
 
@@ -414,7 +470,18 @@ object FluxCore {
     }
 
     fun onPaired(d: Device) {
+        notePairing(d.id)
         onConnected(d)
+    }
+
+    /** Records a new pairing for the UI. [onPaired] calls it. Debug builds call it for a sample computer. */
+    fun notePairing(id: String) {
+        _newPairing.value = id
+    }
+
+    /** Clears the new pairing [id] after the UI showed it. A newer pairing stays. */
+    fun takeNewPairing(id: String) {
+        _newPairing.compareAndSet(id, null)
     }
 
     /** Sends the packets that a paired device expects after it connects. */
@@ -477,7 +544,7 @@ object FluxCore {
 
     fun setTheme(mode: ThemeMode) {
         settings.theme = mode
-        Android.setNightMode(app, mode)
+        ComputerThemes.applyNightMode(app)
         publish()
     }
 

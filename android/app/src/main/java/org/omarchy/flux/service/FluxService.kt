@@ -36,6 +36,7 @@ import org.omarchy.flux.core.Ringer
 import org.omarchy.flux.core.SmsSync
 import org.omarchy.flux.protocol.PROTOCOL_VERSION
 import org.omarchy.flux.protocol.cleanName
+import org.omarchy.flux.ui.ClipboardSendActivity
 import org.omarchy.flux.ui.MainActivity
 
 /**
@@ -279,27 +280,38 @@ class FluxService : Service() {
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val text = when (connected) {
-            0 -> "Waiting for a computer on this network"
-            1 -> "1 computer connected"
+        val text = when {
+            connected == 0 -> "Waiting for a computer on this network"
+            connected == 1 -> "1 computer connected"
             else -> "$connected computers connected"
         }
-        val n = NotificationCompat.Builder(this, Android.CHANNEL_SERVICE)
+        val b = NotificationCompat.Builder(this, Android.CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_stat_flux)
             .setContentTitle("Flux")
             .setContentText(text)
             .setContentIntent(open)
-            .addAction(
-                R.drawable.ic_power_settings_new,
-                "Turn off",
-                PendingIntent.getService(
-                    this, 1, Intent(this, FluxService::class.java).setAction(ACTION_TURN_OFF),
+        // A copy in another app reaches the computer with 1 tap.
+        if (connected > 0) {
+            b.addAction(
+                R.drawable.ic_content_paste_go,
+                "Send clipboard",
+                PendingIntent.getActivity(
+                    this, 2,
+                    Intent(this, ClipboardSendActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 ),
             )
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
+        }
+        b.addAction(
+            R.drawable.ic_power_settings_new,
+            "Turn off",
+            PendingIntent.getService(
+                this, 1, Intent(this, FluxService::class.java).setAction(ACTION_TURN_OFF),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        )
+        val n = b.setOngoing(true).setSilent(true).build()
         ServiceCompat.startForeground(this, Android.ID_SERVICE, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
     }
 

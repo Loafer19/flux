@@ -81,6 +81,7 @@ object ClipImage {
         dir.listFiles()?.filter { it != file }?.forEach { it.delete() }
         val uri = FileProvider.getUriForFile(core.app, authority(core.app), file)
         lastRemote = uri
+        InboxFeed.clipReceived(d.id, d.identity.deviceName, null)
         main.post { Android.setClipboardImage(core.app, uri) }
     }
 
@@ -105,7 +106,7 @@ object ClipImage {
      * another app goes out, because a file address opens a path with the
      * rights of Flux. Of the addresses of Flux, only [lastRemote] goes out,
      * so that the user can send an image from 1 computer to another. The
-     * automatic sync does not send [lastRemote] back.
+     * clipboard sync does not send [lastRemote] back.
      *
      * [manual] is true for Send clipboard. It also sends an image from a
      * computer that is still in the clipboard folder, because [lastRemote]

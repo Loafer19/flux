@@ -25,6 +25,8 @@ enum PluginRegistry {
             WebcamPlugin(),
             MicPlugin(),
             ApprovePlugin(),
+            ThemePlugin(),
+            StreamRequestPlugin(),
         ]
     }
 }
@@ -62,6 +64,13 @@ enum FeatureRoute: Hashable {
     case camera(String)
     case mic(String)
     case approve(String)
+    case share(String)
+    case commands(String)
+    case nowPlaying(String)
+    /// The Omarchy panel on its own screen, from Control.
+    case panel(String)
+    /// The camera screen in 1 mode, from Send and Control.
+    case cameraMode(String, CameraMode)
 }
 
 /// The screen of a feature route.
@@ -79,6 +88,11 @@ struct FeatureDestination: View {
         case .camera(let id): CameraScreen(deviceId: id)
         case .mic(let id): MicScreen(deviceId: id)
         case .approve(let id): ApproveScreen(deviceId: id)
+        case .share(let id): ShareScreen(deviceId: id)
+        case .commands(let id): CommandsScreen(deviceId: id)
+        case .nowPlaying(let id): NowPlayingScreen(deviceId: id)
+        case .panel(let id): OmarchyPanelScreen(deviceId: id)
+        case .cameraMode(let id, let mode): CameraScreen(deviceId: id, mode: mode)
         }
     }
 }
@@ -145,6 +159,7 @@ struct FeatureRoot: ViewModifier {
 @MainActor
 enum FeatureOverlays {
     static let layers: [AnyView] = [
+        AnyView(OverlayLayer(modifier: StreamRequestRoot())),
         AnyView(OverlayLayer(modifier: ApproveRoot())),
         AnyView(OverlayLayer(modifier: RingRoot())),
     ]
@@ -154,6 +169,7 @@ enum FeatureOverlays {
         model.pairSheetDevice != nil
             || ApprovePresenter.shared.state.isPresented
             || model.core.plugin(RingPlugin.self)?.model.ringing != nil
+            || (model.isActive && model.core.plugin(StreamRequestPlugin.self)?.model.current != nil)
     }
 }
 
@@ -161,22 +177,28 @@ enum FeatureOverlays {
 enum FeatureHooks {
     /// Runs once after launch, before the network starts.
     static func didLaunch(model: AppModel) {
+        ClipboardIntentBridge.model = model
         NotificationAccess.shared.refresh()
         ShareFeature.didLaunch(model: model)
         SystemFeature.didLaunch(model: model)
         AgentsFeature.didLaunch(model: model)
         BrowseFeature.didLaunch()
         ApproveFeature.didLaunch(model: model)
+        StreamRequestFeature.didLaunch(model: model)
     }
 
     /// Runs after each change of the core state.
     static func stateChanged(_ state: CoreState, model: AppModel) {
         QueuedShares.shared.stateChanged(state)
+        // A stream that a tap started waits for the link of its computer.
+        StreamRequestFeature.shared.check()
     }
 
     /// Runs when the app comes on the screen or leaves it.
     static func sceneChanged(active: Bool, model: AppModel) {
         model.core.plugin(ClipboardPlugin.self)?.setActive(active)
+        // A copy that the user made in another app goes out once.
+        if active { model.core.plugin(ClipboardPlugin.self)?.catchUp() }
         if active { NotificationAccess.shared.refresh() }
         // A computer that connects also gets the new images, through the plugin.
         if active { model.core.plugin(CaptureWatchPlugin.self)?.catchUp() }
@@ -186,6 +208,17 @@ enum FeatureHooks {
         if active { ShareFeature.shared.openPendingLink() }
         // iOS turns off the camera of an app that leaves the screen.
         if !active { model.core.plugin(WebcamPlugin.self)?.stopInBackground() }
+        // A suspended app runs no timer, so the old stream requests end here.
+        if active { model.core.plugin(StreamRequestPlugin.self)?.expire() }
+        // A tap on a stream request in a notification opened Flux.
+        if active { StreamRequestFeature.shared.check() }
+    }
+
+    /// Runs when an App Intent starts or ends, and when the app comes on the
+    /// screen or leaves it, see `AppModel.runsOnlyForIntents`.
+    static func intentsChanged(model: AppModel) {
+        // A new image waits for the next scan while only an action holds the links.
+        model.core.plugin(CaptureWatchPlugin.self)?.allowScans(!model.runsOnlyForIntents)
     }
 
     /// Runs when the app stops being active: it leaves the screen, or iOS
@@ -197,9 +230,10 @@ enum FeatureHooks {
 
     /// True while a feature runs in the background and needs the links:
     /// the microphone stream, which keeps Flux running with the audio
-    /// background mode.
+    /// background mode, and an App Intent such as Send Text to Computer.
     static func runsInBackground(model: AppModel) -> Bool {
         model.core.plugin(MicPlugin.self)?.model.status.active == true
+            || model.intentsRunning > 0
     }
 
     /// True while the screen of the iPhone must stay on: the webcam or the

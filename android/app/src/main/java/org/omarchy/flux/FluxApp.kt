@@ -19,8 +19,8 @@ class FluxApp : Application() {
         Android.createChannels(this)
         // A transfer that failed, or a photo that did not go out, can leave a copy in the cache.
         FluxCore.io.execute { Share.cleanCache(cacheDir) }
-        // Android 10 and later let an app read the clipboard only while it
-        // has focus, so Flux watches the clipboard only in the foreground.
+        // Android 10 and later let an app read the clipboard only while it has
+        // focus, so Flux watches the clipboard only while it is in front.
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 FluxCore.foreground = true

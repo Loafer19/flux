@@ -40,14 +40,14 @@ When herdr runs, `flux-cli doctor` prints this line:
 ## See your agents
 
 1. Start herdr on the computer.
-2. Open Flux for Android and select the computer.
-3. Select **Agents**.
+2. Open Flux for Android. An agent that waits for input shows first in the **Inbox**, with its question and its choices.
+3. To see all agents, open **Control** and select **Agents and terminals**.
 4. Select an agent to read its recent output.
 
 The list puts blocked agents first, then done, working, idle, and unknown agents.
 A blocked agent waits for an approval or for the answer to a question.
 Idle and done agents are ready for new input.
-The **Agents** tile shows the number of blocked agents.
+The **Agents and terminals** tile shows the number of blocked agents.
 
 The output screen of the phone shows up to 1000 lines of recent output.
 The screen part of the output has the colors and styles of the terminal.
@@ -87,7 +87,7 @@ The phone does not post notifications for the first agent list after it connects
 It waits 2 seconds before a finished notification, because the status can change between tool calls.
 When the agent works again, the phone removes its notification.
 
-To turn off a notification type, use the **Agent needs input** or **Agent finished** switch on the phone's device page.
+To turn off a notification type, use the **Agent needs input** or **Agent finished** switch in **Computers > Sync** on the phone.
 The switches apply to all computers.
 Android also lists the two types as the **Agents that need input** and **Agents that finish** channels.
 
@@ -262,8 +262,10 @@ Flux for macOS shows the same agents and sends the same replies as the phone.
 It shows up to 1000 lines of output.
 It does not start agents, close them, or open terminals.
 
-- The page of the computer has an **Agents** card. It lists the first agents and shows the number of blocked agents.
-- **Open Agents…** opens a window with the agent list on the left and the output of the selected agent on the right. The menu bar item has **Agents…** too.
+- **Control** has the **Agents and terminals** tool. Its line counts the agents and the terminals. Its badge shows the number of blocked agents.
+- The Inbox shows each agent that waits for input, works, or is done. See [Inbox and navigation](macos.md#inbox-and-navigation).
+- **Agents and terminals** opens a window with the agent list on the left and the output of the selected agent on the right. When more than 1 computer has agents, Flux asks which one.
+- **Reply** and **Open** on the master tile of the Inbox open the agent in that window. The menu of each computer in the menu bar panel has **Agents…** too.
 - The output uses the colors of Tokyo Night in dark mode and Tokyo Night Day in light mode.
 - The Mac does not yet fit the output of full-screen agents such as opencode, as the phone does.
 - Press Command-R to read the output again.
@@ -496,7 +498,7 @@ An app sends `answer` only after the user selects an action to type an answer.
 
 | Problem | Next step |
 | --- | --- |
-| The **Agents** tile is missing | Update `fluxd` and Flux for Android. The tile shows only when the computer sends `flux.herdr`. |
+| The **Agents and terminals** tile is missing | Update `fluxd` and Flux for Android. The tile shows in **Control** only when the computer sends `flux.herdr`. |
 | The phone says that herdr is not running | Run `herdr status` and `flux-cli doctor` on the computer. |
 | The list is empty | Run `herdr agent list`. herdr must detect the agent in its pane. |
 | The phone says that the feature is off | Set `herdr = true` and reload `fluxd`. |
@@ -510,7 +512,7 @@ An app sends `answer` only after the user selects an action to type an answer.
 | A reply says that the agent waits for a choice | The agent shows a dialog. Pick a choice with the choice buttons or the key bar, then send the text again. |
 | The log says that the herdr socket belongs to another user | Another user listens on the herdr socket path. Set `HERDR_SOCKET_PATH` to a socket in a folder that only you can write to. |
 | The mic key is missing | The phone has no speech recognizer. Install Speech Recognition and Synthesis from Google, or another voice input app. |
-| The **Agents** card is missing on the Mac | Update `fluxd` and Flux for macOS. The card shows only when the computer accepts `flux.herdr`. |
+| The **Agents and terminals** tool is missing on the Mac | Update `fluxd` and Flux for macOS. The tool shows in **Control** only when a computer in the scope accepts `flux.herdr`. |
 | Dictation on the Mac says to allow Speech Recognition or the microphone | Select **Open Privacy Settings**, allow Flux, then start the dictation again. |
 | Dictation on the Mac sends the audio to Apple | The Mac has no speech model for the language. Add the language under **Dictation** in **System Settings > Keyboard**, or choose a language under **On this Mac**. |
 | Dictation says that Android downloads the speech model | Wait until the download is done, then start the dictation again. |

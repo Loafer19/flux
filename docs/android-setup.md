@@ -96,8 +96,8 @@ To give Flux these permissions:
 2. Open the menu in the top corner and select **Allow restricted settings**.
    The menu item shows only after Android has shown **Restricted setting** for Flux once.
 3. Confirm with the PIN or the fingerprint of the phone.
-4. Return to Flux and open the page of the computer.
-   Scroll below the large tiles and turn on **Share notifications** or **Text messages** again.
+4. Return to Flux and open **Computers > Sync**.
+   Turn on **Share notifications** or **Text messages** again.
 
 If the menu item does not show, allow restricted settings from the computer with `adb`:
 
@@ -106,6 +106,20 @@ adb shell appops set org.omarchy.flux ACCESS_RESTRICTED_SETTINGS allow
 ```
 
 Then turn on the switch in Flux again.
+
+## Send clipboard tile
+
+The **Send clipboard** tile sends the current clip to each connected paired computer.
+To add the tile:
+
+1. Open the Quick Settings panel and open the edit screen.
+2. Drag **Send clipboard** into the panel.
+3. Copy in any app, then tap the tile.
+
+The Flux service notification also has a **Send clipboard** action while a computer is connected.
+The text selection menu of any app has a **Send to computer** action.
+It sends the selected text to the computer that you pick.
+These paths need no setup and no extra permission.
 
 ## How Flux for Android is set up
 
@@ -125,7 +139,7 @@ It keeps the links to the computers open while the app is in the background.
 Android requires a visible notification for this service, so Flux shows **Waiting for a computer on this network** or the number of connected computers.
 
 The service starts again after a restart of the phone and after an app update.
-**Turn off Flux** in the app menu or **Turn off** in the notification stops the service.
+**Turn off Flux** in **Computers** or **Turn off** in the notification stops the service.
 Flux then stays off after a restart, until you turn it on again.
 
 ### Network
@@ -141,7 +155,7 @@ Both devices must be on the same local network, or use an [extra address](tailsc
 
 When the app opens, the phone scans for computers for 10 seconds.
 A scan sends the identity over UDP and browses mDNS, then stops.
-To scan again, tap **Scan again** on the device list.
+To scan again, open **Computers** and pull the list down, or tap **Scan again**.
 
 ### Permissions
 
@@ -152,7 +166,7 @@ The other permissions need no prompt.
 | --- | --- | --- |
 | `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`, `CHANGE_WIFI_MULTICAST_STATE`, `CHANGE_NETWORK_STATE` | Discovery and links on the local network | No prompt |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CONNECTED_DEVICE`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK` | The background service | No prompt |
-| `POST_NOTIFICATIONS` | The service notification, pair requests, and alerts | When the app first opens |
+| `POST_NOTIFICATIONS` | The service notification, pair requests, and alerts | Once after the first pairing. The **Inbox** tells why. |
 | `USE_FULL_SCREEN_INTENT`, `VIBRATE` | **Find my phone** and fingerprint approval requests | No prompt |
 | Notification listener | **Share notifications** | The switch opens the Android settings page |
 | `QUERY_ALL_PACKAGES` | App names on shared notifications | No prompt |
@@ -166,6 +180,14 @@ The other permissions need no prompt.
 | `HIDE_OVERLAY_WINDOWS` | The pair sheet and the approval screen hide the windows of other apps on Android 12 and later | No prompt |
 | `REQUEST_INSTALL_PACKAGES` | [Updates that the computer sends](android.md#update-the-app) | Android asks to allow **Install unknown apps** at the first update |
 
+Flux shows no permission dialog before the first pairing.
+Keep Flux open for the first pairing. Before you allow notifications, Android 13 and later show no notification for a pair request.
+After the first pairing, the **Inbox** tells why Flux needs notifications: **Allow notifications, so that Flux can show when an agent needs you.**
+1 second later, Android asks once for notifications.
+If you deny it, the **Inbox** keeps the question with **Allow**.
+After 2 denials, Android does not show its dialog again, so the **Inbox** shows **Open settings** in its place.
+**Hide** removes the question. You can allow notifications in the settings of Android at any time.
+
 `READ_EXTERNAL_STORAGE` applies only to Android 12 and earlier.
 The call log and the contacts are optional for **Call alerts**. They add the number and the name of the caller.
 When you allow the call log later, the next call shows the number without a restart of Flux.
@@ -173,7 +195,7 @@ The source of truth is `android/app/src/main/AndroidManifest.xml`.
 
 ### Sync switches
 
-The switches under **Sync with all computers** on the page of a computer are settings of the phone.
+The switches on the **Sync** screen in **Computers** are settings of the phone.
 Each switch applies to every paired computer, not only to the computer whose page shows it.
 For example, **Text messages** lets each paired computer read your conversations and send text messages.
 **Send new photos** sends each new photo to each connected computer.

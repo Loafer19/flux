@@ -84,6 +84,11 @@ FluxBackend::FluxBackend(QJSEngine *engine, QObject *parent)
 
     QTimer::singleShot(firstAttemptGrace, this, &FluxBackend::setAttempted);
     connectNow();
+
+    m_probeTimer.setInterval(15000);
+    connect(&m_probeTimer, &QTimer::timeout, this, &FluxBackend::probeModules);
+    m_probeTimer.start();
+    probeModules();
 }
 
 FluxBackend::~FluxBackend()
@@ -91,7 +96,71 @@ FluxBackend::~FluxBackend()
     // ~QLocalSocket closes the connection and emits disconnected. At that
     // time m_pending is already destroyed, and the engine that owns this
     // object is mid-destruction. Remove the socket handlers first.
+    m_probeTimer.stop();
+    if (m_probe) {
+        m_probe->disconnect(this);
+        m_probe->kill();
+        m_probe = nullptr;
+    }
     m_socket.disconnect(this);
+}
+
+QString moduleProbeScript()
+{
+    return QStringLiteral(
+        "set +e\n"
+        "if [ ! -r /proc/modules ]; then\n"
+        "  echo v4l2loopback unknown\n"
+        "else\n"
+        "  loaded=0\n"
+        "  grep -q '^v4l2loopback ' /proc/modules && loaded=1\n"
+        "  if [ \"$loaded\" -eq 1 ]; then\n"
+        "    command -v modinfo >/dev/null 2>&1 && modinfo -n v4l2loopback >/dev/null 2>&1\n"
+        "    echo v4l2loopback loaded\n"
+        "  elif ! command -v modinfo >/dev/null 2>&1; then\n"
+        "    echo v4l2loopback unknown\n"
+        "  else\n"
+        "    info=$(modinfo -n v4l2loopback 2>&1)\n"
+        "    rc=$?\n"
+        "    if [ \"$rc\" -eq 0 ]; then\n"
+        "      echo v4l2loopback missing\n"
+        "    elif printf '%s' \"$info\" | grep -qi 'permission denied\\|not permitted'; then\n"
+        "      echo v4l2loopback unknown\n"
+        "    else\n"
+        "      echo v4l2loopback missing\n"
+        "    fi\n"
+        "  fi\n"
+        "fi\n"
+        "for b in wtype wl-copy wl-paste pw-record; do\n"
+        "  if command -v \"$b\" >/dev/null 2>&1; then echo \"$b found\"; else echo \"$b missing\"; fi\n"
+        "done\n"
+        "exit 0\n");
+}
+
+void FluxBackend::probeModules()
+{
+    if (m_probe)
+        return;
+    auto *proc = new QProcess(this);
+    m_probe = proc;
+    connect(proc, &QProcess::finished, this, [this, proc](int code, QProcess::ExitStatus) {
+        const QString text = QString::fromUtf8(proc->readAllStandardOutput());
+        proc->deleteLater();
+        if (m_probe == proc)
+            m_probe = nullptr;
+        if (code == 0 && text != m_moduleProbeText) {
+            m_moduleProbeText = text;
+            emit moduleProbeTextChanged();
+        }
+    });
+    connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError err) {
+        if (err != QProcess::FailedToStart)
+            return;
+        proc->deleteLater();
+        if (m_probe == proc)
+            m_probe = nullptr;
+    });
+    proc->start(QStringLiteral("sh"), {QStringLiteral("-c"), moduleProbeScript()});
 }
 
 QString FluxBackend::runtimeDir()

@@ -7,6 +7,7 @@
 #include <QTimer>
 
 class QJSEngine;
+class QProcess;
 
 // FluxBackend is the client of the fluxd IPC socket. Each message is one
 // JSON object on one line. After subscribe, fluxd sends the full state
@@ -23,6 +24,7 @@ class FluxBackend : public QObject {
     Q_PROPERTY(QJSValue commands READ commands NOTIFY stateChanged)
     Q_PROPERTY(QJSValue settings READ settings NOTIFY stateChanged)
     Q_PROPERTY(QJSValue selfDevice READ selfDevice NOTIFY stateChanged)
+    Q_PROPERTY(QString moduleProbeText READ moduleProbeText NOTIFY moduleProbeTextChanged)
 
 public:
     explicit FluxBackend(QJSEngine *engine, QObject *parent = nullptr);
@@ -37,6 +39,7 @@ public:
     QJSValue commands() const { return field("commands", true); }
     QJSValue settings() const { return field("settings", false); }
     QJSValue selfDevice() const { return field("self", false); }
+    QString moduleProbeText() const { return m_moduleProbeText; }
 
     // call sends a request. cb receives (err, result). err is
     // {code, message} or null. Without cb, an error becomes a toast.
@@ -68,9 +71,11 @@ signals:
     void attemptedChanged();
     void stateChanged();
     void toast(const QString &text);
+    void moduleProbeTextChanged();
 
 private:
     void connectNow();
+    void probeModules();
     void scheduleRetry();
     void setAttempted();
     void readLines();
@@ -91,4 +96,7 @@ private:
     // m_dropLine is true while the backend drops the rest of a line above
     // the size limit.
     bool m_dropLine = false;
+    QString m_moduleProbeText;
+    QProcess *m_probe = nullptr;
+    QTimer m_probeTimer;
 };

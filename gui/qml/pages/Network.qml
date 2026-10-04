@@ -5,8 +5,9 @@ import "../components"
 
 // This computer, Devices list, and Pair (Invite/Join) as a Network segment —
 // not a long scroll under Devices. Relay stays advanced/collapsed.
-// Overview still owns peer settings (edges, clipboard, Home share) and desk
-// remote. Browse peer home lives on Overview and Files — not on Network cards.
+// Devices | Pair | This computer. This computer holds the global toggles
+// (sharing, remote access) and the modules status. Screen edge stays on the
+// peer in Overview. Browse is one tile there, not on these cards.
 // Self is only the This computer card, never a peer row like other desks.
 Item {
   id: root
@@ -32,8 +33,37 @@ Item {
     if (!view || !view.backend || !view.backend.state) return null
     return view.backend.state.peerDesktop || null
   }
-  // Network segment: "devices" | "pair"
+  // Network segment: "devices" | "pair" | "computer"
   property string networkPane: "devices"
+  // Incoming remote desktop of this computer (state.desktop), and the phone
+  // webcam state. Module rows are a local probe, not the webcam error.
+  readonly property var desktop: view && view.backend && view.backend.state ? (view.backend.state.desktop || null) : null
+  readonly property var webcam: view && view.backend && view.backend.state ? (view.backend.state.webcam || null) : null
+  readonly property bool desktopShown: !!desktop && !desktop.error
+  readonly property bool desktopLive: desktopShown && !!desktop.active
+  // Modules this computer needs, probed on the machine (lsmod/modinfo and
+  // command -v). Not the webcam error string. Unknown only when that probe
+  // cannot run.
+  readonly property var moduleRows: {
+    var b = root.view && root.view.backend
+    var probe = b && b.moduleProbeText ? String(b.moduleProbeText) : ""
+    var want = ["v4l2loopback", "wtype", "wl-copy", "wl-paste", "pw-record"]
+    var got = ({})
+    var lines = probe.split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var parts = lines[i].trim().split(/\s+/)
+      if (parts.length >= 2) got[parts[0]] = parts[1]
+    }
+    var rows = []
+    var allowed = { loaded: true, missing: true, found: true, unknown: true }
+    for (var j = 0; j < want.length; j++) {
+      var name = want[j]
+      var status = got[name] || "unknown"
+      if (!allowed[status]) status = "unknown"
+      rows.push({ name: name, status: status })
+    }
+    return rows
+  }
   // Invite / join state for discovery-less first pairing.
   property string inviteCode: ""
   property string inviteHost: ""
@@ -75,7 +105,7 @@ Item {
     }
   }
 
-  // Segment chip for Devices | Pair.
+  // Segment chip for Devices | Pair | This computer.
   component PaneChip: Rectangle {
     id: chip
     property string key: ""
@@ -104,6 +134,30 @@ Item {
     }
   }
 
+  // A global toggle with one short hint. Not a paragraph.
+  component CompactToggle: Column {
+    id: ct
+    property string label: ""
+    property string hint: ""
+    property bool checked: false
+    signal toggled(bool on)
+    width: parent ? parent.width : implicitWidth
+    spacing: 1
+    Toggle {
+      text: ct.label
+      checked: ct.checked
+      onToggled: function (on) { ct.toggled(on) }
+    }
+    Txt {
+      x: 44
+      width: Math.max(0, ct.width - x)
+      text: ct.hint
+      color: Theme.dim
+      font.pixelSize: 11
+      elide: Text.ElideRight
+    }
+  }
+
   // Short type only — no "Peer ·" / "Remote ·" noise.
   function roleLine(d) {
     if (d.role === "peer") return Fmt.typeName(d.type || "desktop")
@@ -124,6 +178,12 @@ Item {
       if (n >= 16 && n <= 31) return "LAN"
     }
     return ""
+  }
+
+  function setSetting(key, value, onText, offText) {
+    if (!root.view || !root.view.call) return
+    root.view.call("settings.set", { key: key, value: value })
+    if (onText) root.view.toast(value ? onText : offText)
   }
 
   function copyText(t) {
@@ -363,6 +423,11 @@ Item {
         key: "pair"
         label: "Pair"
         onActivated: root.networkPane = "pair"
+      }
+      PaneChip {
+        key: "computer"
+        label: "This computer"
+        onActivated: root.networkPane = "computer"
       }
     }
 
@@ -661,6 +726,135 @@ Item {
           }
         }
       }
+    }
+
+    // ── This computer: global sharing, remote access, modules ──
+    Column {
+      visible: root.networkPane === "computer"
+      width: parent.width
+      spacing: 18
+
+      Card {
+        width: parent.width
+        implicitHeight: shareCol.implicitHeight + 32
+        Column {
+          id: shareCol
+          x: 16
+          y: 14
+          width: parent.width - 32
+          spacing: 8
+          SectionLabel { text: "SHARING" }
+          CompactToggle {
+            objectName: "clipboardToggle"
+            label: "Clipboard"
+            hint: "Copy text between this computer and paired devices."
+            checked: root.settings.autoClipboard !== false
+            onToggled: function (on) { root.setSetting("autoClipboard", on, "Clipboard on", "Clipboard off") }
+          }
+          CompactToggle {
+            objectName: "dndToggle"
+            label: "DND sync"
+            hint: "Match Do Not Disturb with paired devices."
+            checked: root.settings.syncDnd !== false
+            onToggled: function (on) { root.setSetting("syncDnd", on, "DND sync on", "DND sync off") }
+          }
+          CompactToggle {
+            objectName: "homeShareToggle"
+            label: "Home share"
+            hint: "This computer shares its home with paired devices."
+            checked: root.settings.shareHome !== false
+            onToggled: function (on) { root.setSetting("shareHome", on, "Home share on", "Home share off") }
+          }
+        }
+      }
+
+      Card {
+        id: remoteCard
+        objectName: "remoteCard"
+        function set(key, on) {
+          if (root.view) root.view.call("settings.set", { key: key, value: on })
+        }
+        width: parent.width
+        implicitHeight: remoteCol.implicitHeight + 32
+        Column {
+          id: remoteCol
+          x: 16
+          y: 14
+          width: parent.width - 32
+          spacing: 8
+          SectionLabel { text: root.desktopLive ? "REMOTE ACCESS · LIVE" : "REMOTE ACCESS" }
+          CompactToggle {
+            objectName: "remoteDesktopToggle"
+            label: "Remote desktop"
+            hint: "A paired device can show this screen."
+            checked: !!root.settings.remoteDesktop
+            onToggled: function (on) { remoteCard.set("remoteDesktop", on) }
+          }
+          CompactToggle {
+            objectName: "remoteInputToggle"
+            label: "Remote input"
+            hint: "A paired device can move the pointer and type."
+            checked: !!root.settings.remoteInput
+            onToggled: function (on) { remoteCard.set("remoteInput", on) }
+          }
+          RowLayout {
+            visible: root.desktopShown
+            width: parent.width
+            spacing: 8
+            Txt {
+              Layout.fillWidth: true
+              Layout.alignment: Qt.AlignVCenter
+              readonly property var d: root.desktop || ({})
+              text: root.desktopLive
+                ? ((d.toName || "A device") + " shows " + (d.monitor || "this screen"))
+                : ((d.toName || "A device") + " is starting…")
+              font.pixelSize: 12
+              color: root.desktopLive ? Theme.fg : Theme.dim
+              elide: Text.ElideRight
+            }
+            OutlineButton {
+              icon: "stop"
+              text: "Stop"
+              onClicked: root.view.call("desktop.stop", {})
+            }
+          }
+        }
+      }
+
+      Card {
+        objectName: "modulesCard"
+        width: parent.width
+        implicitHeight: modCol.implicitHeight + 28
+        Column {
+          id: modCol
+          x: 16
+          y: 12
+          width: parent.width - 32
+          spacing: 2
+          SectionLabel { text: "MODULES" }
+          Repeater {
+            model: root.moduleRows
+            delegate: RowLayout {
+              required property var modelData
+              width: modCol.width
+              spacing: 10
+              Txt {
+                text: modelData.name
+                font.weight: Font.DemiBold
+                font.pixelSize: 13
+              }
+              Item { Layout.fillWidth: true }
+              Txt {
+                text: modelData.status
+                font.pixelSize: 12
+                color: (modelData.status === "loaded" || modelData.status === "found") ? Theme.ok
+                     : (modelData.status === "missing" ? Theme.err : Theme.dim)
+              }
+            }
+          }
+        }
+      }
+
     }
 
     // ── RELAY · OPTIONAL (collapsed when off) ──

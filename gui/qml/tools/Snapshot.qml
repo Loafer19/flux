@@ -287,8 +287,13 @@ Window {
     // shows this screen, then Stop.
     ["46-remote-on", function () {
       mock.state = mock.fixTimes(mock.fixture.state)
-      remote().set("remoteDesktop", true)
-      remote().set("remoteInput", true)
+      view.tab = "network"
+    }, function () {
+      var page = pageItem()
+      page.networkPane = "computer"
+      var card = findBy(page, "objectName", "remoteCard")
+      card.set("remoteDesktop", true)
+      card.set("remoteInput", true)
     }],
     ["47-remote-live", function () {
       mock.setState(function (s) { s.desktop = { active: true, to: pixel, toName: "Pixel 8", monitor: "DP-1", width: 2560, height: 1440 } })
@@ -300,6 +305,7 @@ Window {
     }],
     // A device on the network with the name of a paired phone.
     ["49-pair-twin", function () {
+      view.tab = "overview"
       mock.setState(function (s) {
         s.devices.push({ id: "a0000000000000000000000000000005", name: "pixel  8", type: "phone", ip: "192.168.1.66", fingerprint: "E7A10C5F2B98D364", paired: false, online: true, pairState: "none", plugins: [], notifications: [], conversations: [] })
       })

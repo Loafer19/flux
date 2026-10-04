@@ -128,6 +128,59 @@ Scope {
     return paths.filter(function (p) { return p.startsWith("/") })
   }
 
+  // Local module probe for Network → This computer. One word each.
+  // v4l2loopback: lsmod (/proc/modules) and modinfo. The others are the
+  // commands the desk already runs: wtype, wl-copy, wl-paste, pw-record.
+  property string moduleProbeText: ""
+  property bool moduleProbeBusy: false
+  readonly property string moduleProbeScript: [
+    "set +e",
+    "if [ ! -r /proc/modules ]; then",
+    "  echo v4l2loopback unknown",
+    "else",
+    "  loaded=0",
+    "  grep -q '^v4l2loopback ' /proc/modules && loaded=1",
+    "  if [ \"$loaded\" -eq 1 ]; then",
+    "    command -v modinfo >/dev/null 2>&1 && modinfo -n v4l2loopback >/dev/null 2>&1",
+    "    echo v4l2loopback loaded",
+    "  elif ! command -v modinfo >/dev/null 2>&1; then",
+    "    echo v4l2loopback unknown",
+    "  else",
+    "    info=$(modinfo -n v4l2loopback 2>&1)",
+    "    rc=$?",
+    "    if [ \"$rc\" -eq 0 ]; then",
+    "      echo v4l2loopback missing",
+    "    elif printf '%s' \"$info\" | grep -qi 'permission denied\\|not permitted'; then",
+    "      echo v4l2loopback unknown",
+    "    else",
+    "      echo v4l2loopback missing",
+    "    fi",
+    "  fi",
+    "fi",
+    "for b in wtype wl-copy wl-paste pw-record; do",
+    "  if command -v \"$b\" >/dev/null 2>&1; then echo \"$b found\"; else echo \"$b missing\"; fi",
+    "done",
+    "exit 0"
+  ].join("\n")
+
+  function probeModules() {
+    if (root.moduleProbeBusy) return
+    root.moduleProbeBusy = true
+    var proc = pickerComponent.createObject(root, {
+      command: ["sh", "-c", root.moduleProbeScript]
+    })
+    if (!proc) {
+      root.moduleProbeBusy = false
+      return
+    }
+    proc.done = function (code, text) {
+      root.moduleProbeBusy = false
+      if (code === 0) root.moduleProbeText = String(text || "")
+    }
+    proc.running = true
+  }
+
+
   // Starts the fluxd user service. cb gets true when systemctl succeeds.
   function startDaemon(cb) {
     var proc = pickerComponent.createObject(root, {
@@ -238,5 +291,13 @@ Scope {
     interval: 800
     running: true
     onTriggered: root.attempted = true
+  }
+
+  Timer {
+    interval: 15000
+    repeat: true
+    running: true
+    triggeredOnStart: true
+    onTriggered: root.probeModules()
   }
 }

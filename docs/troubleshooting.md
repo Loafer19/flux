@@ -134,6 +134,9 @@ See [check a release](install.md#check-a-release) to check the files by hand.
    systemctl status avahi-daemon
    ```
 
+   If Avahi is inactive, start it with `sudo systemctl enable --now avahi-daemon`.
+   `fluxd` publishes the computer through Avahi again when Avahi starts or restarts, so `fluxd` needs no restart.
+
 4. Request discovery:
 
    ```sh
@@ -143,7 +146,7 @@ See [check a release](install.md#check-a-release) to check the files by hand.
 
 Guest Wi-Fi and client isolation can block devices on the same access point.
 Flux uses outbound desktop connections and mDNS, so a new inbound desktop firewall rule is not the default fix for a phone or a Mac.
-`fluxd` listens on 1 TCP port from 1716 to 1764 and on UDP port 1716, but it does not need inbound traffic.
+`fluxd` listens on 1 TCP port from 12100 to 12108 and on UDP port 12100, but it does not need inbound traffic.
 It finds the devices through mDNS and opens the connections itself.
 So a new inbound desktop firewall rule is not the default fix.
 See [network ports](security.md#network-ports).
@@ -161,7 +164,7 @@ log stream --predicate 'subsystem == "org.omarchy.flux"'
 
 ## The other computer does not appear
 
-Two Omarchy computers need inbound TCP 1716–1764 from each other before either one shows in the list.
+Two Omarchy computers need inbound TCP 12100–12108 and 12070–12099 from each other before either one shows in the list.
 Follow [Connect two computers](desktop-peer.md).
 The phone steps above stay the ones to use for a phone or a Mac.
 ## The pairing keys differ
@@ -176,6 +179,31 @@ Another device can be between the phone and the computer.
 When the name still matches more than 1 device, `flux-cli pair` returns the `ambiguous` error with the device IDs.
 See [pair and discover](cli.md#pair-and-discover) for the match rule of each command.
 Give the device ID in place of the name.
+
+## A paired phone stops connecting after an update
+
+Flux 0.8 changed the names on the network.
+A Flux app from before 0.8 cannot connect to `fluxd` 0.8 or later.
+`flux-cli update --phone` cannot send it the new app, because it needs a connection.
+The log of `fluxd` then shows `TLS handshake: EOF` for the phone every 30 seconds.
+
+When the old app announces itself, `fluxd` logs `runs a Flux app older than 0.8` once.
+`flux-cli status` and `flux-cli doctor` then name the phone.
+Install the latest app from the [releases](https://github.com/bjarneo/flux/releases/latest).
+On Android, [install it with adb](android-setup.md#install-with-adb).
+`adb install -r` keeps the app data, so the phone stays paired.
+
+## A device does not find the computer after an update
+
+`fluxd` uses UDP port 12100 and TCP ports 12070 to 12108.
+A Flux app from before the port change uses the ports 1716 to 1764.
+On an Android phone, an iPhone, or a Mac, such an app does not find the computer, and `fluxd` does not connect to it.
+`flux-cli update --phone` cannot send it the new app, because it needs a connection.
+
+Install the latest app on each device from the [releases](https://github.com/bjarneo/flux/releases/latest).
+On Android, [install it with adb](android-setup.md#install-with-adb).
+`adb install -r` keeps the app data, so the phone stays paired.
+On an iPhone, [install the release with a sideload tool](ios.md#install-a-release-with-a-sideload-tool).
 
 ## A pairing from the computer stops after the phone accepts
 
@@ -243,7 +271,7 @@ If the switch stays off, open **Settings > Apps > Flux > Permissions** on the ph
 If Android shows **Restricted setting**, open **Settings > Apps > Flux**, open the menu, and select **Allow restricted settings**.
 Then turn on **Text messages** again.
 
-If a sent message shows **Not sent**, the phone could not send it.
+If a sent message shows **Not sent**, the phone could not send it, or the phone did not report it in 60 seconds.
 Check the signal and the SMS app on the phone.
 Flux does not send messages to a group. Reply to a group on the phone.
 

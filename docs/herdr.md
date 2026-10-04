@@ -39,6 +39,9 @@ When herdr runs, `flux-cli doctor` prints this line:
 
 ## See your agents
 
+The agent screen also has a **Changes** view for Git diffs and review feedback.
+See [Agent diff review](workflows.md#agent-diff-review).
+
 1. Start herdr on the computer.
 2. Open Flux for Android. An agent that waits for input shows first in the **Inbox**, with its question and its choices.
 3. To see all agents, open **Control** and select **Agents and terminals**.
@@ -74,6 +77,10 @@ This matters most for full-screen agents such as opencode, which draw panels acr
 - The phone removes the margin that all lines share, extra empty rows, scroll bars, and the half-block edges of boxes.
 - A panel, for example a message, a tool call, or a diff line in opencode, fills the width of the screen.
 - The phone removes the sidebar that opencode shows in a wide terminal, because its rows share the lines of the conversation. The status line at the bottom still shows the tokens and the cost.
+- The phone also removes the expanded vertical session tabs of OpenCode V2 when their
+  titles and **New session** row are visible. This keeps the conversation and
+  prompt at the left without changing the tab layout on the computer. Horizontal tabs
+  stay in the output. A compact or partially visible vertical rail is not detected yet.
 - A centered drawing, for example the opencode logo, moves to the left when that makes it fit.
 - When the agent colors suit a dark background and the phone uses the light theme, the phone inverts the lightness of these colors, so the text stays readable. It does the same for colors that suit a light background in the dark theme.
 
@@ -116,7 +123,7 @@ The output screen then shows the reply controls:
 
 - When the agent is blocked, the phone shows the numbered choices of the dialog as buttons. A tap sends the number of the choice.
 - The key bar sends Esc, Tab, Up, Down, and Enter.
-- The text field sends a prompt to the agent.
+- The text field sends a prompt to the agent. The clear key empties the field. The expand key opens a large editor with **Send** for a long prompt.
 - When the agent waits for a choice, `fluxd` refuses the text with the message `The agent waits for a choice. Pick a choice first.` A digit or Enter in the text can select a choice of the dialog, for example an approval. Pick a choice with the buttons or the key bar first.
 - After this refusal, the message shows **Send as answer** next to it while the field holds the same text. Select it when the agent asks a question that needs free text, for example an answer that is not in the choices. The app sends the same text again with `"answer": true`. `fluxd` checks that the agent still waits, types the text on one line, and presses Enter. The iPhone and the Mac show the same action.
 
@@ -190,6 +197,7 @@ The phone can read and type in each of them.
 Select a terminal to see its output and to type in it:
 
 - Type a command in the field, then select **Run**. The phone types the command and presses Enter.
+- The clear key empties the field. The expand key opens a large editor with **Run** for a long command.
 - To speak a command, select the mic key next to **Run**. The command goes in at the cursor without the capital and the period of a sentence. Read it, then select **Run**.
 - The key bar sends Esc, Tab, Ctrl-C, Ctrl-D, Up, Down, and Enter.
 - The screen reads the output again every 3 seconds. A read waits while the last read still loads.

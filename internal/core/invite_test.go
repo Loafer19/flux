@@ -13,15 +13,15 @@ func TestFormatParseInvite(t *testing.T) {
 	if !proto.ValidDeviceID(id) {
 		t.Fatal(id)
 	}
-	code := FormatInvite(id, "other-desk", 1716)
-	if code != "flux1:"+id+"@other-desk:1716" {
+	code := FormatInvite(id, "other-desk", 12100)
+	if code != "flux1:"+id+"@other-desk:12100" {
 		t.Fatalf("code %q", code)
 	}
 	inv, err := ParseInvite("  " + code + "\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inv.ID != id || inv.Host != "other-desk" || inv.Port != 1716 {
+	if inv.ID != id || inv.Host != "other-desk" || inv.Port != 12100 {
 		t.Fatalf("%+v", inv)
 	}
 	v6 := FormatInvite(id, "fd7a:115c:a1e0::1234", 1720)
@@ -36,8 +36,8 @@ func TestFormatParseInvite(t *testing.T) {
 
 func TestParseInviteRejects(t *testing.T) {
 	for _, in := range []string{
-		"", "flux1:", "flux1:short@host:1716", "flux1:9f1c0e5b7a2d4c3e8b6a1f0d2c4e6a8b@host",
-		"flux1:9f1c0e5b7a2d4c3e8b6a1f0d2c4e6a8b@https://host:1716",
+		"", "flux1:", "flux1:short@host:12100", "flux1:9f1c0e5b7a2d4c3e8b6a1f0d2c4e6a8b@host",
+		"flux1:9f1c0e5b7a2d4c3e8b6a1f0d2c4e6a8b@https://host:12100",
 	} {
 		if _, err := ParseInvite(in); err == nil {
 			t.Fatalf("%q accepted", in)
@@ -56,7 +56,7 @@ func TestIsTailscaleIP(t *testing.T) {
 
 func TestFormatInviteStable(t *testing.T) {
 	id := strings.Repeat("a", 32)
-	a := FormatInvite(id, "desk", 1716)
+	a := FormatInvite(id, "desk", 12100)
 	b, err := ParseInvite(a)
 	if err != nil || b.Code != a {
 		t.Fatalf("%v %q", err, b.Code)

@@ -15,6 +15,9 @@ struct AgentScreen: View {
     let pane: String
     @State private var asking = false
     @State private var closeError: String?
+    @State private var review = false
+    @State private var reviewPath = ""
+    @State private var appliedReviewPath = ""
 
     private struct Refresh: Equatable {
         var online: Bool
@@ -41,11 +44,31 @@ struct AgentScreen: View {
                     if let agent {
                         AgentHeader(agent: agent, control: herdr?.control == true, closing: closing, error: closeError) { asking = true }
                     }
+                    if herdr?.review == true {
+                        Picker("Agent view", selection: $review) {
+                            Text("Output").tag(false)
+                            Text("Changes").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: review) {
+                            if review { appliedReviewPath = reviewPath }
+                            plugin.read(deviceId, pane: pane, review: review, path: appliedReviewPath)
+                        }
+                        if review {
+                            TextField("File path, or leave empty for all changes", text: $reviewPath)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { appliedReviewPath = reviewPath; plugin.read(deviceId, pane: pane, review: true, path: appliedReviewPath) }
+                            Text("Replies include the selected review path.").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     PaneOutput(output: out)
                     if let agent {
                         FirstTaskNote(deviceId: deviceId, agent: agent)
                         if herdr?.control == true {
-                            AgentReplyControls(deviceId: deviceId, agent: agent, output: out)
+                            AgentReplyControls(deviceId: deviceId, agent: agent, output: review ? nil : out,
+                                               reviewReady: !review || (out?.loading == false && out?.error == nil))
                         } else {
                             Text(.init("To answer from this iPhone, set `herdr_control = true` on \(name)."))
                                 .font(.caption)
@@ -72,7 +95,7 @@ struct AgentScreen: View {
             .task(id: Refresh(online: online, active: scenePhase == .active, status: agent?.status)) {
                 guard online, scenePhase == .active, agent != nil else { return }
                 // A new status reads at once. Only the polls wait for the last read.
-                plugin.read(deviceId, pane: pane)
+                plugin.read(deviceId, pane: pane, review: review, path: appliedReviewPath)
                 while agent?.status == .working {
                     try? await Task.sleep(for: workingRefresh)
                     if Task.isCancelled { return }
@@ -171,10 +194,13 @@ private struct AgentReplyControls: View {
     let deviceId: String
     let agent: HerdrAgent
     let output: HerdrOutput?
+    var reviewReady = true
     @State private var text = ""
     @State private var lockError: String?
     @State private var voiceError: String?
     @State private var dictation = Dictation()
+    /// True while the prompt shows in the large editor.
+    @State private var expanded = false
     @FocusState private var focused: Bool
 
     private var plugin: HerdrPlugin? { model.core.plugin(HerdrPlugin.self) }
@@ -202,13 +228,22 @@ private struct AgentReplyControls: View {
                 PaneKey(label: "enter", name: "Enter", accent: agent.status == .blocked && choices.isEmpty) { keys("enter") }
             }
             HStack(alignment: .bottom, spacing: 6) {
-                TextField("Write to \(agent.agent)", text: $text, axis: .vertical)
-                    .lineLimit(1...4)
-                    .focused($focused)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(.separator).opacity(0.5)))
+                HStack(alignment: .bottom, spacing: 0) {
+                    TextField("Write to \(agent.agent)", text: $text, axis: .vertical)
+                        .lineLimit(1...4)
+                        .focused($focused)
+                        .padding(.leading, 12)
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 11)
+                    HStack(spacing: 0) {
+                        ClearKey(text: $text)
+                        ExpandKey(isPresented: $expanded)
+                    }
+                    .padding(.trailing, 2)
+                    .padding(.bottom, 4)
+                }
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(.separator).opacity(0.5)))
                 if Dictation.available {
                     Button {
                         if dictating { dictation.stop() } else { dictate() }
@@ -221,7 +256,7 @@ private struct AgentReplyControls: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(dictating ? "Stop the dictation" : "Dictate")
                 }
-                let canSend = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sendingPrompt
+                let canSend = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sendingPrompt && reviewReady
                 Button(action: send) {
                     Group {
                         if sendingPrompt {
@@ -255,6 +290,10 @@ private struct AgentReplyControls: View {
                 }
             }
         }
+        .sheet(isPresented: $expanded) {
+            FieldEditor(title: "Write to \(agent.agent)", text: $text, actionLabel: "Send",
+                        actionEnabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, onAction: send)
+        }
         // A prompt that the computer accepted leaves the field.
         .onChange(of: reply) { _, r in
             if let r, r.action == "prompt", !r.sending, r.error == nil, r.seq == sentSeq { text = "" }
@@ -287,6 +326,7 @@ private struct AgentReplyControls: View {
     }
 
     private func send() {
+        guard reviewReady else { return }
         let t = text
         guarded {
             guard let plugin else { return }

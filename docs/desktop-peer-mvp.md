@@ -4,7 +4,7 @@
 
 This note is the design for two or more Omarchy computers that each run `fluxd` and pair with each other.
 Clipboard text, clipboard images, and file share should work with no phone and no Mac in the path.
-The reachability rule below is accepted: each desk accepts inbound TCP 1716–1764 from the other.
+The reachability rule below is accepted: each desk accepts inbound TCP 12070–12108 from the other.
 
 The work lives on the fork branch `docs/desktop-peer-mvp`.
 Nothing here is an upstream pull request.
@@ -40,8 +40,8 @@ A phone fails it because its device type is `phone` or `tablet`.
 
 Discovery has three paths, all in `internal/lan` and `internal/core/daemon.go`:
 
-1. UDP identity broadcasts on port 1716.
-2. mDNS `_kdeconnect._udp` through Avahi. `fluxd` publishes and browses. `onMDNS` dials the resolved address.
+1. UDP identity broadcasts on port 12100.
+2. mDNS `_flux._udp` through Avahi. `fluxd` publishes and browses. `onMDNS` dials the resolved address.
 3. After pairing, `dialKnown` dials `lastIp` and then the extra addresses stored on that device.
 
 `~/.config/flux/config.toml` holds this computer's name, folders, and feature switches.
@@ -74,7 +74,7 @@ Between two daemons it does.
 
 Files are `kdeconnect.share.request` plus a payload (`internal/core/share.go`).
 `SendWithPayload` uses a tunnel only when the peer lists `flux.tunnel` as outgoing (`lan.Link.CanTunnel`).
-A peer does not, so the sender listens on a port from 1739 to 1764 and the receiver dials in.
+A peer does not, so the sender listens on a port from 12070 to 12099 and the receiver dials in.
 `TestTwoDaemons` already sends a file this way on loopback, keeps the transfer history, reconnects after a restart, and reaches the other daemon through an extra address when the last IP is dead.
 
 `Device.plugins` builds the feature list the window reads (`internal/core/device.go`).
@@ -147,7 +147,7 @@ Unpair removes the pin on both sides. `TestTwoDaemons` already covers that.
 
 ## Discovery and addresses
 
-LAN: keep UDP 1716 and mDNS `_kdeconnect._udp`.
+LAN: UDP 12100 and mDNS `_flux._udp`. The old KDE Connect ports are not used.
 Both daemons already publish and dial.
 The device shows in the list once the TLS link is up, then the user pairs it.
 `flux-cli pair "name"` uses that row.
@@ -163,14 +163,14 @@ Phase 3 touches that only if a desk actually shows two rows for one peer.
 
 ## Reachability
 
-Accepted for the MVP: each desk accepts inbound TCP 1716–1764 from the other.
+Accepted for the MVP: each desk accepts inbound TCP 12070–12108 from the other.
 
-`fluxd` listens on a TCP port from 1716 to 1764.
+`fluxd` listens on a TCP port from 12100 to 12108.
 The other daemon dials that port.
-File and image payloads use a second TCP connection on 1739–1764, from the receiver back to the sender.
+File and image payloads use a second TCP connection on 12070–12099, from the receiver back to the sender.
 The default Omarchy firewall allows mDNS and blocks other inbound TCP.
 A phone still works, because the phone listens and this computer dials out.
-Two desks need each side to accept inbound TCP 1716–1764 from the other.
+Two desks need each side to accept inbound TCP 12070–12108 from the other.
 
 The MVP does not add a firewall rule in the package.
 `docs/install.md` already says install adds none.

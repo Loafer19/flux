@@ -178,12 +178,12 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 
 type countingInput struct{ n int }
 
-func (c *countingInput) Move(float64, float64) error                  { c.n++; return nil }
-func (c *countingInput) Button(uint32, bool) error                    { c.n++; return nil }
-func (c *countingInput) Scroll(float64, float64) error                { c.n++; return nil }
-func (c *countingInput) Type(context.Context, string, []string) error { c.n++; return nil }
-func (c *countingInput) Key(context.Context, string, []string) error  { c.n++; return nil }
-func (c *countingInput) MoveTo(string, float64, float64) error        { c.n++; return nil }
+func (c *countingInput) Move(float64, float64) error                      { c.n++; return nil }
+func (c *countingInput) Button(uint32, bool) error                        { c.n++; return nil }
+func (c *countingInput) Scroll(float64, float64) error                    { c.n++; return nil }
+func (c *countingInput) Type(context.Context, string, []string) error     { c.n++; return nil }
+func (c *countingInput) Key(context.Context, string, []string, int) error { c.n++; return nil }
+func (c *countingInput) MoveTo(string, float64, float64) error            { c.n++; return nil }
 
 type fakeDND struct{ sets int }
 

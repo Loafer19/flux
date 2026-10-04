@@ -12,7 +12,7 @@ This page does not turn a computer into a phone: there is no Browse storage, rin
 ## Requirements
 
 - Flux is installed on both computers, and `fluxd` is running.
-- Each computer can reach the other on TCP 1716–1764 (same LAN with an allow rule, or the same Tailscale tailnet).
+- Each computer can reach the other on TCP 12070–12108 (same LAN with an allow rule, or the same Tailscale tailnet).
 - For a first pair without mDNS, one computer shares an invite; see [Pair without discovery](#pair-without-discovery).
 
 Omarchy's firewall allows mDNS and blocks other inbound TCP.
@@ -33,31 +33,31 @@ Use the address on the interface that faces the other computer, for example `192
 On the first computer, allow the second:
 
 ```sh
-sudo ufw allow from 192.168.1.50 to any port 1716:1764 proto tcp comment 'flux peer'
+sudo ufw allow from 192.168.1.50 to any port 12070:12108 proto tcp comment 'flux peer'
 ```
 
 On the second computer, allow the first:
 
 ```sh
-sudo ufw allow from 192.168.1.20 to any port 1716:1764 proto tcp comment 'flux peer'
+sudo ufw allow from 192.168.1.20 to any port 12070:12108 proto tcp comment 'flux peer'
 ```
 
 Check the rule, then check that the other computer answers:
 
 ```sh
 sudo ufw status
-timeout 3 bash -c '</dev/tcp/192.168.1.50/1716' && echo "port 1716 answers"
+timeout 3 bash -c '</dev/tcp/192.168.1.50/12100' && echo "port 12100 answers"
 ```
 
 Run the port check from each computer toward the other.
-`fluxd` may listen on a port from 1716 through 1764.
+`fluxd` may listen on a link port from 12100 through 12108. Payloads, tunnels, and streams use 12070–12099.
 `flux-cli status` prints the port of this computer on its first line.
-If 1716 does not answer, repeat the check with the port from the other computer's `flux-cli status`.
+If 12100 does not answer, repeat the check with the port from the other computer's `flux-cli status`.
 
 A home network can allow the LAN subnet instead of one address:
 
 ```sh
-sudo ufw allow from 192.168.1.0/24 to any port 1716:1764 proto tcp comment 'flux peers'
+sudo ufw allow from 192.168.1.0/24 to any port 12070:12108 proto tcp comment 'flux peers'
 ```
 
 ## Pair
@@ -105,7 +105,7 @@ When the other computer never appears in the list, share an invite instead of op
 
 ### From the window
 
-1. Pick a host the other computer can already reach: a Tailscale name or IP, or a LAN address after both sides allow TCP 1716–1764 from each other only.
+1. Pick a host the other computer can already reach: a Tailscale name or IP, or a LAN address after both sides allow TCP 12070–12108 from each other only.
 2. On the computer that listens at that host, open **Network**.
 3. Under **Pair with invite**, set the host (or leave empty when fluxd can pick the only Tailscale address), then **Create invite**.
 4. Copy the `flux1:…` code, or show the QR when the window draws one.
@@ -127,7 +127,7 @@ When the other computer never appears in the list, share an invite instead of op
 3. On the other computer, paste the invite:
 
    ```sh
-   flux-cli pair join 'flux1:…@other-desk:1716'
+   flux-cli pair join 'flux1:…@other-desk:12100'
    ```
 
 4. Compare the 8-character key on both screens and accept.
@@ -213,7 +213,7 @@ Move it back inward on this computer to return.
 Hyprland must be running: Flux reads the cursor from the Hyprland socket and moves the peer with `zwlr_virtual_pointer_v1` (no `/dev/uinput`, no `remote_input`).
 
 Clipboard text uses the link that is already open.
-A copied image and a file also use a TCP port in 1716–1764, back toward the computer that sends them.
+A copied image and a file also use a TCP port from 12070 to 12099, back toward the computer that sends them.
 The allow rule on both computers covers that path.
 Received files use `download_dir`.
 
@@ -240,7 +240,7 @@ A paired desk can show the other desk screen when both sides allow it.
    flux-cli desktop view vivobook
    ```
 
-   Flux opens a TLS listener on a port from 1739 to 1764, sends `flux.desktop`
+   Flux opens a TLS listener on a port from 12070 to 12099, sends `flux.desktop`
    start (same packet a phone sends), and the peer captures with
    `gpu-screen-recorder` or `wf-recorder`. This computer feeds Annex-B H.264
    into `mpv` or `ffplay`. With `mpv`, move and click in the window to control
@@ -262,7 +262,7 @@ install `mpv` for control. Screen-edge pointer share stays separate and does
 not use these packets.
 
 Firewall: the watched desk dials back to the viewer's payload port, so both
-sides still need TCP 1716–1764 open toward each other (same as file share).
+sides still need TCP 12070–12108 open toward each other (same as file share).
 
 ## Tailscale
 
@@ -287,8 +287,8 @@ The LAN rule matches the other computer's LAN address, not its Tailscale address
 If the Tailscale port does not answer, allow the range on the Tailscale interface on both computers:
 
 ```sh
-sudo ufw allow in on tailscale0 to any port 1716:1764 proto tcp comment 'flux peer'
-timeout 3 bash -c '</dev/tcp/other-desk/1716' && echo "port 1716 answers"
+sudo ufw allow in on tailscale0 to any port 12070:12108 proto tcp comment 'flux peer'
+timeout 3 bash -c '</dev/tcp/other-desk/12100' && echo "port 12100 answers"
 ```
 
 Other devices in the tailnet can then open those ports.
@@ -310,7 +310,7 @@ A paired computer uses the same reconnect schedule as a paired phone.
 
 ## One row per computer
 
-`avahi-browse -rt _kdeconnect._udp` can print the same computer twice, once for IPv4 and once for IPv6.
+`avahi-browse -rt _flux._udp` can print the same computer twice, once for IPv4 and once for IPv6.
 Flux stores one device for that id.
 The window shows that computer once.
 Flux dials the IPv4 address from mDNS.
@@ -330,8 +330,8 @@ Delete the firewall rule on both computers when the pair is gone.
 ## Troubleshoot
 
 1. `flux-cli status` on both computers shows a TCP port.
-2. `sudo ufw status` on both computers shows TCP 1716–1764 from the other computer.
-3. The port check toward the other computer prints `port 1716 answers`, or answers on the port from its status line.
+2. `sudo ufw status` on both computers shows TCP 12070–12108 from the other computer.
+3. The port check toward the other computer prints `port 12100 answers`, or answers on the port from its status line.
 4. `systemctl status avahi-daemon` is running.
 5. Guest Wi-Fi and client isolation still block two computers on the same access point.
 6. Read dial errors:

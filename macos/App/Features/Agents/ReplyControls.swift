@@ -10,10 +10,12 @@ struct ReplyControls: View {
     let agent: HerdrAgent
     let output: HerdrOutput?
     let name: String
+    var reviewReady = true
     @State private var lockError: String?
     @State private var voiceError: String?
     @State private var picking = false
     @State private var canDictate = false
+    @State private var editing = false
 
     private var plugin: HerdrPlugin { model.plugin }
     private var reply: HerdrReply? { plugin.model.reply(model.deviceId, pane: agent.pane) }
@@ -48,17 +50,40 @@ struct ReplyControls: View {
                     picking = true
                 },
                 field: {
-                    ReplyField(
-                        text: Binding(get: { model.drafts[agent.pane] ?? "" }, set: { model.drafts[agent.pane] = $0 }),
-                        selection: Binding(get: { model.cursors[agent.pane] }, set: { model.cursors[agent.pane] = $0 }),
-                        placeholder: "Write to \(agent.agent)",
-                        onSubmit: send
-                    )
+                    let draft = Binding(get: { model.drafts[agent.pane] ?? "" }, set: { model.drafts[agent.pane] = $0 })
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ReplyField(
+                            text: draft,
+                            selection: Binding(get: { model.cursors[agent.pane] }, set: { model.cursors[agent.pane] = $0 }),
+                            placeholder: "Write to \(agent.agent)",
+                            onSubmit: send
+                        )
+                        // The keys line up with the last line of the text.
+                        HStack(spacing: 6) {
+                            ClearKey(text: draft) { model.cursors[agent.pane] = nil }
+                            ExpandKey { editing = true }
+                        }
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 9)
+                    }
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.15)))
+                    .sheet(isPresented: $editing) {
+                        // The editor checks the text and the reply at each change.
+                        let canSend = {
+                            !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                && !(reply?.sending == true && reply?.action == "prompt")
+                        }
+                        // The editor changes the text, so a dictation after it adds its words at the end.
+                        FieldEditor(title: "Write to \(agent.agent)", text: draft,
+                                    action: FieldEditorAction(title: "Send", enabled: canSend, run: send)) {
+                            editing = false
+                            model.cursors[agent.pane] = nil
+                        }
+                    }
                 },
                 send: {
-                    let canSend = !(model.drafts[agent.pane] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sendingPrompt
+                    let canSend = !(model.drafts[agent.pane] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sendingPrompt && reviewReady
                     let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
                     Button(action: send) {
                         ZStack {
@@ -139,6 +164,7 @@ struct ReplyControls: View {
     }
 
     private func send() {
+        guard reviewReady else { return }
         let text = model.drafts[agent.pane] ?? ""
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, reply?.sending != true || reply?.action != "prompt" else { return }
         let deviceId = model.deviceId

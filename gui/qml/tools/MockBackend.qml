@@ -67,6 +67,25 @@ QtObject {
     }
     var result = {}
     if (method === "sms.thread") result = { messages: fixTimes((fixture.threads || {})[String(params.thread)] || []) }
+    else if (method === "sms.send") {
+      // Like fluxd, the message waits in the outbox of the device until the
+      // phone reports it. The thread is the conversation with only the
+      // address, or -1.
+      updateDevice(params.device, function (d) {
+        var address = (params.addresses || [])[0] || ""
+        var c = (d.conversations || []).find(function (x) { return (x.addresses || []).length === 1 && x.addresses[0] === address })
+        d.outbox = (d.outbox || []).concat([{ thread: c ? c.thread : -1, address: address, body: params.body, time: Math.floor(Date.now() / 1000), outgoing: true, pending: true, failed: false }])
+        return d
+      })
+    }
+    else if (method === "clipboard.search") result = clipboard.filter(e => ((e.text || "") + " " + (e.deviceName || "")).toLowerCase().indexOf((params.text || "").toLowerCase()) >= 0)
+    else if (method === "clipboard.pin" || method === "clipboard.unpin") setState(function(s) { s.clipboard.forEach(e => { if (e.id === params.id) e.pinned = method === "clipboard.pin" }) })
+    else if (method === "device.settings.set") setState(function(s) {
+      s.settings.deviceRules = s.settings.deviceRules || {}
+      s.settings.deviceRules[params.device] = s.settings.deviceRules[params.device] || {}
+      s.settings.deviceRules[params.device][params.key] = params.value
+    })
+    else if (method === "transfer.cancel") setState(function(s) { s.transfers.forEach(t => { if (t.id === params.id) t.state = "canceled" }) })
     else if (method === "notification.dismissAll") {
       var n = 0
       updateDevice(params.device, function (d) {

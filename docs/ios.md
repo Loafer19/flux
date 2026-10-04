@@ -76,6 +76,9 @@ A sideload tool such as AltStore, SideStore, or Sideloadly signs it with your Ap
 The limits of a free Apple ID in the table above also apply.
 The window on the computer shows an update notice only for the Android app.
 To find a newer iPhone app, check `https://github.com/bjarneo/flux/releases`.
+Flux 0.10.1 and earlier use other ports, see [Pair an iPhone](#pair-an-iphone).
+An iPhone app of 0.10.1 or earlier cannot connect to a newer `fluxd`, and a newer iPhone app cannot connect to an earlier `fluxd`.
+Update the iPhone app and `fluxd` together.
 
 The share extension needs the App Group `group.org.omarchy.flux`.
 When the sideload tool cannot give the app this group, the share extension cannot queue files for the app.
@@ -112,8 +115,9 @@ iOS gives apps only the generic name "iPhone", so set a name there.
 Flux keeps its identity key and certificate out of iCloud and computer backups, so pair again after you restore a backup.
 
 The computer connects to the iPhone.
-The iPhone publishes `_flux._udp` through Bonjour and listens on TCP ports 1716 to 1764.
-It also sends its identity to each computer that it finds through Bonjour.
+The iPhone publishes `_flux._udp` through Bonjour and listens for links on 1 TCP port from 12100 to 12108.
+Transfers, tunnels, and streams use TCP ports 12070 to 12099 on the iPhone.
+It also sends its identity to UDP port 12100 of each computer that it finds through Bonjour.
 It sends no UDP broadcasts, because iOS needs a special entitlement for them.
 
 | Problem | Check |
@@ -224,6 +228,7 @@ The theme engine is in `macos/Sources/FluxKit/Theme`, and the colors of the app 
 | Remote desktop | Shows the screen of the computer, with touches, keys, the Omarchy panel, dictation, and a monitor picker. The computer needs `remote_desktop = true`, and `remote_input = true` for control. See [Remote desktop](remote-desktop.md). |
 | herdr agents | Shows the agents that herdr runs, their output in color fitted to the phone screen, and notifications for needs input and finished. Answers them, starts agents, and runs terminals when the computer allows it. See [herdr agents](herdr.md). |
 | Dictation | Each text field has a mic key: the agent replies, the touchpad, the remote desktop, **Text or link** in **Send > Text and links**, the scanned text, the shortcut search, the folder search and the task of a new agent, and the terminal command. Searches get the words in place of the search. Other fields get them at the end of the text. The iPhone dictates in its own languages. |
+| Clear and expand | Each text field has a clear key while it has text. The agent prompt, the terminal command, the task of a new agent, and **Text or link** also have an expand key that opens a large editor. The type field of the touchpad and the remote desktop deletes its typed text on the computer, and its expand key opens the draft editor. See [Clear and expand text fields](features.md#clear-and-expand-text-fields). |
 | Face ID lock | Replies, new agents, terminals, the touchpad, the remote desktop, and the Omarchy panel ask for Face ID, Touch ID, or the passcode. The unlock stays valid for 5 minutes, and it ends when the iPhone locks. An open touchpad, remote desktop, or Omarchy panel asks again when Flux returns after the unlock ended. |
 
 Flux for iOS does not advertise notifications of other apps, SMS, calls, or the screen mirror.
@@ -273,7 +278,7 @@ The webcam stops when Flux leaves the screen, also after a start from a request.
 | Other apps' notifications, text messages, and calls | iOS gives apps no access to them. Flux does not advertise `notification.request`, `sms.*`, or `telephony`. |
 | Clipboard | iOS gives apps no event for a new copy, and it asks before each read of text that another app copied. Flux reads the clipboard only while it is on the screen. When Flux opens and when a computer connects, it reads only after the clipboard changed. A shortcut with **Send Text to Computer** sends a copy while Flux stays closed. Text and images from a computer stay on the iPhone and do not go to Universal Clipboard. |
 | Screenshots and photos | They go to the computer when Flux opens, not in the background. |
-| Share sheet | The share extension runs apart from the app and cannot open Flux or hold a link. It queues the items in the App Group. Flux sends them when it opens and connects, and keeps failed items with the reason on the **Share** screen, under **Send > Text and links**. The queue holds up to 200 items and 1 GB, and an item that failed 5 times or waited 7 days goes, with a notification. The extension checks the size of each file before the copy, and the size of each text before it decodes the text. Send a file larger than 1 GB from the **Share** screen of Flux. A text or link has a limit of 1 MB. Folders do not go. |
+| Share sheet | The share extension runs apart from the app and cannot open Flux or hold a link. It queues the items in the App Group. Flux sends them when it opens and connects, and keeps failed items with the reason on the **Share** screen, under **Send > Text and links**. The queue holds up to 200 items and 1 GB, and an item that failed 5 times or waited 7 days goes, with a notification. A try that ends because the link closed, for example when iOS suspends Flux, does not count as a failure. The extension checks the size of each file before the copy, and the size of each text before it decodes the text. Send a file larger than 1 GB from the **Share** screen of Flux. A text or link has a limit of 1 MB. Folders do not go. |
 | Focus | Flux cannot read or set the Focus. It reports the Focus through the Focus filter and ignores Do Not Disturb from the computer. A change while Flux has no link goes to each computer that was paired at the change, when that computer connects. |
 | Camera | iOS gives the camera only to the app on the screen, so the webcam stops when Flux leaves it. |
 | Volume keys | iOS gives apps no public way to take the volume keys, so they do not change slides. |

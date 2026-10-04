@@ -38,13 +38,20 @@ type Daemon struct {
 	devices map[string]*Device
 
 	clipboard     []ClipEntry
+	snippets      []ClipEntry
+	snippetsDir   string
 	lastLocalClip time.Time
 	// clipDir holds the images of the clipboard history. clipSend stops
 	// the image that fluxd sends to the phones, when a newer copy replaces
 	// it.
-	clipDir   string
-	clipSend  context.CancelFunc
-	transfers []*Transfer
+	clipDir       string
+	clipSend      context.CancelFunc
+	transfers     []*Transfer
+	outbox        *outbox
+	resumeMu      sync.Mutex
+	resumeReplies map[string]chan resumeMessage
+	resumeDir     string
+	automationQ   chan automationEvent
 
 	opts Options
 	clip clipboard
@@ -163,7 +170,8 @@ type Daemon struct {
 	logger *log.Logger
 
 	// herdrJobs keeps the herdr work that runs for the phones.
-	herdrJobs herdrJobs
+	herdrJobs  herdrJobs
+	reviewJobs map[herdrReadKey]*reviewReadJob
 
 	// content holds the workers and the limits of shares, the clipboard,
 	// notifications, media, calls, and Do Not Disturb.
@@ -204,7 +212,8 @@ type Options struct {
 	// Headless turns off the desktop: clipboard, notifications, media,
 	// sound, and mDNS. Discovery uses loopback only. Tests use it.
 	Headless bool
-	// UDPPort and FirstTCPPort change the protocol ports. Zero means 1716.
+	// UDPPort and FirstTCPPort change the protocol ports. Zero means
+	// lan.UDPPort and lan.MinTCPPort.
 	UDPPort      int
 	FirstTCPPort int
 	// Version is the build version of fluxd.
@@ -293,6 +302,7 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		relayWake:   make(chan struct{}, 1),
 		relayWaitCh: make(chan struct{}),
 		edgeKick:    make(chan struct{}, 1),
+		automationQ: make(chan automationEvent, 128),
 	}
 	d.ready = make(chan struct{})
 	if exe, err := os.Executable(); err == nil {
@@ -342,6 +352,15 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		// theme loads now.
 		d.themePath = desktop.ThemePath()
 		d.reloadTheme()
+	}
+	d.resumeDir = filepath.Join(config.DataDir(), "incoming")
+	d.snippetsDir = filepath.Join(config.DataDir(), "snippets")
+	if err := d.loadSnippets(); err != nil {
+		return nil, err
+	}
+	d.resumeReplies = map[string]chan resumeMessage{}
+	if err := d.loadOutbox(); err != nil {
+		return nil, err
 	}
 	return d, nil
 }
@@ -428,6 +447,7 @@ func (d *Daemon) Run() error {
 		},
 		OnLink:       d.onLink,
 		OnIdentity:   d.onIdentity,
+		OnOldApp:     d.onOldApp,
 		Logf:         d.logf,
 		UDPPort:      d.opts.UDPPort,
 		FirstTCPPort: d.opts.FirstTCPPort,
@@ -438,11 +458,15 @@ func (d *Daemon) Run() error {
 	}
 	d.mu.Lock()
 	d.lan = p
+	d.fixPortsLocked(p)
 	d.mu.Unlock()
 	close(d.ready)
 	d.logf("fluxd %s listening on TCP %d as %q", d.selfID, p.TCPPort(), d.Name())
 	go d.releaseLoop(ctx)
 	go d.relayLoop(ctx)
+	go d.outboxLoop(ctx)
+	go d.snippetLoop(ctx)
+	go d.automationLoop(ctx)
 	if d.opts.Headless {
 		go d.publishLoop(ctx)
 		go d.discoveryLoop(ctx)
@@ -451,23 +475,26 @@ func (d *Daemon) Run() error {
 		return nil
 	}
 	mdns := lan.MDNSInfo{DeviceID: d.selfID, Name: d.Name(), Type: proto.DeviceType(), Protocol: proto.ProtocolVersion, Port: p.TCPPort(), Logf: d.logf}
-	if m, err := lan.StartMDNS(ctx, mdns, d.onMDNS); err != nil {
-		d.logf("mDNS off, UDP discovery only: %v", err)
-	} else {
-		d.mu.Lock()
-		d.mdns = m
-		var paired []string
-		for _, dev := range d.devices {
-			if dev.Paired && dev.link == nil {
-				paired = append(paired, dev.ID)
-			}
+	// StartMDNS returns an MDNS also with an error. The MDNS publishes this
+	// computer when Avahi starts later.
+	m, err := lan.StartMDNS(ctx, mdns, d.onMDNS)
+	if err != nil {
+		d.logf("mDNS off until Avahi starts, UDP discovery only: %v", err)
+	}
+	d.mu.Lock()
+	d.mdns = m
+	var paired []string
+	for _, dev := range d.devices {
+		if dev.Paired && dev.link == nil {
+			paired = append(paired, dev.ID)
 		}
-		d.mu.Unlock()
-		// The first dial round can come before mDNS runs, so resolve the
-		// paired devices now. A phone with a new address connects at once.
-		for _, id := range paired {
-			m.Refresh(id)
-		}
+	}
+	d.mu.Unlock()
+	// The first dial round can come before mDNS runs, so resolve the
+	// paired devices now. A phone with a new address connects at once.
+	// Refresh does nothing while Avahi does not run.
+	for _, id := range paired {
+		m.Refresh(id)
 	}
 
 	if dnd := desktop.NewDND(); dnd.Kind() != "" {
@@ -760,9 +787,10 @@ func (d *Daemon) resetDials() {
 // minutes. A paired device can also have extra addresses, for example a
 // Tailscale name. dialKnown tries the last address first, then the address
 // that discovery reported, then the extra addresses. It also sends a
-// unicast UDP identity from port 1716 to the last address of each paired
-// device. A device that answers from its port 1716 passes the firewall as
-// a reply. It also removes the devices that it no longer needs.
+// unicast UDP identity from lan.UDPPort to the same port at the last
+// address of each paired device. A device that answers from that port
+// passes the firewall as a reply. It also removes the devices that it no
+// longer needs.
 func (d *Daemon) dialKnown() {
 	type target struct {
 		ip    string
@@ -1107,6 +1135,7 @@ func logType(t string) string {
 // onPairedLink sends the packets that a paired device expects after it
 // connects.
 func (d *Daemon) onPairedLink(dev *Device, l *lan.Link) {
+	d.emitAutomation(automationEvent{Kind: "device.connected", Device: dev.ID})
 	d.mu.Lock()
 	// A desk peer shares clipboard and files. It does not get phone
 	// controls: notification sync, Do Not Disturb, remote input, or herdr.
@@ -1135,7 +1164,7 @@ func (d *Daemon) onPairedLink(dev *Device, l *lan.Link) {
 	}
 	if herdr {
 		d.mu.Lock()
-		state := herdrStatePacket(d.herdrViewLocked())
+		state := herdrStatePacket(d.herdrViewForLocked(dev.ID))
 		d.mu.Unlock()
 		_ = l.Send(state)
 	}

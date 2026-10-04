@@ -18,9 +18,9 @@ type inputBackend interface {
 	Move(dx, dy float64) error
 	Button(button uint32, pressed bool) error
 	Scroll(dx, dy float64) error
-	// Type and Key stop when ctx ends.
+	// Type and Key stop when ctx ends. Key presses the key times times.
 	Type(ctx context.Context, text string, mods []string) error
-	Key(ctx context.Context, name string, mods []string) error
+	Key(ctx context.Context, name string, mods []string, times int) error
 	// MoveTo moves the pointer to x and y, from 0 to 1, on the monitor.
 	MoveTo(monitor string, x, y float64) error
 }
@@ -29,6 +29,8 @@ type inputBackend interface {
 const (
 	maxInputDelta = 2000
 	maxInputText  = 4096
+	// maxKeyRepeat is the most presses of 1 special key in 1 packet.
+	maxKeyRepeat = 4096
 	// inputQueue is the number of actions that wait for the desktop. The
 	// link drops actions when the desktop falls behind, so a slow wtype
 	// does not stop the packets of the phone.
@@ -36,8 +38,9 @@ const (
 	// inputReserve is the number of queue places that only a button
 	// release can take, so that a full queue does not keep a button down.
 	inputReserve = 4
-	// maxInputBacklog is the number of characters of text that the queue
-	// holds at most. wtype types about 250 characters each second.
+	// maxInputBacklog is the number of characters of text and repeated
+	// key presses that the queue holds at most. wtype types about 250
+	// characters each second.
 	maxInputBacklog = 4 * maxInputText
 	// heldCheck is the time between 2 checks that the device that holds a
 	// button is still allowed.
@@ -57,7 +60,9 @@ var specialKeys = map[int]string{
 // mousepadBody is the body of flux.mousepad.request. A packet holds
 // 1 action: a click, a button press or release, a scroll, text or a key,
 // or a pointer motion. The fields X and Y put the pointer on a position
-// of the remote desktop before the action.
+// of the remote desktop before the action. Repeat presses a special key
+// that many times, for example Backspace for each character of a text
+// that the phone clears.
 type mousepadBody struct {
 	Dx            float64  `json:"dx"`
 	Dy            float64  `json:"dy"`
@@ -71,6 +76,7 @@ type mousepadBody struct {
 	SingleRelease bool     `json:"singlerelease"`
 	Key           string   `json:"key"`
 	SpecialKey    int      `json:"specialKey"`
+	Repeat        int      `json:"repeat"`
 	Alt           bool     `json:"alt"`
 	Ctrl          bool     `json:"ctrl"`
 	Shift         bool     `json:"shift"`
@@ -79,6 +85,7 @@ type mousepadBody struct {
 
 // inputAction is 1 step for the input backend.
 type inputAction struct {
+	device  string
 	kind    string // move, moveTo, button, scroll, type, or key
 	dx, dy  float64
 	x, y    float64 // the position for moveTo, from 0 to 1
@@ -87,6 +94,7 @@ type inputAction struct {
 	pressed bool
 	text    string // the text for type, the key name for key
 	mods    []string
+	count   int // the presses of a key when more than 1
 
 	// dev is the device that sent the action, link is its link at that
 	// time, and gen is the input generation. The action runs only while
@@ -140,7 +148,11 @@ func mousepadAction(b mousepadBody) []inputAction {
 		if !ok {
 			return nil
 		}
-		return []inputAction{{kind: "key", text: name, mods: inputMods(b)}}
+		a := inputAction{kind: "key", text: name, mods: inputMods(b)}
+		if b.Repeat > 1 {
+			a.count = min(b.Repeat, maxKeyRepeat)
+		}
+		return []inputAction{a}
 	case b.Key != "":
 		text := cleanInputText(b.Key)
 		if text == "" {
@@ -151,6 +163,18 @@ func mousepadAction(b mousepadBody) []inputAction {
 		return []inputAction{{kind: "move", dx: dx, dy: dy}}
 	}
 	return nil
+}
+
+// backlog returns the characters and the repeated key presses of an
+// action, for the limit of the queue.
+func (a inputAction) backlog() int {
+	switch a.kind {
+	case "type":
+		return utf8.RuneCountInString(a.text)
+	case "key":
+		return a.count
+	}
+	return 0
 }
 
 func inputMods(b mousepadBody) []string {
@@ -204,7 +228,7 @@ func (d *Daemon) handleMousepad(dev *Device, p *proto.Packet) {
 		return
 	}
 	d.mu.Lock()
-	on := d.cfg.RemoteInput && d.input != nil
+	on := d.cfg.RemoteInput && d.input != nil && d.permittedLocked(dev.ID, "remoteInput")
 	if !on {
 		warn := !dev.inputRefused
 		dev.inputRefused = true
@@ -225,6 +249,7 @@ func (d *Daemon) handleMousepad(dev *Device, p *proto.Packet) {
 	var actions []inputAction
 	text, releases := 0, true
 	for _, a := range inputActions(b) {
+		a.device = dev.ID
 		if a.kind == "moveTo" {
 			// A position is on the remote desktop that the phone shows.
 			if monitor == "" {
@@ -234,9 +259,7 @@ func (d *Daemon) handleMousepad(dev *Device, p *proto.Packet) {
 		} else if a.kind != "button" || a.pressed {
 			releases = false
 		}
-		if a.kind == "type" {
-			text += utf8.RuneCountInString(a.text)
-		}
+		text += a.backlog()
 		a.dev, a.link, a.gen = dev, dev.link, d.sessions.inputGen
 		actions = append(actions, a)
 	}
@@ -281,7 +304,7 @@ func (d *Daemon) inputWakeLocked() chan struct{} {
 // device is paired and has the same link. d.mu must be held.
 func (d *Daemon) inputAllowedLocked(a inputAction) bool {
 	return d.cfg.RemoteInput && d.input != nil && a.gen == d.sessions.inputGen &&
-		a.dev != nil && a.dev.Paired && a.link != nil && a.dev.link == a.link && !linkClosed(a.link)
+		a.dev != nil && a.dev.Paired && d.permittedLocked(a.dev.ID, "remoteInput") && a.link != nil && a.dev.link == a.link && !linkClosed(a.link)
 }
 
 func linkClosed(l *lan.Link) bool {
@@ -334,9 +357,7 @@ func (d *Daemon) inputLoop(ctx context.Context) {
 // runQueued runs 1 action from the queue when it is still allowed.
 func (d *Daemon) runQueued(ctx context.Context, a inputAction, held map[uint32]inputAction) error {
 	d.mu.Lock()
-	if a.kind == "type" {
-		d.sessions.inputText = max(0, d.sessions.inputText-utf8.RuneCountInString(a.text))
-	}
+	d.sessions.inputText = max(0, d.sessions.inputText-a.backlog())
 	ok := d.inputAllowedLocked(a)
 	var actx context.Context
 	var stop context.CancelFunc
@@ -403,6 +424,14 @@ func errString(err error) string {
 }
 
 func (d *Daemon) runInput(ctx context.Context, a inputAction) error {
+	if a.device != "" {
+		d.mu.Lock()
+		allowed := d.cfg.RemoteInput && d.permittedLocked(a.device, "remoteInput")
+		d.mu.Unlock()
+		if !allowed {
+			return nil
+		}
+	}
 	in := d.input
 	switch a.kind {
 	case "move":
@@ -416,19 +445,20 @@ func (d *Daemon) runInput(ctx context.Context, a inputAction) error {
 	case "type":
 		return in.Type(ctx, a.text, a.mods)
 	case "key":
-		return in.Key(ctx, a.text, a.mods)
+		return in.Key(ctx, a.text, a.mods, max(1, a.count))
 	}
 	return nil
 }
 
 // sendInputState tells a phone whether this computer accepts remote input,
-// and whether it shows its screen on the phone.
+// and whether it shows its screen on the phone. keyRepeat tells the phone
+// that it can send repeat with a special key.
 func (d *Daemon) sendInputState(l *lan.Link) {
 	d.mu.Lock()
-	on := d.cfg.RemoteInput && d.input != nil
-	desktop := d.cfg.RemoteDesktop && !d.opts.Headless
+	on := d.cfg.RemoteInput && d.input != nil && d.permittedLocked(l.DeviceID(), "remoteInput")
+	desktop := d.cfg.RemoteDesktop && !d.opts.Headless && d.permittedLocked(l.DeviceID(), "remoteDesktop")
 	d.mu.Unlock()
-	_ = l.Send(proto.New(proto.TypeFluxInput, map[string]any{"enabled": on, "desktop": desktop}))
+	_ = l.Send(proto.New(proto.TypeFluxInput, map[string]any{"enabled": on, "desktop": desktop, "keyRepeat": true}))
 }
 
 // inputChanged sends the remote input state to each connected phone that

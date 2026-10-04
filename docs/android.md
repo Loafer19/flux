@@ -68,6 +68,12 @@ To switch keys, uninstall the previous app first, which removes its local data a
 
 ## Update the app
 
+Flux uses UDP port 12100 and TCP ports 12070 to 12108.
+An earlier Flux for Android uses other ports and cannot connect to a `fluxd` with these ports.
+**Send to phone** then cannot reach the phone.
+Install the new APK from the GitHub releases once, as in [Install a release APK](#install-a-release-apk).
+The new app also cannot connect to an earlier `fluxd`, so update Flux on the computer too.
+
 When a newer Flux for Android exists, the Flux window on the computer shows **Flux for Android 0.7.0 is available**.
 The device card also shows the app version of the phone.
 To update the phone:
@@ -148,7 +154,7 @@ Flux for Android applies these limits to the network:
 - A file, stream, or tunnel port takes only the paired computer from the address of its link. Other connections close, and the port waits for the computer.
 - The phone sends its identity to a stored address only when the address is on a network of the phone or on Tailscale.
 - The phone finds a computer that sleeps or loses power in 90 seconds or less. While data waits for the computer, it finds it in 30 seconds.
-- The Wi-Fi multicast lock is on only while the phone scans, before the first pairing, and while a paired computer is away.
+- The Wi-Fi multicast lock is on while the phone scans and before the first pairing. While a paired computer is away, the lock is on for only 3 minutes after an event. The events are: Flux starts, the phone joins a network, a computer disconnects, the screen comes on, and you open Flux or tap **Retry**. A computer finds the phone at its last address without the lock.
 
 When you unpair a computer on either side, the phone stops the screen mirror, the webcam, the microphone, the remote desktop, and **Get files** for that computer.
 It also closes its approval request and its stream requests, and removes its notifications.
@@ -193,7 +199,8 @@ The phone turns on the camera or the microphone only after you tap Start on the 
 
 The stream starts from the visible page with the start code of its Start button.
 Android lets an app use the camera and the microphone only while the app is visible or after an action of the user.
-The stream stops when the page closes or Flux goes to the background, as after a start on the page.
+The stream keeps running after the page closes and while Flux is in the background, as after a start on the page.
+See [streams in the background](camera.md#streams-in-the-background).
 
 Another app on the phone can start Flux with the extras of the Start action.
 Only the one-time key of the notification opens the page and starts the stream.
@@ -353,6 +360,20 @@ ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 FLUX_THEME=catppuccin-latte tools/shot.
 
 Release builds ignore these extras.
 
+To reproduce terminal layout bugs without pairing the emulator, a debug build also
+accepts an ANSI sample in `flux.debug.output` while demo mode is on:
+
+```bash
+sample=$(< /path/to/sample.ansi)
+sample=${sample//\'/\'\\\'\'}
+adb -s emulator-5554 shell am start -n org.omarchy.flux/.ui.MainActivity \
+  --ez flux.debug.demo true --es flux.debug.page agent:w2:p1 \
+  --es flux.debug.output "'$sample'"
+```
+
+Use a small, non-private sample. This only changes the demo output; it sends no
+keys or prompts to a real agent. Omit the output extra to restore the default sample.
+
 ## Icons
 
 The app uses Material Symbols Rounded at the 24 dp optical size, under the Apache License 2.0. To add an icon, add its name to `ICONS` in `tools/fetch_icons.py`, run the script, and add the drawable to `Ic` in `ui/Icons.kt`:
@@ -369,6 +390,7 @@ python3 tools/fetch_icons.py
 | `app/src/main/java/org/omarchy/flux/net` | UDP discovery, TCP links, TLS, and payload transfers |
 | `app/src/main/java/org/omarchy/flux/core` | Devices, pairing, trust store, and the plugins |
 | `app/src/main/java/org/omarchy/flux/service` | The foreground service and the notification listener |
+| `app/src/main/java/org/omarchy/flux/stream` | The stream connection, and the foreground service that keeps the webcam and the mic running in the background |
 | `app/src/main/java/org/omarchy/flux/theme` | The computer theme, the contrast guard, and the palettes. Plain Kotlin with JVM tests. |
 | `app/src/main/java/org/omarchy/flux/ui` | The Compose screens |
 | `tools` | The test peer, the screenshot helper, and the icon script |

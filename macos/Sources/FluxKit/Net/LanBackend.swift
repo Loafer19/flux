@@ -8,15 +8,15 @@ import NIOTLS
 /// Ports and discovery scope of the LAN backend.
 public struct LanConfig: Sendable {
     /// The UDP port that receives identity broadcasts.
-    public var udpPort = 1716
+    public var udpPort = 12100
     /// The UDP port of peers that this device announces itself to.
-    public var peerUDPPort = 1716
+    public var peerUDPPort = 12100
     /// The TCP port range for links.
-    public var tcpPorts: ClosedRange<Int> = 1716...1764
+    public var tcpPorts: ClosedRange<Int> = 12100...12108
     /// The TCP ports of computers that this device dials after a UDP
-    /// identity. fluxd listens on 1716 to 1764. In loopback mode the dial
+    /// identity. fluxd listens on 12100 to 12108. In loopback mode the dial
     /// goes to any port on 127.0.0.1, for a headless fluxd in a test.
-    public var peerTcpPorts: ClosedRange<Int> = 1716...1764
+    public var peerTcpPorts: ClosedRange<Int> = 12100...12108
     /// Announces only to 127.0.0.1, for tests against a headless fluxd.
     public var loopbackOnly = false
     /// Sends identities to broadcast addresses. iOS needs the multicast
@@ -93,6 +93,19 @@ public final class LanBackend: @unchecked Sendable {
     static let dialInterval: TimeInterval = 1
     /// The most device IDs that the dial interval remembers.
     static let maxDialTargets = 256
+
+    /// The TCP keepalive of fluxd: the first probe after 10 idle seconds,
+    /// then 1 probe each 5 seconds. After 3 probes without an answer, the
+    /// kernel closes the link. The Darwin default waits 2 hours, so a link
+    /// that a network change broke stays open, and no new dial starts.
+    /// The kernel sends the probes, so they also go while iOS suspends Flux.
+    static let keepAliveIdle: SocketOptionValue = 10
+    static let keepAliveInterval: SocketOptionValue = 5
+    static let keepAliveCount: SocketOptionValue = 3
+    /// Darwin names the idle time `TCP_KEEPALIVE`.
+    static let tcpKeepIdle = NIOBSDSocket.Option(rawValue: TCP_KEEPALIVE)
+    static let tcpKeepInterval = NIOBSDSocket.Option(rawValue: TCP_KEEPINTVL)
+    static let tcpKeepCount = NIOBSDSocket.Option(rawValue: TCP_KEEPCNT)
 
     public init(tls: FluxTLS, config: LanConfig, identity: @escaping @Sendable (Int) -> Identity, delegate: LanBackendDelegate) {
         self.tls = tls
@@ -189,6 +202,9 @@ public final class LanBackend: @unchecked Sendable {
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(.socketOption(.so_keepalive), value: 1)
+            .childChannelOption(.tcpOption(Self.tcpKeepIdle), value: Self.keepAliveIdle)
+            .childChannelOption(.tcpOption(Self.tcpKeepInterval), value: Self.keepAliveInterval)
+            .childChannelOption(.tcpOption(Self.tcpKeepCount), value: Self.keepAliveCount)
             .childChannelOption(.socketOption(.tcp_nodelay), value: 1)
             .childChannelInitializer { [weak self] ch in
                 ch.eventLoop.makeCompletedFuture {
@@ -303,6 +319,9 @@ public final class LanBackend: @unchecked Sendable {
         ClientBootstrap(group: group)
             .connectTimeout(.seconds(5))
             .channelOption(.socketOption(.so_keepalive), value: 1)
+            .channelOption(.tcpOption(Self.tcpKeepIdle), value: Self.keepAliveIdle)
+            .channelOption(.tcpOption(Self.tcpKeepInterval), value: Self.keepAliveInterval)
+            .channelOption(.tcpOption(Self.tcpKeepCount), value: Self.keepAliveCount)
             .channelOption(.socketOption(.tcp_nodelay), value: 1)
             .channelInitializer { [weak self] ch in
                 ch.eventLoop.makeCompletedFuture {

@@ -39,6 +39,8 @@ import uuid
 
 PACKAGE = "org.omarchy.flux"
 FORWARD_PORT = 18716
+# The phone listens for links on the first free TCP port from 12100 to 12108.
+PHONE_LINK_PORT = 12100
 
 
 def sh(*args, data=None):
@@ -144,12 +146,12 @@ def make_identity(dev_id, target=None, name="flux-test-peer", desktop=False):
             "flux.share.request", "flux.notification", "flux.runcommand.request",
             "flux.mpris.request", "flux.sftp.request", "flux.tunnel",
             "flux.clipboard.image",
-            "flux.mousepad.request",
+            "flux.mousepad.request", "flux.transfer",
         ] + (["flux.desktop", "flux.shortcuts"] if desktop else []),
         "outgoingCapabilities": [
             "flux.ping", "flux.battery", "flux.clipboard", "flux.share.request",
             "flux.notification.request", "flux.findmyphone.request", "flux.runcommand",
-            "flux.mpris", "flux.sftp", "flux.clipboard.image", "flux.input",
+            "flux.mpris", "flux.sftp", "flux.clipboard.image", "flux.input", "flux.transfer",
         ] + (["flux.desktop", "flux.shortcuts"] if desktop else []),
     }
     if target:
@@ -163,6 +165,9 @@ def main():
     ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL", ""))
     ap.add_argument("--seconds", type=int, default=600, help="how long to answer requests after pairing")
     ap.add_argument("--send-file", help="send this file to the phone after pairing")
+    ap.add_argument("--send-resumable", help="send this file to the phone in flux.transfer chunks after pairing, like the outbox of fluxd")
+    ap.add_argument("--chunk-delay", type=float, default=0, help="wait this many seconds before each flux.transfer chunk")
+    ap.add_argument("--break-chunk", action="store_true", help="stop the first flux.transfer chunk halfway, then offer the file again")
     ap.add_argument("--clipboard-image", help="put this PNG image on the clipboard of the phone after pairing")
     ap.add_argument("--sftp-port", type=int, help="answer Browse PC through a tunnel to an SFTP server on 127.0.0.1:<port>")
     ap.add_argument("--sftp-root", default="/", help="the folder that the SFTP server serves")
@@ -195,7 +200,7 @@ def main():
     phone_id = [l.split("=", 1)[1].strip() for l in phone_id.splitlines() if "commonName" in l][0]
     print(f"phone device ID {phone_id}")
 
-    sh(*adb, "forward", f"tcp:{FORWARD_PORT}", "tcp:1716")
+    sh(*adb, "forward", f"tcp:{FORWARD_PORT}", f"tcp:{PHONE_LINK_PORT}")
     raw = socket.create_connection(("127.0.0.1", FORWARD_PORT), timeout=10)
     desktop = args.desktop is not None
     raw.sendall(packet("flux.identity", make_identity(dev_id, target=phone_id, name=args.name, desktop=desktop)))
@@ -254,11 +259,13 @@ def main():
         send("flux.runcommand", {"commandList": json.dumps(commands), "canAddCommand": True})
         send("flux.mpris", {"playerList": ["spotify"], "supportAlbumArtPayload": False})
         # The touchpad screen works. The peer prints the input that it gets.
-        send("flux.input", {"enabled": True, "desktop": desktop})
+        send("flux.input", {"enabled": True, "desktop": desktop, "keyRepeat": True})
         if args.theme:
             send("flux.theme", theme_body(args.theme))
         if args.send_file:
             send_file(args.send_file)
+        if args.send_resumable:
+            send_resumable(args.send_resumable)
         if args.clipboard_image:
             send_file(args.clipboard_image, "flux.clipboard.image", {"mime": "image/png"})
 
@@ -325,6 +332,60 @@ def main():
         finally:
             sh(*adb, "forward", "--remove", f"tcp:{local}")
         print(f"sent {path} ({len(data)} bytes)")
+
+    # The flux.transfer answers of the phone, by transfer ID. The read loop fills them.
+    transfers = {}
+
+    def send_resumable(path, chunk_size=1 << 20, tries=5):
+        """Sends a file in acknowledged chunks, like sendResumable in fluxd.
+        After an error, it offers the file again, like a retry of the outbox."""
+        data = open(path, "rb").read()
+        tid = uuid.uuid4().hex[:12]
+        meta = {"id": tid, "name": os.path.basename(path), "size": len(data), "hash": hashlib.sha256(data).hexdigest()}
+        replies = transfers[tid] = queue.Queue()
+        broken = not args.break_chunk
+
+        def wait():
+            try:
+                reply = replies.get(timeout=60)
+            except queue.Empty:
+                raise OSError("the phone did not acknowledge the transfer") from None
+            if reply.get("action") == "error":
+                raise OSError(reply.get("error"))
+            return reply
+
+        for _ in range(tries):
+            try:
+                send("flux.transfer", dict(meta, action="offer"))
+                ack = wait()
+                while ack.get("action") == "offset":
+                    offset = ack["offset"]
+                    chunk = data[offset:offset + chunk_size]
+                    time.sleep(args.chunk_delay)
+                    token = new_tunnel()
+                    send("flux.transfer", dict(meta, action="chunk", offset=offset),
+                         payloadSize=len(chunk), payloadTransferInfo={"tunnel": token})
+                    conn, local = open_tunnel(token)
+                    try:
+                        if not broken:
+                            broken = True
+                            chunk = chunk[:len(chunk) // 2]
+                            print(f"transfer {tid}: stop the chunk at {offset} after {len(chunk)} bytes")
+                        conn.sendall(chunk)
+                        conn.close()
+                    finally:
+                        sh(*adb, "forward", "--remove", f"tcp:{local}")
+                    ack = wait()
+                if ack.get("action") == "done":
+                    print(f"sent {path} in chunks ({len(data)} bytes)")
+                    return
+                print(f"transfer {tid}: unexpected answer {ack}")
+                return
+            except OSError as e:
+                print(f"transfer {tid}: {e}. Offer it again in 3 seconds")
+                time.sleep(3)
+        transfers.pop(tid, None)
+        print(f"cannot send {path} after {tries} tries")
 
     def serve_sftp(token):
         """Relays the Browse PC session between the tunnel and the SFTP
@@ -471,6 +532,10 @@ def main():
             send("flux.shortcuts", shortcut_state(bool(body.get("request"))))
         elif kind == "flux.tunnel":
             waiter = tunnels.get(body.get("id"))
+            if waiter:
+                waiter.put(body)
+        elif kind == "flux.transfer":
+            waiter = transfers.get(body.get("id"))
             if waiter:
                 waiter.put(body)
         elif kind == "flux.sftp.request":

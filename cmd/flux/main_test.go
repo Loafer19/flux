@@ -42,7 +42,7 @@ func TestWebcamSettings(t *testing.T) {
 // also names the device by its ID.
 func TestPrintStatus(t *testing.T) {
 	var s State
-	raw := `{"self":{"name":"desk","type":"desktop","tcpPort":1716},"devices":[
+	raw := `{"self":{"name":"desk","type":"desktop","tcpPort":12100},"devices":[
 		{"id":"a1b2c3","name":"Pixel 8","type":"phone","online":true,"paired":true,"pairState":"paired","fingerprint":"71C0E5A93B2D8F46","appUpdate":"1.2.0"},
 		{"id":"d4e5f6","name":"Pixel 8","type":"phone","pairState":"none","fingerprint":""}]}`
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
@@ -59,6 +59,28 @@ func TestPrintStatus(t *testing.T) {
 	}
 	if !strings.Contains(out, "run: flux-cli --device a1b2c3 update --phone\n") {
 		t.Errorf("the app update hint does not name the device ID:\n%s", out)
+	}
+}
+
+// A paired phone with an app from before Flux 0.8 cannot connect, so the
+// status and doctor tell the user to install the new app.
+func TestOldAppHint(t *testing.T) {
+	var s State
+	raw := `{"self":{"name":"desk","type":"desktop","tcpPort":12100},"devices":[
+		{"id":"a1b2c3","name":"Fairphone 5","type":"phone","paired":true,"pairState":"paired","oldApp":true},
+		{"id":"d4e5f6","name":"Pixel 8","type":"phone","online":true,"paired":true,"pairState":"paired"},
+		{"id":"a7b8c9","name":"Unpaired","type":"phone","pairState":"none","oldApp":true}]}`
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	printStatus(&b, &s)
+	if out := b.String(); strings.Count(out, "older than 0.8") != 1 || !strings.Contains(out, "releases/latest") {
+		t.Errorf("status:\n%s", out)
+	}
+	problems := oldAppProblems(&s)
+	if len(problems) != 1 || !strings.HasPrefix(problems[0], "Fairphone 5 runs a Flux app older than 0.8") {
+		t.Errorf("doctor: %q", problems)
 	}
 }
 

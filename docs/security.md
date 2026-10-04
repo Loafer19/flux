@@ -6,10 +6,10 @@ This page tells what a paired device can do on the computer and what the network
 It also tells which setting turns a feature off, when one exists.
 A paired device is an Android phone, an iPhone, or a Mac that you paired with `fluxd`.
 
-`fluxd` treats each paired device the same.
-Each setting in `~/.config/flux/config.toml` applies to every paired device.
-Flux has no setting for 1 device.
-To take the access of 1 device away, [unpair it](#unpair-a-device).
+Global settings in `~/.config/flux/config.toml` apply to every paired device.
+The [per-device access settings](workflows.md#per-device-access) can restrict a feature for one device.
+A device restriction cannot enable a feature that the global settings disable.
+To remove all access for one device, [unpair it](#unpair-a-device).
 
 ## Pair only with your own device
 
@@ -57,7 +57,7 @@ It also tells which setting turns a feature off, when one exists.
 | Files | On | Send files into `download_dir`, scans into `scan_dir`, and photos, screenshots, and signatures into `photo_dir`. `fluxd` also puts a signature on the clipboard. `fluxd` makes each name safe and never replaces a file. See [files, clipboard, and links](features.md#files-clipboard-and-links). | No setting. Unpair the device. |
 | Links and text | On | Open an `http` or `https` URL with a host in the browser. Each other value goes on the clipboard as text. | No setting. Unpair the device. |
 | Clipboard sync | `auto_clipboard = true` | Get each text and image that you copy on the computer, and put text and images on the clipboard of the computer. | `auto_clipboard = false` |
-| Browse PC | `share_home = true` | Read the home folder, `download_dir`, and `~/Documents`, `~/Pictures`, `~/Music`, and `~/Videos`. `fluxd` hides each name that starts with a dot, such as `~/.ssh`, and the Flux folders. The device cannot change a file. See [Browse PC](features.md#browse-pc). | `share_home = false`. It ends each session at once. |
+| Browse PC | `share_home = true` | Read the home folder, `download_dir`, and `~/Documents`, `~/Pictures`, `~/Music`, and `~/Videos`. `fluxd` hides each name that starts with a dot, such as `~/.ssh`, and the Flux folders. The search of file names uses the same rules. The device cannot change a file. See [Browse PC](features.md#browse-pc). | `share_home = false`. It ends each session at once. |
 | Notifications | `notifications = true` | Show its notifications on the computer. | `notifications = false` |
 | Do Not Disturb | `sync_dnd = true` | Turn Do Not Disturb of the computer on and off. | `sync_dnd = false` |
 | Calls | `pause_media_on_call = true` | Pause the media players of the computer during a call. | `pause_media_on_call = false` |
@@ -119,11 +119,13 @@ See [start from the computer](camera.md#start-from-the-computer).
 
 | Port | Use |
 | --- | --- |
-| The first free TCP port from 1716 to 1764 | Links from devices |
-| UDP 1716 | Identity broadcasts from devices |
+| The first free TCP port from 12100 to 12108 | Links from devices |
+| UDP 12100 | Identity broadcasts from devices |
 
 `flux-cli status` shows the TCP port in its first line.
-`fluxd` also publishes the `_flux._udp` service through Avahi, and it sends its identity to UDP port 1716 of the local networks.
+`fluxd` also publishes the `_flux._udp` service through Avahi, and it sends its identity to UDP port 12100 of the local networks.
+For a device without `flux.tunnel`, `fluxd` listens for a payload on a TCP port from 12070 to 12099 on the local address of the link.
+Flux and KDE Connect use different ports, so both can run on the same computer at the same time.
 
 `fluxd` opens the links to the devices itself, so Flux needs no inbound firewall rule.
 The default Omarchy firewall blocks inbound traffic to the Flux ports, and it lets mDNS in.
@@ -139,7 +141,8 @@ Without such a firewall, each host that reaches the computer can open a link to 
 The same is true for a rule that lets in the traffic of an interface, for example `ufw allow in on tailscale0`.
 The [limits below](#devices-that-are-not-paired) apply to such hosts.
 
-The Android phone, the iPhone, and the Mac also listen on TCP ports 1716 to 1764.
+The Android phone, the iPhone, and the Mac also listen on TCP ports 12100 to 12108 for links.
+They listen on TCP ports 12070 to 12099 for payloads, tunnels, and streams.
 Flux for Android takes a link from a computer that is not paired only while Flux is on the screen or while it scans.
 
 ## Album art

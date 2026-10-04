@@ -27,6 +27,8 @@ final class DesktopController {
     @ObservationIgnored private var afterVoice = false
     /// True after the view-only notice showed, so that it shows once.
     @ObservationIgnored private var warned = false
+    /// The position of the last click, hold, or move. A new view size keeps it in view.
+    @ObservationIgnored private var focus: DesktopPoint?
 
     /// The panel that shows, or nil.
     var panel: Panel?
@@ -37,6 +39,14 @@ final class DesktopController {
     /// True after the stream stopped because Flux left the screen.
     private(set) var paused = false
     var voiceError: String?
+    var audioOn = false
+    private var previousAudioVolume: Double = 1
+    var audioVolume: Double = 1 {
+        didSet { if audioVolume > 0 { previousAudioVolume = audioVolume }; plugin.setAudioVolume(Float(audioVolume)) }
+    }
+
+    func toggleAudio() { audioOn.toggle(); start() }
+    func toggleMute() { audioVolume = audioVolume == 0 ? previousAudioVolume : 0 }
 
     /// The shape of the video before the computer tells its size.
     static let placeholderSize = CGSize(width: 16, height: 10)
@@ -49,7 +59,9 @@ final class DesktopController {
         self.input = input
         let send = RemoteInputSender.make(deviceId: device.id, app: app, input: input)
         sendInput = send
-        keys = RemoteKeys(workspaceKeys: DesktopPlugin.shortcutsSupported(device), send: send)
+        let id = device.id
+        keys = RemoteKeys(workspaceKeys: DesktopPlugin.shortcutsSupported(device), send: send,
+                          canRepeat: { [weak input] in input?.model.canRepeat(id) ?? false })
         keys.willSend = { [weak self] in self?.afterVoice = false }
     }
 
@@ -93,7 +105,7 @@ final class DesktopController {
     func start() {
         guard ready else { return }
         paused = false
-        plugin.start(deviceId, monitor: monitor, maxSize: Self.maxSize)
+        plugin.start(deviceId, monitor: monitor, maxSize: Self.maxSize, audio: audioOn)
     }
 
     /// Shows the next monitor of the computer.
@@ -132,10 +144,13 @@ final class DesktopController {
 
     // MARK: Touches
 
-    /// The view or the video has a new size. A new size starts again at scale 1.
+    /// The view or the video has a new size. A new video starts again at
+    /// scale 1. A new view size, for example when the keyboard or a panel
+    /// shows, keeps the zoom and keeps the last tapped point in view.
     func layout(view: CGSize) {
         let video = live ? CGSize(width: status?.width ?? 0, height: status?.height ?? 0) : Self.placeholderSize
-        let next = viewport.resized(view: view, video: video)
+        let next = viewport.resized(view: view, video: video, focus: video == viewport.video ? focus : nil)
+        if next.video != viewport.video { focus = nil }
         if next != viewport { viewport = next }
     }
 
@@ -159,9 +174,18 @@ final class DesktopController {
     private func run(_ actions: [DesktopTouches.Action]) {
         for a in actions {
             switch a {
-            case .move(let p): send(RemoteInput.at(x: p.x, y: p.y))
-            case .click(let c, let p): send(RemoteInput.clickAt(c, x: p.x, y: p.y))
-            case .hold(let down, let p): send(RemoteInput.holdAt(down, x: p.x, y: p.y))
+            case .move(let p):
+                focus = p
+                send(RemoteInput.at(x: p.x, y: p.y))
+            case .click(let c, let p):
+                // A click can move the cursor of the computer, so the type field ends.
+                focus = p
+                keys.endTyping()
+                send(RemoteInput.clickAt(c, x: p.x, y: p.y))
+            case .hold(let down, let p):
+                focus = p
+                keys.endTyping()
+                send(RemoteInput.holdAt(down, x: p.x, y: p.y))
             case .scroll(let dx, let dy): send(RemoteInput.scroll(dx: dx, dy: dy))
             case .viewport(let v): viewport = v
             case .held: HoldFeedback.play()
@@ -185,6 +209,11 @@ final class DesktopController {
 
     func toggle(_ p: Panel) {
         panel = panel == p ? nil : p
+    }
+
+    /// The panel changed. Without the keys panel, the type field ends.
+    func panelChanged() {
+        if panel != .keys { keys.endTyping() }
     }
 
     /// Sends a flux.shortcuts packet of the Omarchy panel.
@@ -217,6 +246,8 @@ final class DesktopController {
     private func typeSpoken(_ spoken: String) {
         let words = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard control, !words.isEmpty else { return }
+        // The words go to the cursor of the computer, so the type field ends.
+        keys.endTyping()
         sendInput(RemoteInput.text(afterVoice ? " " + words : words))
         afterVoice = true
     }

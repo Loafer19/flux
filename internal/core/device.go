@@ -46,6 +46,9 @@ type Device struct {
 	// inputRefused is true after fluxd logged remote input that it
 	// ignored, so that it logs that once.
 	inputRefused bool
+	// oldApp is true after the device announced an app from before Flux
+	// 0.8, until it links.
+	oldApp bool
 
 	pairState string // "", "requested", "confirm", or "incoming"
 	pairTime  int64
@@ -103,6 +106,12 @@ type Device struct {
 	// once. fluxd handles them after the user confirms the pairing, and
 	// drops them when the pairing ends in another way.
 	confirmQueue []*proto.Packet
+
+	// outbox holds the text messages that fluxd sent through the device
+	// and that the device has not reported yet, the oldest first.
+	// outboxSeq numbers the entries.
+	outbox    []OutboxMessage
+	outboxSeq int64
 }
 
 // Battery is the battery state of a device.
@@ -146,12 +155,16 @@ func (dev *Device) setIdentity(id proto.Identity) {
 	dev.Incoming = id.IncomingCapabilities
 	dev.Outgoing = id.OutgoingCapabilities
 	dev.App, dev.AppVersion = proto.CleanText(id.App, maxAppText), proto.CleanText(id.AppVersion, maxAppText)
+	dev.oldApp = false
 	// A device that stops sharing a feature keeps no old data of it.
 	if !dev.supports(proto.TypeNotification) {
 		dev.notifications = nil
 	}
 	if !dev.supports(proto.TypeSmsMessages) && len(dev.conversations) > 0 {
 		dev.conversations = map[int64]*Conversation{}
+	}
+	if !dev.supports(proto.TypeSmsMessages) {
+		dev.outbox = nil
 	}
 }
 
@@ -329,11 +342,18 @@ type DeviceView struct {
 	App        string `json:"app"`
 	AppVersion string `json:"appVersion"`
 	AppUpdate  string `json:"appUpdate"`
+	// OldApp is true when the device runs a Flux app from before 0.8,
+	// which cannot connect to this fluxd.
+	OldApp bool `json:"oldApp"`
 
 	// Fingerprint is 16 hex digits from the certificate of the device, or
 	// "" when fluxd knows no certificate. It tells 2 devices with the same
 	// name apart.
 	Fingerprint string `json:"fingerprint"`
+
+	// Outbox lists the text messages that fluxd sent through the device
+	// and that the device has not reported yet, the oldest first.
+	Outbox []OutboxMessage `json:"outbox"`
 }
 
 func (dev *Device) view() DeviceView {
@@ -349,7 +369,7 @@ func (dev *Device) view() DeviceView {
 		PairState: state, PairKey: dev.pairKey, PairedAt: dev.PairedAt, Role: dev.role(),
 		Battery: dev.battery,
 		Plugins: dev.plugins(), Notifications: dev.notifications,
-		App: dev.App, AppVersion: dev.AppVersion,
+		App: dev.App, AppVersion: dev.AppVersion, OldApp: dev.oldApp,
 		Fingerprint: proto.Fingerprint(dev.Cert),
 	}
 	if v.Type == "" {
@@ -365,5 +385,10 @@ func (dev *Device) view() DeviceView {
 		v.Addresses = []string{}
 	}
 	v.Conversations = sortedConversations(dev.conversations)
+	// A timer of the outbox changes an entry in place.
+	v.Outbox = slices.Clone(dev.outbox)
+	if v.Outbox == nil {
+		v.Outbox = []OutboxMessage{}
+	}
 	return v
 }

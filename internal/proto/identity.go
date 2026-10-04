@@ -10,6 +10,10 @@ import (
 	"unicode"
 )
 
+// TypeOldIdentity is the identity type of the apps and daemons from before
+// Flux 0.8. They cannot link with this version.
+const TypeOldIdentity = "kdeconnect.identity"
+
 // Packet types that Flux uses.
 const (
 	TypeIdentity            = "flux.identity"
@@ -71,8 +75,9 @@ const (
 	TypeFluxClipboardImage = "flux.clipboard.image"
 	// TypeFluxInput tells the phone whether this computer accepts remote
 	// input and whether it shows its screen on the phone, {"enabled":
-	// bool, "desktop": bool}. fluxd sends it after the link starts and
-	// after a setting changes.
+	// bool, "desktop": bool, "keyRepeat": true}. keyRepeat tells that a
+	// special key can have a repeat count. fluxd sends it after the link
+	// starts and after a setting changes.
 	TypeFluxInput = "flux.input"
 	// TypeFluxDesktop starts and stops the stream of this screen to the
 	// phone. Both sides send it.
@@ -98,6 +103,7 @@ const (
 	// it only to a paired, connected device that lists it as incoming.
 	// docs/camera.md describes it.
 	TypeFluxStreamRequest = "flux.stream.request"
+	TypeFluxTransfer      = "flux.transfer"
 )
 
 // Incoming lists the packet types that Flux accepts. The phone enables a
@@ -109,7 +115,7 @@ var Incoming = []string{
 	TypeSmsMessages, TypeTelephony,
 	TypeFluxTunnel, TypeFluxWebcam, TypeFluxDnd, TypeFluxMic, TypeFluxScreen,
 	TypeFluxApprove, TypeFluxHerdr, TypeFluxClipboardImage, TypeMousepadRequest,
-	TypeFluxDesktop, TypeFluxShortcuts, TypeFluxEdge,
+	TypeFluxDesktop, TypeFluxShortcuts, TypeFluxEdge, TypeFluxTransfer,
 }
 
 // Outgoing lists the packet types that Flux sends.
@@ -121,7 +127,7 @@ var Outgoing = []string{
 	TypeSmsConversation, TypeSftp, TypeFluxWebcam, TypeFluxDnd,
 	TypeFluxMic, TypeFluxScreen, TypeFluxApprove, TypeFluxHerdr,
 	TypeFluxClipboardImage, TypeFluxInput, TypeFluxDesktop, TypeFluxShortcuts,
-	TypeFluxEdge, TypeFluxTheme, TypeFluxStreamRequest,
+	TypeFluxEdge, TypeFluxTheme, TypeFluxStreamRequest, TypeFluxTransfer,
 }
 
 // Identity is the body of a flux.identity packet.

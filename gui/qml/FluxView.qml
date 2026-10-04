@@ -562,7 +562,7 @@ Item {
             id: pairButton
             width: parent.width
             height: pairLabel.implicitHeight + 18
-            color: pairArea.containsMouse ? Theme.dim : Theme.bg3
+            color: pairArea.containsMouse ? Theme.dim : Theme.edge
             Row {
               id: pairLabel
               anchors.centerIn: parent
@@ -615,7 +615,7 @@ Item {
               required property var modelData
               width: side.width
               height: Math.max(42, candInfo.implicitHeight + 18)
-              color: candArea.containsMouse ? Theme.accent : (modelData.twin !== "" ? Theme.warn : Theme.bg3)
+              color: candArea.containsMouse ? Theme.accent : (modelData.twin !== "" ? Theme.warn : Theme.edge)
               Rectangle {
                 x: 9
                 y: 9

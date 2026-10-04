@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// PeerListener is a TLS payload listener on a port from 1739 to 1764.
+// PeerListener is a TLS payload listener on a port from 12070 to 12099.
 // A paired peer dials it the same way fluxd dials a phone remote-desktop
 // listener: this side is the TLS server and checks the pinned certificate.
 type PeerListener struct {

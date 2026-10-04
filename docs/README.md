@@ -21,6 +21,7 @@ A paired device can also connect through [Tailscale](tailscale.md) away from tha
 | [macOS](macos.md) | Mac app build, pairing, features, permissions, and local tests |
 | [CLI](cli.md) | Commands, device selection, JSON state, and notifications from scripts |
 | [Everyday use](features.md) | Pair, share, clipboard images, SMS, media, calls, Do Not Disturb, automatic photo transfers, and dictation in text fields |
+| [Workflow controls](workflows.md) | Offline outbox, resumable transfers, folder archives, saved snippets, device access, notification rules, automation, agent review, and remote audio |
 | [Tailscale](tailscale.md) | Extra addresses, links away from the local network, other VPNs, and connection checks |
 | [Two computers](desktop-peer.md) | Pair two Omarchy desks, the firewall allow, and Tailscale between them |
 | [Camera and streams](camera.md) | Scans, photos, webcam settings, microphone, and screen mirror |
@@ -51,5 +52,6 @@ A paired device can also connect through [Tailscale](tailscale.md) away from tha
 | [Desktop peer MVP](desktop-peer-mvp.md) | Two Omarchy desks: role, reused packets, and the reachability constraint |
 | [macOS client status](macos-status.md) | Build plan, current state, and what was verified against `fluxd` |
 | [Marketing videos](../marketing/README.md) | Video source, phone captures, music timing, render, and mux |
+| [Website](../site/README.md) | The page on GitHub Pages, its images, and how to make them again |
 
 Return to the [project README](../README.md).

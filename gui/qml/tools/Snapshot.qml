@@ -100,13 +100,22 @@ Window {
       var icon = Qt.resolvedUrl("../../../macos/App/Assets.xcassets/AppIcon.appiconset/icon_256x256.png").toString()
       mock.setState(function (s) {
         s.webcam = mock.fixture.state.webcam
+        s.clipboard[0].pinned = true
         if (icon.indexOf("file://") === 0)
           s.clipboard.splice(1, 0, { id: "c0", text: "", image: icon.substring(7), dir: "in", device: pixel, time: Math.floor(Date.now() / 1000) - 300 })
       })
       view.tab = "clipboard"
     }],
     ["14-files", function () { view.tab = "files" }],
-    ["15-notifications", function () { view.tab = "notifications" }],
+    ["15-notifications", function () {
+      mock.setState(function(s) {
+        s.settings.notificationRules = [
+          { id: "rule1", app: "A notification app with a long display name", mode: "mute", until: Math.floor(Date.now() / 1000) + 3600 },
+          { id: "rule2", app: "Calendar", mode: "silent", until: Math.floor(Date.now() / 1000) - 1 }
+        ]
+      })
+      view.tab = "notifications"
+    }],
     ["16-messages", function () { view.tab = "messages" }],
     ["17-commands", function () { view.tab = "commands" }],
     ["18-commands-form", function () { view.tab = "commands" }, function () {
@@ -170,7 +179,7 @@ Window {
     }],
     ["30c-network", function () {
       mock.setState(function (s) {
-        s.self = { id: "9c1f2e3d4b5a69788796a5b4c3d2e1f0", name: "omarchy-framework", type: "laptop", tcpPort: 1716 }
+        s.self = { id: "9c1f2e3d4b5a69788796a5b4c3d2e1f0", name: "omarchy-framework", type: "laptop", tcpPort: 12100 }
         s.devices = s.devices.filter(function (d) { return d.id !== laptop })
         s.devices.push({
           id: laptop, name: "work-thinkpad", type: "laptop", ip: "192.168.1.70",
@@ -183,7 +192,7 @@ Window {
     }],
     ["30d-network-invite", function () {
       mock.setState(function (s) {
-        s.self = { id: "9c1f2e3d4b5a69788796a5b4c3d2e1f0", name: "omarchy-framework", type: "laptop", tcpPort: 1716 }
+        s.self = { id: "9c1f2e3d4b5a69788796a5b4c3d2e1f0", name: "omarchy-framework", type: "laptop", tcpPort: 12100 }
         s.devices = s.devices.filter(function (d) { return d.id !== laptop })
         s.devices.push({
           id: laptop, name: "work-thinkpad", type: "laptop", ip: "192.168.1.70",
@@ -195,9 +204,9 @@ Window {
       view.tab = "network"
     }, function () {
       var p = pageItem()
-      p.inviteCode = "flux1:9c1f2e3d4b5a69788796a5b4c3d2e1f0@100.64.0.1:1716"
+      p.inviteCode = "flux1:9c1f2e3d4b5a69788796a5b4c3d2e1f0@100.64.0.1:12100"
       p.inviteHost = "100.64.0.1"
-      p.invitePort = 1716
+      p.invitePort = 12100
       p.inviteName = "omarchy-framework"
       if (p.hostField) p.hostField.text = "100.64.0.1"
     }],
@@ -359,7 +368,25 @@ Window {
     ["56-stream-asked", function () {}, function () {
       findBy(camera(), "objectName", "startButton").clicked()
       scrollToEnd()
-    }]
+    }],
+    // 2 sent messages in the outbox of fluxd: 1 that the phone did not
+    // report in 60 seconds, and 1 on its way. The wait lets the toast of
+    // the step before go.
+    ["57-messages-outbox", function () {
+      var now = Math.floor(Date.now() / 1000)
+      mock.setState(function (s) {
+        for (var i = 0; i < s.devices.length; i++)
+          if (s.devices[i].id === pixel) s.devices[i].outbox = [
+            { thread: 1, address: "+4791234567", body: "Yes, we come at 5", time: now - 90, outgoing: true, pending: false, failed: true },
+            { thread: 1, address: "+4791234567", body: "Do you need anything from the shop?", time: now - 5, outgoing: true, pending: true, failed: false }
+          ]
+      })
+      view.selectedId = pixel
+      view.tab = "messages"
+    }, function () {
+      var p = pageItem()
+      p.open(p.convos.filter(function (c) { return c.thread === 1 })[0])
+    }, 2500]
   ]
 
   function pageItem() {

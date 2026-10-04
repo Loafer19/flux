@@ -48,6 +48,8 @@ See [IPC](ipc.md) for the socket.
 
 ## Show the screen
 
+The remote desktop also supports [computer audio](workflows.md#remote-desktop-audio), with local mute and volume controls.
+
 On the phone, open **Control** and select **Remote desktop**.
 The phone asks for its screen lock first. The unlock stays valid for 5 minutes.
 A phone without a screen lock cannot open the remote desktop.
@@ -117,6 +119,11 @@ The `faillock` setting of PAM on the computer limits them, as for the keyboard o
 The pointer of the computer goes to the position of each touch.
 The stream shows the pointer.
 
+When the keys or the phone keyboard open, the video keeps its size on the phone.
+The point of your last tap stays in view, for example the text field that you tapped.
+Pinch to see more of the screen.
+A rotation of the phone shows the full screen again.
+
 ## Move around Omarchy
 
 Select the grid button to show the Omarchy panel.
@@ -150,6 +157,16 @@ Unlock the computer on the remote desktop, then open the panel again.
 Select the keyboard button to show the keys.
 The keys and the text field work as on the [touchpad](remote-input.md#type-on-the-phone).
 In landscape, the keys show at the right of the video.
+While the phone keyboard is open, the keys scroll, and the text field shows at their bottom.
+
+To type in a field of the computer, follow these steps:
+
+1. Tap the field on the video.
+2. Tap the text field of the keys and type. The computer types each word.
+3. To delete what you typed, select the clear key of the text field.
+
+A tap on the video starts the text field again, so that the clear key deletes only the text of the field that you tapped last.
+To write and correct a longer text before the computer gets it, select the expand key of the text field.
 
 To use a Super shortcut, select **super**, then type the key in the text field.
 For example, select **super**, then type `w` to close the window.
@@ -253,7 +270,7 @@ To stop the stream of a phone that you do not trust, unpair the phone.
 
 ## How it works
 
-1. The phone opens a TLS listener and sends `flux.desktop` with `{"state": "start", "port": PORT, "maxSize": 1920}`.
+1. The phone opens a TLS listener on a port from 12070 to 12099 and sends `flux.desktop` with `{"state": "start", "port": PORT, "maxSize": 1920}`.
    The Mac does the same, with the longest side of its screen in pixels as `maxSize`.
 2. `fluxd` connects to the port and checks the pinned certificate of the phone.
    When `gpu-screen-recorder` lists no monitor, `fluxd` turns the displays on with `hyprctl` and lists them again for up to 3 seconds.
@@ -281,10 +298,14 @@ Each frame on the stream has this form:
 | Field | Size | Content |
 | --- | --- | --- |
 | Length | 4 bytes, big-endian | The size of the data |
-| Flags | 1 byte | 1: the SPS and the PPS. 2: a key frame. 4: the video size. 0: another frame. |
+| Flags | 1 byte | 1: the SPS and the PPS. 2: a key frame. 4: the video size. 8: an audio frame. 0: another video frame. |
 | Data | Length bytes | H.264 NAL units with 4-byte start codes, or 2 big-endian 16-bit numbers for the width and the height |
 
-The first frame is the video size.
+Audio frames contain 20 ms of stereo, 48 kHz, signed 16-bit little-endian PCM.
+The start packet must request `audio: true` to receive audio frames.
+The first video frame is the video size.
+A config frame can come again before a key frame, when the key frame has another SPS and PPS.
+The receiver then uses the newest one.
 Each frame comes whole, so the phone can decode it when its last byte arrives.
 
 The touches are `flux.mousepad.request` packets with the fields `x` and `y`.
@@ -294,7 +315,7 @@ It moves the pointer through a `zwlr_virtual_pointer_v1` pointer for the monitor
 `fluxd` ignores a position when the phone shows no remote desktop.
 See the [wire format of remote input](remote-input.md#how-it-works).
 
-`fluxd` sends `flux.input` with `{"enabled": bool, "desktop": bool}` after the link starts and after a setting changes.
+`fluxd` sends `flux.input` with `{"enabled": bool, "desktop": bool, "keyRepeat": true}` after the link starts and after a setting changes.
 The phone uses `desktop` to show the **Remote desktop** tile as on or off.
 
 ### Omarchy panel

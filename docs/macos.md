@@ -44,6 +44,9 @@ Pull requests run no build.
 Each release attaches the same build as `flux-macos-VERSION.zip`.
 The window on the computer shows an update notice only for the Android app.
 To find a newer Mac app, check `https://github.com/bjarneo/flux/releases`.
+Flux 0.10.1 and earlier use other ports, see [Pair a Mac](#pair-a-mac).
+A Mac app of 0.10.1 or earlier cannot connect to a newer `fluxd`, and a newer Mac app cannot connect to an earlier `fluxd`.
+Update the Mac app and `fluxd` together.
 For a build of a branch, download the `macos-app` artifact from the run to get `flux-macos.zip`.
 The app is signed ad hoc and not notarized, so Gatekeeper blocks the first start.
 To open it, remove the quarantine attribute:
@@ -105,7 +108,11 @@ To pair in that time, start the pairing on the Mac.
 A pairing is bound to its link.
 When the computer connects again while a pairing runs, the pairing stops, so pair again.
 A request from the computer that stops this way also starts the wait of 30 seconds.
-The Mac announces itself with UDP broadcasts on port 1716 and as `_flux._udp` through Bonjour, like the phone.
+The Mac announces itself with UDP broadcasts on port 12100 and as `_flux._udp` through Bonjour, like the phone.
+It listens for links on 1 TCP port from 12100 to 12108, and **Settings > General** shows it as **Link port**.
+Transfers, tunnels, and streams use TCP ports 12070 to 12099 on the Mac.
+When another app holds UDP port 12100, **Settings > General** shows a warning.
+Flux then still announces itself, and computers can connect.
 It appears on the computer as `laptop` when it has a battery and `desktop` otherwise.
 
 The Mac is a remote for Omarchy computers.
@@ -140,6 +147,7 @@ A computer that is not paired finds the Mac through Bonjour, and `fluxd` then co
 | Remote desktop | Shows the screen of the Omarchy computer in a window. The mouse over the video, the keys, the Omarchy panel, and dictation control the computer. The computer does not control the Mac. The computer needs `remote_desktop = true`, and `remote_input = true` for control. The Mac asks for Touch ID or its password before the window opens. See [Remote desktop](remote-desktop.md#use-a-mac). |
 | herdr agents | Shows the coding agents that herdr runs on the computer, their output in color, and notifications. Answers them after Touch ID or the password when the computer allows replies, with dictation on the Mac. See [herdr agents](herdr.md#use-a-mac). |
 | Dictation | Each text field has a mic key: the agent replies, the touchpad and the remote desktop, **Text or link** in **Share**, the scanned text, the shortcut search, and the language search. Search fields get the words in place of the search. Other fields get them at the cursor or at the end of the text. All fields use the same language. See [Dictate on a Mac](herdr.md#dictate-on-a-mac). |
+| Clear and expand | The agent replies, **Text or link** in **Share**, the scanned text, the shortcut search, and the language search have a clear key while they have text. The agent replies and **Text or link** also have an expand key that opens a larger editor with **Send**. The type field of the touchpad and the remote desktop has a clear key and the draft editor, see [Type on the Mac](remote-input.md#type-on-the-mac). |
 
 The Mac cannot mirror notifications from other apps, report calls, or send SMS, because macOS gives apps no access to them.
 Flux does not advertise those capabilities.
@@ -342,8 +350,8 @@ FLUX_DATA_DIR=/tmp/flux-mac FLUX_UDP_PORT=28731 FLUX_PEER_UDP_PORT=28716 FLUX_LO
 | Variable | Effect |
 | --- | --- |
 | `FLUX_DATA_DIR` | Identity, trust store, and settings in a separate directory and defaults domain. Each launch with the same directory uses the same domain. |
-| `FLUX_UDP_PORT` | UDP port that receives identity broadcasts |
-| `FLUX_PEER_UDP_PORT` | UDP port of the computer that the Mac announces itself to |
+| `FLUX_UDP_PORT` | UDP port that receives identity broadcasts. The default is `12100`. |
+| `FLUX_PEER_UDP_PORT` | UDP port of the computer that the Mac announces itself to. The default is `12100`. |
 | `FLUX_LOOPBACK=1` | Announce only to 127.0.0.1 and skip Bonjour |
 
 Headless `fluxd` has no clipboard, notification, media, or stream backends.

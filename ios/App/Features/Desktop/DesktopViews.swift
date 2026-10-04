@@ -95,8 +95,9 @@ private struct DesktopContent: View {
                 }
                 video(hint: !wide && panel == nil, wide: wide)
                 if let panel {
+                    // The keys panel is wider, so that the type field keeps room for the text next to its keys.
                     panelView(panel)
-                        .frame(width: wide ? 300 : nil)
+                        .frame(width: wide ? (panel == .keys ? 320 : 300) : nil)
                         .frame(maxHeight: !wide && panel == .omarchy ? 380 : nil)
                 }
             }
@@ -121,6 +122,7 @@ private struct DesktopContent: View {
         .onChange(of: controller.control) { _, control in
             if !control { controller.panel = nil }
         }
+        .onChange(of: controller.panel) { _, _ in controller.panelChanged() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background: controller.pause()
@@ -193,13 +195,28 @@ private struct MonitorChip: View {
 
 /// The buttons of the panels and the dictation, and in landscape the monitor chip.
 private struct DesktopButtons: View {
-    let controller: DesktopController
+    @Bindable var controller: DesktopController
     let showsMonitor: Bool
 
     var body: some View {
         if showsMonitor {
             MonitorChip(controller: controller)
         }
+        Menu {
+            Button(controller.audioOn ? "Stop desktop audio" : "Start desktop audio") { controller.toggleAudio() }
+            if controller.audioOn {
+                Button(controller.audioVolume == 0 ? "Unmute" : "Mute") { controller.toggleMute() }
+                Picker("Volume", selection: $controller.audioVolume) {
+                    Text("25%").tag(0.25)
+                    Text("50%").tag(0.5)
+                    Text("75%").tag(0.75)
+                    Text("100%").tag(1.0)
+                }
+            }
+        } label: {
+            Image(systemName: controller.audioOn && controller.audioVolume > 0 ? "speaker.wave.2" : "speaker.slash")
+        }
+        .accessibilityLabel("Desktop audio")
         if controller.control {
             if controller.shortcutsSupported {
                 RailButton(systemImage: "square.grid.2x2", name: "Omarchy panel", on: controller.panel == .omarchy) { controller.toggle(.omarchy) }
@@ -273,7 +290,8 @@ private struct StreamState: View {
     }
 }
 
-/// The keys under the video: the key rows, the text field, the mic key, and Enter.
+/// The keys under the video: the key rows, the text field with its clear
+/// key and its editor key, the mic key, and Enter.
 private struct DesktopKeys: View {
     @Bindable var controller: DesktopController
 
@@ -281,11 +299,7 @@ private struct DesktopKeys: View {
         VStack(alignment: .leading, spacing: 8) {
             KeyRows(keys: controller.keys)
             HStack(spacing: 8) {
-                TypeField(keys: controller.keys, placeholder: "Type on \(controller.name)")
-                    .frame(height: 44)
-                    .padding(.horizontal, 12)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(.separator).opacity(0.5)))
+                TypeFieldBox(keys: controller.keys, name: controller.name)
                 let dictating = controller.dictation.phase != .idle
                 Button {
                     if dictating { controller.dictation.stop() } else { controller.dictate() }

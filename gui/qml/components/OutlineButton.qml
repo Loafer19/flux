@@ -1,7 +1,7 @@
 import QtQuick
 import ".."
 
-// A button with a 1 px bg3 border and no fill.
+// A button with a 1 px edge border and no fill.
 Rectangle {
   id: root
   property string text: ""
@@ -15,12 +15,17 @@ Rectangle {
   property bool active: true
   property int fontWeight: Font.Normal
   signal clicked()
+  activeFocusOnTab: active
+  Accessible.role: Accessible.Button
+  Accessible.name: text
+  Keys.onReturnPressed: if (active) clicked()
+  Keys.onSpacePressed: if (active) clicked()
 
   implicitWidth: content.implicitWidth + padX * 2 + 2
   implicitHeight: content.implicitHeight + padY * 2 + 2
   color: area.containsMouse && root.active ? Theme.alpha(Theme.fg, 0.06) : "transparent"
   border.width: 1
-  border.color: Theme.bg3
+  border.color: activeFocus ? Theme.accent : Theme.edge
   opacity: active ? 1 : 0.4
 
   Row {

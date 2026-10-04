@@ -81,6 +81,7 @@ systemctl --user edit fluxd
 ```
 
 `flux-cli doctor` shows which unit file systemd loads for `fluxd.service`, and whether its program exists.
+It also checks that no other program uses UDP port 12100, the discovery port of `fluxd`.
 
 When `fluxd` does not answer, `flux-cli` tells you the cause:
 
@@ -124,8 +125,8 @@ FLUX_GUI=plugin flux-cli open notifications
 flux-cli discover
 flux-cli pair "Pixel 8"
 flux-cli pair invite --host desk-b
-flux-cli pair join 'flux1:…@desk-b:1716'
-flux-cli pair connect desk-b --id DEVICE_ID --port 1716
+flux-cli pair join 'flux1:…@desk-b:12100'
+flux-cli pair connect desk-b --id DEVICE_ID --port 12100
 flux-cli accept "Pixel 8"
 flux-cli accept DEVICE_ID 5EE6 825F 974E D59A
 flux-cli reject "Pixel 8"
@@ -267,8 +268,9 @@ flux-cli notify "Backup done" "412 files, 2.1 GB"
 
 `flux-cli ring` rings only a phone or a tablet.
 `flux-cli url` sends only an `http` or `https` URL with a host. The device shows the link in a notification and opens it after a tap.
-`flux-cli send` starts transfers and returns their count.
+`flux-cli send` queues files or folder archives and returns the transfer count.
 Inspect `transfers` in `flux-cli status --json` for completion.
+See [workflow controls](workflows.md) for the outbox, saved snippets, notification rules, device settings, and automation commands.
 `flux-cli clip` without text sends the desktop clipboard.
 `flux-cli url` opens an `http` or `https` address. On a computer, any other address is rejected.
 When the clipboard holds an image, the command sends the image and returns when the transfer ends.

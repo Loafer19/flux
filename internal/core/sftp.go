@@ -51,6 +51,13 @@ type browseSession struct {
 
 	// start is the time when the session began.
 	start time.Time
+
+	// ctx and fsys are the context and the folders of the session. They
+	// are nil until the session can serve a search.
+	ctx  context.Context
+	fsys *browseFS
+	// stopSearch stops the search that runs, or is nil.
+	stopSearch context.CancelFunc
 }
 
 // BrowseView is 1 Browse PC session for the window. Since is the start in
@@ -74,22 +81,32 @@ func (d *Daemon) browseViewLocked() []BrowseView {
 }
 
 // handleBrowseRequest answers flux.sftp.request from a Flux phone or a
-// desktop peer. The SFTP server does not listen on the public network.
+// desktop peer. A request with a search body runs a search in the session
+// of that device. The SFTP server does not listen on the public network.
 //
 // A phone or Mac opens a tunnel listener; fluxd connects out and runs SSH
 // inside the tunnel (firewall-friendly). A desktop peer cannot send
 // flux.tunnel without losing the peer role, so for peers this computer
 // listens with ListenPeer and the browsing desk dials in — same pattern as
-// peer remote desktop.
+// peer remote desktop. The offer sets search so Get files can query the
+// shared folders.
 func (d *Daemon) handleBrowseRequest(dev *Device, l *lan.Link, p *proto.Packet) {
 	var b struct {
-		Start bool `json:"startBrowsing"`
+		Start  bool          `json:"startBrowsing"`
+		Search *browseSearch `json:"search"`
 	}
-	if p.Decode(&b) != nil || !b.Start {
+	if p.Decode(&b) != nil {
+		return
+	}
+	if b.Search != nil {
+		d.searchBrowse(dev, l, *b.Search)
+		return
+	}
+	if !b.Start {
 		return
 	}
 	d.mu.Lock()
-	allowed := d.cfg.ShareHome && dev.Paired
+	allowed := d.cfg.ShareHome && dev.Paired && d.permittedLocked(dev.ID, "shareHome")
 	downloads := d.cfg.DownloadPath()
 	isPeer := dev.peer()
 	d.mu.Unlock()
@@ -112,14 +129,15 @@ func (d *Daemon) handleBrowseRequest(dev *Device, l *lan.Link, p *proto.Packet) 
 	for _, r := range fsys.roots {
 		roots, names = append(roots, r.path), append(names, r.name)
 	}
-	body := map[string]any{
+	offer := map[string]any{
 		"user": "flux", "password": password,
 		"path": fsys.start, "multiPaths": roots, "pathNames": names,
+		"search": true,
 	}
 	if l.CanTunnel() {
 		id := l.NewTunnelID()
-		body["tunnel"] = id
-		if err := l.Send(proto.New(proto.TypeSftp, body)); err != nil {
+		offer["tunnel"] = id
+		if err := l.Send(proto.New(proto.TypeSftp, offer)); err != nil {
 			l.CancelTunnel(id)
 			fsys.Close()
 			return
@@ -140,8 +158,8 @@ func (d *Daemon) handleBrowseRequest(dev *Device, l *lan.Link, p *proto.Packet) 
 		fsys.Close()
 		return
 	}
-	body["port"] = pl.Port()
-	if err := l.Send(proto.New(proto.TypeSftp, body)); err != nil {
+	offer["port"] = pl.Port()
+	if err := l.Send(proto.New(proto.TypeSftp, offer)); err != nil {
 		_ = pl.Close()
 		fsys.Close()
 		return
@@ -163,9 +181,12 @@ func (d *Daemon) startBrowse(dev *Device, l interface{ Done() <-chan struct{} },
 	fsys.allowed = func() bool {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		return d.cfg.ShareHome && dev.Paired && d.sessions.browse[n] == s && ctx.Err() == nil
+		return d.cfg.ShareHome && dev.Paired && d.permittedLocked(dev.ID, "shareHome") && d.sessions.browse[n] == s && ctx.Err() == nil
 	}
-	d.watchSession(ctx, cancel, dev, l, func() bool { return d.cfg.ShareHome })
+	d.mu.Lock()
+	s.ctx, s.fsys = ctx, fsys
+	d.mu.Unlock()
+	d.watchSession(ctx, cancel, dev, l, func() bool { return d.cfg.ShareHome && d.permittedLocked(dev.ID, "shareHome") })
 
 	go func() {
 		defer d.dropBrowse(n, s)

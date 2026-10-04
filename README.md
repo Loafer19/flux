@@ -4,7 +4,7 @@ Connect your Omarchy desktop to an Android phone, an iPhone, or a Mac over your 
 Share files, clipboard text, and clipboard images, read phone notifications, control media, and use your phone as a camera or microphone.
 
 Flux includes a CLI, a background daemon, a native Qt window, an Omarchy shell plugin, a native Android app, a native iOS app, and a native macOS app.
-`fluxd` listens on 1 TCP port from 1716 to 1764 and on UDP port 1716, and it also opens the connections to the devices itself.
+`fluxd` listens on 1 TCP port from 12100 to 12108 and on UDP port 12100, and it also opens the connections to the devices itself.
 So Flux works with the default Omarchy firewall, which blocks inbound traffic, and needs no new inbound rule.
 See [security](docs/security.md) for what a paired device can do and which settings limit it.
 
@@ -12,13 +12,15 @@ See [security](docs/security.md) for what a paired device can do and which setti
 https://github.com/user-attachments/assets/4b8445fe-6734-4100-b200-92f57e1b353a
 
 
-**[Install locally](docs/install.md)** · **[Set up Android](docs/android.md)** · **[Set up iOS](docs/ios.md)** · **[Set up macOS](docs/macos.md)** · **[Read the docs](docs/README.md)** · **[Use with agents](docs/agents.md)**
+**[Website](https://bjarneo.github.io/flux/)** · **[Install locally](docs/install.md)** · **[Set up Android](docs/android.md)** · **[Set up iOS](docs/ios.md)** · **[Set up macOS](docs/macos.md)** · **[Read the docs](docs/README.md)** · **[Use with agents](docs/agents.md)**
 
 ## What you can do
 
 | Task | Guide |
 | --- | --- |
 | Send files, clipboard text and images, and links between devices | [Everyday use](docs/features.md) |
+| Queue files offline, send folder archives, and save clipboard snippets | [Workflow controls](docs/workflows.md) |
+| Set device access, notification rules, and local automation | [Workflow controls](docs/workflows.md#per-device-access) |
 | Read notifications, send SMS, control media, and run desktop commands from your phone | [CLI reference](docs/cli.md) |
 | Sync Do Not Disturb and pause media during calls | [Phone integration](docs/features.md#calls) |
 | Scan text, send photos, and use the phone as a webcam or microphone | [Camera and streams](docs/camera.md) |

@@ -83,7 +83,7 @@ func splitHostPort(endpoint string) (string, int, error) {
 
 // MakeInvite builds an invite for this computer. host is the address the
 // other side must be able to reach: a Tailscale name or IP, or a LAN address
-// after both sides allow TCP 1716–1764 from each other. An empty host picks
+// after both sides allow TCP 12070–12108 from each other. An empty host picks
 // the only Tailscale IPv4 address when there is one.
 func (d *Daemon) MakeInvite(host string) (Invite, error) {
 	port := d.lanPort()

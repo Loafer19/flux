@@ -23,6 +23,7 @@ import (
 
 	"flux/internal/config"
 	"flux/internal/ipc"
+	"flux/internal/lan"
 	"flux/internal/proto"
 )
 
@@ -56,13 +57,18 @@ Commands:
                          SIDE is left, right, top, or bottom. edge off clears it.
   ring                   Ring the phone
   ping [MESSAGE]         Send a ping
-  send FILE...           Send files
+  send PATH...           Queue files or folders. Folders use ZIP archives
+  transfers [retry ID|cancel ID]  Show or control the outbox
   clip [TEXT]            Send the clipboard, or TEXT
+  snippets [search TEXT|save ID [DURATION]|remove ID|copy ID]  Manage saved clipboard entries
   url URL                Open an http or https address on the device
   sms NUMBER TEXT...     Send a text message through the phone
   notifications          List the phone notifications
   notifications clear    Dismiss the phone notifications, on the phone and here.
                          Ongoing notifications, such as a media player, stay
+  notification-rules     List rules. Actions: add APP MODE [DURATION], quiet START END, remove ID
+  device-settings [KEY true|false|inherit]  Set access for the selected device
+  automation [add EVENT COMMAND_ID [BELOW]|remove ID]  Manage local event rules
   notify TITLE [BODY]    Show a notification on the phone
   notify --run -- CMD…   Run CMD, then show on the phone how it ended. Exits with
                          the exit code of CMD. The phone gets only the program
@@ -144,8 +150,12 @@ func main() {
 		err = call("ping", map[string]any{"device": device, "message": strings.Join(args, " ")})
 	case "send":
 		err = send(device, args)
+	case "transfers":
+		err = transferCommand(args)
 	case "clip":
 		err = call("clipboard.send", map[string]any{"device": device, "text": strings.Join(args, " ")})
+	case "snippets":
+		err = snippetCommand(args)
 	case "url":
 		err = call("share.url", map[string]any{"device": device, "url": need(args, "URL")})
 	case "sms":
@@ -159,6 +169,12 @@ func main() {
 		} else {
 			err = notifications(device)
 		}
+	case "notification-rules":
+		err = notificationRulesCommand(device, args)
+	case "device-settings":
+		err = deviceSettingsCommand(device, args)
+	case "automation":
+		err = automationCommand(device, args)
 	case "notify":
 		err = notify(device, args)
 	case "commands":
@@ -323,6 +339,7 @@ type State struct {
 		App        string `json:"app"`
 		AppVersion string `json:"appVersion"`
 		AppUpdate  string `json:"appUpdate"`
+		OldApp     bool   `json:"oldApp"`
 		Battery    *struct {
 			Charge   int  `json:"charge"`
 			Charging bool `json:"charging"`
@@ -397,6 +414,9 @@ func printStatus(w io.Writer, s *State) {
 		fmt.Fprintf(w, "  %-22s %s\n", "", id)
 		if d.AppUpdate != "" {
 			fmt.Fprintf(w, "  %-22s Flux for Android %s is available. To send it, run: flux-cli --device %s update --phone\n", "", d.AppUpdate, d.ID)
+		}
+		if d.Paired && d.OldApp {
+			fmt.Fprintf(w, "  %-22s %s\n", "", oldAppFix(d.Name))
 		}
 	}
 }
@@ -513,7 +533,7 @@ func pairConnect(args []string) error {
 		return err
 	}
 	if port == 0 {
-		port = 1716
+		port = lan.MinTCPPort
 	}
 	fmt.Printf("Dialing %s:%d…\n", host, port)
 	if err := waitOnline(id); err != nil {
@@ -1009,7 +1029,7 @@ func send(device string, files []string) error {
 	if err := callInto("share.files", map[string]any{"device": device, "paths": paths}, &res); err != nil {
 		return err
 	}
-	fmt.Printf("Sending %d file(s)\n", len(res.Transfers))
+	fmt.Printf("Queued %d transfers\n", len(res.Transfers))
 	return nil
 }
 

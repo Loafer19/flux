@@ -69,6 +69,7 @@ data class HerdrState(
     val panes: List<HerdrTerminal> = emptyList(),
     val workspaces: List<HerdrWorkspace> = emptyList(),
     val kinds: List<String> = emptyList(),
+    val review: Boolean = false,
 ) {
     /** The agents with [AgentStatus.Blocked] first, then done, working, idle, and unknown. */
     val sorted: List<HerdrAgent> get() = sortAgents(agents)
@@ -92,12 +93,24 @@ data class HerdrOutput(
     val lines: List<TermLine> = emptyList(),
     val truncated: Boolean = false,
     val error: String? = null,
+    val request: Long? = null,
+    val view: String = "ansi",
+    val path: String = "",
 ) {
     val text: String = lines.joinToString("\n") { it.text }
 
     /** The numbered choices of the dialog at the end of the output. */
     val choices: List<AgentChoice> by lazy { findChoices(lines.map { it.text }) }
 }
+
+/**
+ * True when the choices of [out] take a tap. The choices take no tap while
+ * a reply is [sending]. After an answer to the output [answered], the
+ * choices wait for the next output that is not loading. Thus a second tap
+ * does not answer the next question.
+ */
+fun choicesOpen(out: HerdrOutput?, answered: HerdrOutput?, sending: Boolean): Boolean =
+    !sending && (answered == null || (out !== answered && out?.loading == false))
 
 /**
  * The last reply to a pane. [action] is "keys" or "prompt". [sending] is
@@ -229,6 +242,7 @@ fun parseHerdrState(body: JsonObject): HerdrState? {
         panes = if (terminals) panes else emptyList(),
         workspaces = if (control) workspaces else emptyList(),
         kinds = if (control) kinds else emptyList(),
+        review = enabled && (body.bool("review") ?: false),
     )
 }
 
@@ -268,6 +282,9 @@ fun parseHerdrOutput(body: JsonObject): HerdrOutput? {
         lines = if (error == null) tidyLines(parseAnsi(text, HERDR_MAX_LINES)) else emptyList(),
         truncated = (body.bool("truncated") ?: false) || cut,
         error = error,
+        request = body.long("request"),
+        view = body.str("view") ?: "ansi",
+        path = body.str("path").orEmpty(),
     )
 }
 

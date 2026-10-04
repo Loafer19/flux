@@ -3,9 +3,11 @@ import QtQuick.Layouts
 import ".."
 import "../components"
 
-// This computer and the paired devices. Devices-first: pair and relay sit below.
-// Overview owns peer settings (edges, clipboard) and desk↔desk remote desktop.
-// Browse peer home lives on Overview and Files — not on Network cards.
+// This computer, Devices list, and Pair (Invite/Join) as a Network segment —
+// not a long scroll under Devices. Relay stays advanced/collapsed.
+// Overview still owns peer settings (edges, clipboard, Home share) and desk
+// remote. Browse peer home lives on Overview and Files — not on Network cards.
+// Self is only the This computer card, never a peer row like other desks.
 Item {
   id: root
   property var view
@@ -30,11 +32,13 @@ Item {
     if (!view || !view.backend || !view.backend.state) return null
     return view.backend.state.peerDesktop || null
   }
+  // Network segment: "devices" | "pair"
+  property string networkPane: "devices"
   // Invite / join state for discovery-less first pairing.
   property string inviteCode: ""
   property string inviteHost: ""
-  property int invitePort: 0
   property string inviteName: ""
+  property int invitePort: 0
   property string hostDraft: ""
   property string joinDraft: ""
   property string joinStatus: ""
@@ -68,6 +72,35 @@ Item {
       text: label
       color: on ? Theme.fg : Theme.dim
       font.pixelSize: 12
+    }
+  }
+
+  // Segment chip for Devices | Pair.
+  component PaneChip: Rectangle {
+    id: chip
+    property string key: ""
+    property string label: ""
+    readonly property bool on: root.networkPane === key
+    signal activated()
+    height: chipLabel.implicitHeight + 14
+    width: chipLabel.implicitWidth + 24
+    color: on ? Theme.alpha(Theme.accent, 0.18) : (chipArea.containsMouse ? Theme.alpha(Theme.fg, 0.06) : "transparent")
+    border.width: 1
+    border.color: on ? Theme.alpha(Theme.accent, 0.45) : Theme.bg3
+    Txt {
+      id: chipLabel
+      anchors.centerIn: parent
+      text: chip.label
+      color: chip.on ? Theme.accent : Theme.fg
+      font.pixelSize: 13
+      font.weight: chip.on ? Font.DemiBold : Font.Normal
+    }
+    MouseArea {
+      id: chipArea
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: chip.activated()
     }
   }
 
@@ -186,6 +219,7 @@ Item {
       root.pendingJoinId = ""
       joinWatch.stop()
       root.view.toast(root.joinStatus)
+      root.networkPane = "devices"
       return
     }
     if (!d.online) return
@@ -272,7 +306,7 @@ Item {
     width: parent.width
     spacing: 18
 
-    // ── 1. THIS COMPUTER (rich — device context lives here, not in header) ──
+    // ── 1. THIS COMPUTER (never listed as a peer row) ──
     SectionLabel { text: "THIS COMPUTER" }
 
     Card {
@@ -317,191 +351,199 @@ Item {
       }
     }
 
-    // ── 2. DEVICES (moved up) ──
-    SectionLabel { text: "DEVICES" }
-
-    Txt {
-      visible: root.paired.length === 0
-      width: parent.width
-      wrapMode: Text.Wrap
-      text: "No paired devices yet. Pair a phone on the LAN, or add a computer below."
-      color: Theme.dim
+    // ── Segment: Devices | Pair ──
+    Row {
+      spacing: 8
+      PaneChip {
+        key: "devices"
+        label: "Devices"
+        onActivated: root.networkPane = "devices"
+      }
+      PaneChip {
+        key: "pair"
+        label: "Pair"
+        onActivated: root.networkPane = "pair"
+      }
     }
 
-    Repeater {
-      model: root.ordered
-      delegate: Card {
-        id: card
-        required property var modelData
-        readonly property bool peer: modelData.role === "peer"
-        readonly property bool viewing: root.viewingPeer(modelData)
-        readonly property string path: root.pathLabel(modelData)
-        width: col.width
-        implicitHeight: devCol.implicitHeight + 36
+    // ── Devices pane ──
+    Column {
+      visible: root.networkPane === "devices"
+      width: parent.width
+      spacing: 18
 
-        Column {
-          id: devCol
-          x: 18
-          y: 18
-          width: parent.width - 36
-          spacing: 6
-          RowLayout {
-            width: parent.width
-            spacing: 10
-            Icon {
-              Layout.alignment: Qt.AlignVCenter
-              Layout.preferredWidth: 18
-              Layout.preferredHeight: 18
-              name: Fmt.kindIcon(modelData.type)
-              size: 18
-              color: Theme.fg
-            }
-            Txt {
-              Layout.fillWidth: true
-              Layout.alignment: Qt.AlignVCenter
-              text: modelData.name || "Device"
-              font.pixelSize: 16
-              font.weight: Font.DemiBold
-              elide: Text.ElideRight
-            }
-          }
-          // Type · path · IP · Online/Offline
-          RowLayout {
-            width: parent.width
-            spacing: 0
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              text: root.roleLine(modelData)
-              color: Theme.dim
-              elide: Text.ElideRight
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              visible: card.path !== "" && !!modelData.online
-              text: " · " + card.path
-              color: Theme.dim
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              visible: !!modelData.ip
-              text: " · " + (modelData.ip || "")
-              color: Theme.dim
-              elide: Text.ElideRight
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              text: " · "
-              color: Theme.dim
-            }
-            Txt {
-              Layout.alignment: Qt.AlignVCenter
-              text: modelData.online ? "Online" : "Offline"
-              color: modelData.online ? Theme.ok : Theme.dim
-            }
-            Item { Layout.fillWidth: true }
-          }
-          // Desk peer: Stop only while viewing another desk's desktop (View is on Overview).
+      SectionLabel { text: "DEVICES" }
+
+      Txt {
+        visible: root.paired.length === 0
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "No paired devices yet. Open Pair to invite or join another computer, or use Pair new device in the sidebar for LAN phones."
+        color: Theme.dim
+      }
+
+      Txt {
+        visible: root.paired.length === 0
+        color: Theme.accent
+        font.pixelSize: 12
+        text: "Go to Pair →"
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.networkPane = "pair"
+        }
+      }
+
+      Repeater {
+        model: root.ordered
+        delegate: Card {
+          id: card
+          required property var modelData
+          readonly property bool peer: modelData.role === "peer"
+          readonly property bool viewing: root.viewingPeer(modelData)
+          readonly property string path: root.pathLabel(modelData)
+          width: col.width
+          implicitHeight: devCol.implicitHeight + 36
+
           Column {
-            visible: card.peer && card.viewing
-            width: parent.width
-            spacing: 8
+            id: devCol
+            x: 18
+            y: 18
+            width: parent.width - 36
+            spacing: 6
             RowLayout {
               width: parent.width
-              spacing: 8
+              spacing: 10
+              Icon {
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredWidth: 18
+                Layout.preferredHeight: 18
+                name: Fmt.kindIcon(modelData.type)
+                size: 18
+                color: Theme.fg
+              }
               Txt {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                text: {
-                  var pd = root.peerDesktop || ({})
-                  var bits = ["Viewing"]
-                  if (pd.monitor) bits.push(pd.monitor)
-                  if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
-                  if (pd.player) bits.push(pd.player)
-                  return bits.join(" · ")
-                }
-                color: Theme.fg
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
+                text: modelData.name || "Device"
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
               }
-              OutlineButton {
-                text: "Stop"
-                icon: "stop"
-                onClicked: root.stopPeerView()
+            }
+            // Type · path · IP · Online/Offline
+            RowLayout {
+              width: parent.width
+              spacing: 0
+              Txt {
+                Layout.alignment: Qt.AlignVCenter
+                text: root.roleLine(modelData)
+                color: Theme.dim
+                elide: Text.ElideRight
+              }
+              Txt {
+                Layout.alignment: Qt.AlignVCenter
+                visible: card.path !== "" && !!modelData.online
+                text: " · " + card.path
+                color: Theme.dim
+              }
+              Txt {
+                Layout.alignment: Qt.AlignVCenter
+                visible: !!modelData.ip
+                text: " · " + (modelData.ip || "")
+                color: Theme.dim
+                elide: Text.ElideRight
+              }
+              Txt {
+                Layout.alignment: Qt.AlignVCenter
+                text: " · "
+                color: Theme.dim
+              }
+              Txt {
+                Layout.alignment: Qt.AlignVCenter
+                text: modelData.online ? "Online" : "Offline"
+                color: modelData.online ? Theme.ok : Theme.dim
+              }
+              Item { Layout.fillWidth: true }
+            }
+            // Desk peer: Stop only while viewing another desk's desktop (View is on Overview).
+            Column {
+              visible: card.peer && card.viewing
+              width: parent.width
+              spacing: 8
+              RowLayout {
+                width: parent.width
+                spacing: 8
+                Txt {
+                  Layout.fillWidth: true
+                  Layout.alignment: Qt.AlignVCenter
+                  text: {
+                    var pd = root.peerDesktop || ({})
+                    var bits = ["Viewing"]
+                    if (pd.monitor) bits.push(pd.monitor)
+                    if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
+                    if (pd.player) bits.push(pd.player)
+                    return bits.join(" · ")
+                  }
+                  color: Theme.fg
+                  font.pixelSize: 12
+                  wrapMode: Text.Wrap
+                }
+                OutlineButton {
+                  text: "Stop"
+                  icon: "stop"
+                  onClicked: root.stopPeerView()
+                }
               }
             }
           }
-        }
 
-        MouseArea {
-          anchors.fill: parent
-          z: -1
-          cursorShape: Qt.PointingHandCursor
-          onClicked: {
-            root.view.selectedId = modelData.id
-            root.view.go("overview")
+          MouseArea {
+            anchors.fill: parent
+            z: -1
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              root.view.selectedId = modelData.id
+              root.view.go("overview")
+            }
           }
         }
       }
     }
 
-    // ── 3. ADD A COMPUTER (pairing) ──
-    SectionLabel { text: "ADD A COMPUTER" }
-
-    Card {
+    // ── Pair pane (Invite / Join) ──
+    Column {
+      visible: root.networkPane === "pair"
       width: parent.width
-      implicitHeight: inviteCol.implicitHeight + 36
-      Column {
-        id: inviteCol
-        x: 18
-        y: 18
-        width: parent.width - 36
-        spacing: 10
+      spacing: 18
 
-        Txt {
-          width: parent.width
-          text: "Share a flux1 invite when the other desk is not discovered. Prefer LAN or Tailscale; enable Relay below only if there is no direct path. Confirm the matching key on both sides."
-          color: Theme.dim
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
-        }
+      SectionLabel { text: "PAIR" }
 
-        Txt {
-          text: "Share invite"
-          font.weight: Font.DemiBold
-        }
-        Txt {
-          width: parent.width
-          text: "Host the other side can reach (Tailscale name or IP). Leave empty to auto-pick when possible."
-          color: Theme.dim
-          font.pixelSize: 11
-          wrapMode: Text.Wrap
-        }
-        RowLayout {
-          width: parent.width
-          spacing: 8
-          Field {
-            id: hostField
-            Layout.fillWidth: true
-            placeholder: "e.g. dragon or 100.99.87.88"
-            onAccepted: root.generateInvite()
-          }
-          AccentButton {
-            text: root.inviting ? "…" : "Create invite"
-            icon: "key"
-            active: !root.inviting
-            onClicked: root.generateInvite()
-          }
-        }
-
+      Card {
+        width: parent.width
+        implicitHeight: inviteCol.implicitHeight + 36
         Column {
-          visible: root.inviteCode !== ""
-          width: parent.width
+          id: inviteCol
+          x: 18
+          y: 18
+          width: parent.width - 36
           spacing: 10
+
           Txt {
             width: parent.width
-            text: root.inviteName !== ""
-                  ? ("Invite for " + root.inviteName + (root.inviteHost ? (" @ " + root.inviteHost + (root.invitePort ? (":" + root.invitePort) : "")) : ""))
-                  : "Invite"
+            text: "Share a flux1 invite when the other desk is not discovered. Prefer LAN or Tailscale; enable Relay below only if there is no direct path. Confirm the matching key on both sides."
+            color: Theme.dim
+            font.pixelSize: 12
+            wrapMode: Text.Wrap
+          }
+
+          Txt {
+            text: "Share invite"
+            font.weight: Font.DemiBold
+          }
+          Txt {
+            width: parent.width
+            text: "Host the other side can reach (Tailscale name or IP). Leave empty to auto-pick when possible."
             color: Theme.dim
             font.pixelSize: 11
             wrapMode: Text.Wrap
@@ -510,87 +552,118 @@ Item {
             width: parent.width
             spacing: 8
             Field {
+              id: hostField
               Layout.fillWidth: true
-              text: root.inviteCode
-              input.readOnly: true
+              placeholder: "e.g. dragon or 100.99.87.88"
+              onAccepted: root.generateInvite()
             }
-            OutlineButton {
-              icon: "copy"
-              text: "Copy"
-              onClicked: root.copyText(root.inviteCode)
-            }
-            OutlineButton {
-              icon: "close"
-              text: "Clear"
-              onClicked: root.clearInvite()
+            AccentButton {
+              text: root.inviting ? "…" : "Create invite"
+              icon: "key"
+              active: !root.inviting
+              onClicked: root.generateInvite()
             }
           }
-          QrImage {
-            id: inviteQr
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 168
-            height: 168
-            text: root.inviteCode
-            // Fixed black-on-white so phone cameras can scan in any theme.
-            dark: "#111111"
-            light: "#ffffff"
+
+          Column {
+            visible: root.inviteCode !== ""
+            width: parent.width
+            spacing: 10
+            Txt {
+              width: parent.width
+              text: root.inviteName !== ""
+                    ? ("Invite for " + root.inviteName + (root.inviteHost ? (" @ " + root.inviteHost + (root.invitePort ? (":" + root.invitePort) : "")) : ""))
+                    : "Invite"
+              color: Theme.dim
+              font.pixelSize: 11
+              wrapMode: Text.Wrap
+            }
+            RowLayout {
+              width: parent.width
+              spacing: 8
+              Field {
+                Layout.fillWidth: true
+                text: root.inviteCode
+                input.readOnly: true
+              }
+              OutlineButton {
+                icon: "copy"
+                text: "Copy"
+                onClicked: root.copyText(root.inviteCode)
+              }
+              OutlineButton {
+                icon: "close"
+                text: "Clear"
+                onClicked: root.clearInvite()
+              }
+            }
+            QrImage {
+              id: inviteQr
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: 168
+              height: 168
+              text: root.inviteCode
+              // Fixed black-on-white so phone cameras can scan in any theme.
+              dark: "#111111"
+              light: "#ffffff"
+            }
+            Txt {
+              width: parent.width
+              text: inviteQr.ready
+                    ? "Scan or paste on the other computer: Network → Pair → Join, then accept the matching key."
+                    : "On the other computer: Network → Pair → paste invite → Join, then accept the matching key."
+              color: Theme.dim
+              font.pixelSize: 11
+              wrapMode: Text.Wrap
+            }
+          }
+
+          Rectangle {
+            width: parent.width
+            height: 1
+            color: Theme.bg3
+          }
+
+          Txt {
+            text: "Join with invite"
+            font.weight: Font.DemiBold
           }
           Txt {
             width: parent.width
-            text: inviteQr.ready
-                  ? "Scan or paste on the other computer: Network → Join, then accept the matching key."
-                  : "On the other computer: Network → paste invite → Join, then accept the matching key."
+            text: "Paste a flux1 invite from the other desk, then Join."
             color: Theme.dim
             font.pixelSize: 11
             wrapMode: Text.Wrap
           }
-        }
-
-        Rectangle {
-          width: parent.width
-          height: 1
-          color: Theme.bg3
-        }
-
-        Txt {
-          text: "Join with invite"
-          font.weight: Font.DemiBold
-        }
-        Txt {
-          width: parent.width
-          text: "Paste a flux1 invite from the other desk, then Join."
-          color: Theme.dim
-          font.pixelSize: 11
-          wrapMode: Text.Wrap
-        }
-        RowLayout {
-          width: parent.width
-          spacing: 8
-          Field {
-            id: joinField
-            Layout.fillWidth: true
-            placeholder: "flux1:…@host:port"
-            onAccepted: root.joinInvite()
+          RowLayout {
+            width: parent.width
+            spacing: 8
+            Field {
+              id: joinField
+              Layout.fillWidth: true
+              placeholder: "flux1:…@host:port"
+              onAccepted: root.joinInvite()
+            }
+            AccentButton {
+              text: root.joining ? "…" : "Join"
+              icon: "link"
+              active: !root.joining
+              onClicked: root.joinInvite()
+            }
           }
-          AccentButton {
-            text: root.joining ? "…" : "Join"
-            icon: "link"
-            active: !root.joining
-            onClicked: root.joinInvite()
+          Txt {
+            visible: root.joinStatus !== ""
+            width: parent.width
+            text: root.joinStatus
+            color: Theme.accent
+            font.pixelSize: 12
+            wrapMode: Text.Wrap
           }
-        }
-        Txt {
-          visible: root.joinStatus !== ""
-          width: parent.width
-          text: root.joinStatus
-          color: Theme.accent
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
         }
       }
     }
 
-    // ── 4. RELAY · OPTIONAL (collapsed when off) ──
+    // ── RELAY · OPTIONAL (collapsed when off) ──
     SectionLabel { text: "RELAY · OPTIONAL" }
 
     Card {

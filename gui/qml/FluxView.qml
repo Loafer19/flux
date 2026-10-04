@@ -426,17 +426,16 @@ Item {
             width: 32
             height: 1
             color: Theme.bg3
-            // Keep page icons when a device is selected — also on Network —
-            // so Overview / Files stay reachable for desk peers like dragon.
-            visible: !!root.dev
+            // Device feature tabs only when a device page is active — not on Network.
+            visible: !!root.dev && !root.networkTab
           }
           Repeater {
-            model: root.dev ? root.visibleTabs : []
+            model: (root.dev && !root.networkTab) ? root.visibleTabs : []
             delegate: RailButton {
               required property var modelData
               icon: modelData.icon
               tip: modelData.label
-              selected: !root.networkTab && root.currentTab && root.currentTab.key === modelData.key
+              selected: root.currentTab && root.currentTab.key === modelData.key
               onClicked: root.tab = modelData.key
             }
           }
@@ -687,25 +686,25 @@ Item {
             topPadding: 2
             leftPadding: 4
             rightPadding: 4
-            text: "Searching the LAN. For another computer over Tailscale, open Network and share an invite."
+            text: "Searching the LAN. For another computer over Tailscale, open Network → Pair."
             color: Theme.dim
             font.pixelSize: 11
             wrapMode: Text.Wrap
           }
         }
 
-        // Tabs stay visible whenever a device is selected — including on Network —
-        // so Overview / Files are one click from a desk peer without re-picking it.
+        // Device feature tabs only off Network. On Network the rail is Network
+        // chrome + devices / Pair — no Overview / Files lingering.
         Column {
           width: parent.width
           spacing: 2
-          visible: !!root.dev
+          visible: !!root.dev && !root.networkTab
           Repeater {
             model: root.visibleTabs
             delegate: Rectangle {
               required property var modelData
               required property int index
-              readonly property bool sel: !root.networkTab && root.currentTab && root.currentTab.key === modelData.key
+              readonly property bool sel: root.currentTab && root.currentTab.key === modelData.key
               width: side.width
               height: tabLabel.implicitHeight + 16
               color: sel ? Theme.alpha(Theme.accent, 0.18) : (tabArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")

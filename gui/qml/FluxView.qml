@@ -20,15 +20,6 @@ Item {
       showPage(fluxInitialPage)
   }
 
-  readonly property var tabs: [
-    { key: "overview", label: "Overview", page: "Overview", icon: "dashboard" },
-    { key: "clipboard", label: "Clipboard", page: "Clipboard", icon: "clipboard" },
-    { key: "files", label: "Files", page: "Files", icon: "transfers" },
-    { key: "notifications", label: "Notifications", page: "Notifications", icon: "bell" },
-    { key: "messages", label: "Messages", page: "Messages", icon: "message" },
-    { key: "commands", label: "Phone commands", page: "PhoneCommands", icon: "console" }
-  ]
-
   // The layout follows the width of the window. Wide shows the full
   // sidebar. Below 1000 px, a rail of icons takes its place. Below 680 px,
   // there is no sidebar. The rail and the narrow layout open the full
@@ -45,130 +36,62 @@ Item {
   // The header shows icon buttons with no text when the window is narrow.
   readonly property bool compactHeader: width - sidebarSpace < 760
 
-  property string tab: "overview"
-  onTabChanged: {
-    drawerOpen = false
-    if (tab !== "network") pairPane = false
+  // Device, page, and pair. The window draws them.
+  FluxRules {
+    id: rules
+    backend: root.backend
+    host: root
   }
-  property string selectedId: ""
-  // Pair is open. Pair new device, the rail plus button, and key p open it.
-  property bool pairPane: false
-  property string justPaired: ""
-  property var prevPairStates: ({})
+
+  property alias tab: rules.tab
+  onTabChanged: drawerOpen = false
+  property alias selectedId: rules.selectedId
+  property alias pairPane: rules.pairPane
+  property alias justPaired: rules.justPaired
   // The device that the unpair confirm dialog acts on. Null when it is closed.
-  property var unpairTarget: null
+  property alias unpairTarget: rules.unpairTarget
   // The scrim takes the keyboard while the dialog is open, so give it back to
   // the shortcuts when it closes.
   onUnpairTargetChanged: if (!unpairTarget) forceActiveFocus()
 
-  readonly property bool daemonUp: !!backend && backend.connected
-  readonly property var allDevices: backend ? (backend.devices || []) : []
-  readonly property var paired: allDevices.filter(d => d.paired)
-  readonly property var discovered: allDevices.filter(d => !d.paired && d.online && d.pairState !== "incoming" && d.pairState !== "confirm")
-  // The pairings that wait for the user of this computer: a pair request of
-  // a device, and a pairing that this computer started and the device
-  // accepted ("confirm").
-  readonly property var incoming: allDevices.filter(d => d.pairState === "incoming" || d.pairState === "confirm")
-  readonly property var requested: allDevices.find(d => d.pairState === "requested") || null
-  // The fields of the pair requests and of the discovered devices that the
-  // sidebar shows. As for pairedRows, the text changes only when 1 of these
-  // fields changes, so a state event does not build a card or a row again
-  // under the pointer.
-  readonly property string incomingText: JSON.stringify(incoming.map(d => ({
-    id: d.id, name: d.name, ip: d.ip || "", pairKey: d.pairKey || "", pairState: d.pairState
-  })))
-  readonly property var incomingRows: JSON.parse(incomingText)
-  readonly property string discoveredText: JSON.stringify(discovered.map(d => ({
-    id: d.id, name: d.name, type: d.type, ip: d.ip || "", fingerprint: d.fingerprint || "",
-    pairState: d.pairState, pairKey: d.pairKey || "", twin: twinText(d)
-  })))
-  readonly property var discoveredRows: JSON.parse(discoveredText)
-  // The pair requests that showed, by device ID: since is the time in ms at
-  // which the request first showed, and until is the time at which it
-  // stopped showing, or 0 while it is open. An entry stays for requestQuiet
-  // after the request stopped showing, so a device that withdraws its
-  // request and sends it again does not count as new.
-  property var requestShown: ({})
-  readonly property int requestQuiet: 5 * 60 * 1000
-  // The sidebar shows 1 pair request: the oldest one that is still open.
-  // A later request does not replace the card under the pointer.
-  readonly property var pairRequest: {
-    var best = null
-    var bestAt = 0
-    for (var i = 0; i < incomingRows.length; i++) {
-      var r = incomingRows[i]
-      var e = Fmt.lookup(requestShown, r.id)
-      var at = e ? e.since : Number.MAX_VALUE
-      if (!best || at < bestAt) {
-        best = r
-        bestAt = at
-      }
-    }
-    return best
-  }
-  // The fields of the paired devices that the device rows and the rail
-  // show. The text changes only when 1 of these fields changes, so a new
-  // notification or message does not build the rows again.
-  readonly property string pairedRowsText: JSON.stringify(paired.map(d => ({
-    id: d.id, name: d.name, type: d.type, online: !!d.online, paired: !!d.paired,
-    battery: d.battery || null, ip: d.ip || "", path: d.path || ""
-  })))
-  readonly property var pairedRows: JSON.parse(pairedRowsText)
-  readonly property var dev: {
-    for (var i = 0; i < paired.length; i++)
-      if (paired[i].id === selectedId) return paired[i]
-    return paired.length > 0 ? paired[0] : null
-  }
-  readonly property bool devOnline: !!dev && !!dev.online
-  readonly property string devName: dev ? (dev.name || "device") : "device"
-  readonly property var visibleTabs: tabs.filter(t => tabAllowed(t.key))
-  readonly property var currentTab: {
-    if (tab === "network" || tab === "computer") return null
-    for (var i = 0; i < visibleTabs.length; i++)
-      if (visibleTabs[i].key === tab) return visibleTabs[i]
-    return visibleTabs.length > 0 ? visibleTabs[0] : null
-  }
-  readonly property bool networkTab: tab === "network"
-  readonly property bool computerTab: tab === "computer"
-  // Pair and This computer are not a selected device.
-  readonly property bool deskTab: networkTab || computerTab
-  readonly property var selfDevice: backend ? (backend.selfDevice || {}) : {}
-  // The computer whose desktop this window is showing, or "".
-  readonly property string viewingId: {
-    var desk = backend && backend.state ? backend.state.peerDesktop : null
-    return desk && desk.from ? desk.from : ""
-  }
+  property alias daemonUp: rules.daemonUp
+  property alias allDevices: rules.allDevices
+  property alias paired: rules.paired
+  property alias discovered: rules.discovered
+  property alias incoming: rules.incoming
+  property alias requested: rules.requested
+  property alias incomingRows: rules.incomingRows
+  property alias requestShown: rules.requestShown
+  property alias requestQuiet: rules.requestQuiet
+  property alias discoveredRows: rules.discoveredRows
+  property alias pairRequest: rules.pairRequest
+  property alias pairedRows: rules.pairedRows
+  property alias dev: rules.dev
+  property alias devOnline: rules.devOnline
+  property alias devName: rules.devName
+  property alias visibleTabs: rules.visibleTabs
+  property alias currentTab: rules.currentTab
+  property alias networkTab: rules.networkTab
+  property alias computerTab: rules.computerTab
+  property alias deskTab: rules.deskTab
+  property alias selfDevice: rules.selfDevice
+  property alias viewingId: rules.viewingId
 
   focus: true
 
-  function has(plugin) {
-    if (!dev || !dev.plugins || dev.plugins.length === 0) return true
-    return dev.plugins.indexOf(plugin) >= 0
+  function has(plugin) { return rules.has(plugin) }
+  function go(key) { rules.go(key) }
+  function showPage(key) { return rules.showPage(key) }
+  function selectOffset(n) { rules.selectOffset(n) }
+  function ring() { rules.ring() }
+  function sendClipboard() { rules.sendClipboard() }
+  function unpair() { rules.unpair() }
+  function confirmUnpair() { rules.confirmUnpair() }
+  function openPair() {
+    rules.openPair()
+    drawerOpen = false
   }
-
-  function tabAllowed(key) {
-    if (key === "messages") return has("sms")
-    if (key === "commands") return !dev || dev.role !== "peer"
-    return true
-  }
-
-  function go(key) {
-    if (tabAllowed(key)) tab = key
-  }
-
-  function showPage(key) {
-    if (key === "network" || key === "computer") {
-      root.tab = key
-      return true
-    }
-    for (var i = 0; i < tabs.length; i++) {
-      if (tabs[i].key === key) {
-        go(key)
-        return true
-      }
-    }
-    return false
-  }
+  function leavePair() { rules.leavePair() }
 
   function toast(text) { toastBox.show(text) }
 
@@ -183,50 +106,6 @@ Item {
         return
       }
       if (cb) cb(result)
-    })
-  }
-
-  function selectOffset(n) {
-    if (paired.length === 0) return
-    var i = 0
-    for (var j = 0; j < paired.length; j++) if (dev && paired[j].id === dev.id) i = j
-    i = Math.max(0, Math.min(paired.length - 1, i + n))
-    selectedId = paired[i].id
-  }
-
-  function ring() {
-    if (!dev) return
-    if (!dev.online) {
-      toast(devName + " is offline")
-      return
-    }
-    call("ring", { device: dev.id }, function () { toast("Ringing " + root.devName + "…") })
-  }
-
-  function sendClipboard() {
-    if (!dev) return
-    if (!dev.online) {
-      toast(devName + " is offline")
-      return
-    }
-    call("clipboard.send", { device: dev.id }, function () { toast("Clipboard sent to " + root.devName) })
-  }
-
-  // Opens the confirm dialog for the selected device.
-  function unpair() {
-    if (!dev) return
-    unpairTarget = dev
-  }
-
-  // Removes the trust on this computer and tells the device, after the
-  // confirm dialog. The row disappears when fluxd sends the new state.
-  function confirmUnpair() {
-    var target = unpairTarget
-    unpairTarget = null
-    if (!target) return
-    call("pair.unpair", { device: target.id }, function () {
-      toast((target.name || "Device") + " unpaired")
-      if (selectedId === target.id) selectedId = ""
     })
   }
 
@@ -245,78 +124,13 @@ Item {
   }
 
   // A new pair request scrolls the sidebar to the top, where the card is.
-  // The card shows only in the full sidebar, so a narrow window opens the
-  // drawer. This happens only for a device whose request did not show in
-  // the last requestQuiet, so a device that withdraws its request and sends
-  // it again does not open the drawer again or move the sidebar.
-  onIncomingRowsChanged: {
-    var now = Date.now()
-    var open = {}
-    incomingRows.forEach(d => { open[d.id] = true })
-    var shown = {}
-    for (var id in requestShown) {
-      var e = requestShown[id]
-      var isOpen = !!Fmt.lookup(open, id)
-      if (!e.until) shown[id] = isOpen ? e : { since: e.since, until: now }
-      else if (now - e.until < requestQuiet) shown[id] = isOpen ? { since: now, until: 0 } : e
+  // A narrow window opens the drawer. Rules decides when the request is new.
+  Connections {
+    target: rules
+    function onFreshPairRequest() {
+      sideFlick.contentY = 0
+      if (!root.wideLayout) root.drawerOpen = true
     }
-    var fresh = false
-    for (var rid in open) {
-      if (Fmt.lookup(shown, rid)) continue
-      shown[rid] = { since: now, until: 0 }
-      fresh = true
-    }
-    requestShown = shown
-    if (!fresh) return
-    sideFlick.contentY = 0
-    if (!wideLayout) drawerOpen = true
-  }
-
-  // A note for a discovered device with the name of another device, or "".
-  // A device on the network can copy the name of a phone of the user.
-  function twinText(d) {
-    var key = Fmt.nameKey(d.name)
-    var others = allDevices.filter(o => o.id !== d.id && Fmt.nameKey(o.name) === key)
-    if (others.length === 0) return ""
-    return others.some(o => o.paired) ? "Same name as a paired device" : "Same name as another device"
-  }
-
-  // Opens Pair and asks fluxd to search this network again.
-  function openPair() {
-    pairPane = true
-    tab = "network"
-    drawerOpen = false
-    call("discover", {})
-  }
-
-  // Leaves Pair. A selected device opens on Overview. With no device,
-  // that tab has nothing to show, so the empty page stays.
-  function leavePair() {
-    pairPane = false
-    if (tab === "network") tab = "overview"
-  }
-
-  onAllDevicesChanged: {
-    var next = {}
-    for (var i = 0; i < allDevices.length; i++) {
-      var d = allDevices[i]
-      var before = prevPairStates[d.id]
-      if (before !== undefined && before !== "paired" && d.pairState === "paired") {
-        justPaired = d.name
-        selectedId = d.id
-        if (pairPane) tab = "overview"
-        pairPane = false
-        pairedTimer.restart()
-      }
-      next[d.id] = d.pairState
-    }
-    prevPairStates = next
-  }
-
-  Timer {
-    id: pairedTimer
-    interval: 3000
-    onTriggered: root.justPaired = ""
   }
 
   Connections {

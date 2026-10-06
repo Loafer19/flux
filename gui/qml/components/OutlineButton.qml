@@ -15,6 +15,8 @@ Rectangle {
   property color textColor: Theme.fg
   property color iconColor: textColor
   property bool active: true
+  // Spins the icon. The button stays clickable.
+  property bool busy: false
   property int fontWeight: Font.Normal
   signal clicked()
   activeFocusOnTab: active
@@ -35,11 +37,21 @@ Rectangle {
     anchors.centerIn: parent
     spacing: 7
     Icon {
+      id: glyph
       visible: root.icon !== ""
       anchors.verticalCenter: parent.verticalCenter
       name: root.icon
       size: root.fontSize + 2
       color: root.iconColor
+      transformOrigin: Item.Center
+      RotationAnimator on rotation {
+        running: root.busy && root.icon !== ""
+        from: 0
+        to: 360
+        duration: 600
+        loops: Animation.Infinite
+        onRunningChanged: if (!running) glyph.rotation = 0
+      }
     }
     Txt {
       visible: root.text !== ""

@@ -11,354 +11,62 @@ Item {
   id: root
   property var view
   property bool fillHeight: false
-  readonly property var dev: view ? view.dev : null
-  readonly property bool online: !!dev && !!dev.online
-  readonly property bool peer: !!dev && dev.role === "peer"
-  readonly property var settings: view && view.backend ? (view.backend.settings || ({})) : ({})
-  readonly property string edgeSide: root.edgeSideFor(root.dev)
-  readonly property var notifs: dev && dev.notifications ? dev.notifications.slice(0, 3) : []
-  // Agents on this computer. A blocked agent waits for a person. A done
-  // agent has finished. Working and idle agents stay off this page.
-  readonly property var herdr: view && view.backend && view.backend.state ? (view.backend.state.herdr || null) : null
-  readonly property var waitingAgents: {
-    var list = root.herdr && root.herdr.agents ? root.herdr.agents : []
-    var out = []
-    for (var i = 0; i < list.length; i++) {
-      var item = list[i]
-      var status = String(item && item.status || "")
-      if (status === "blocked" || status === "done") out.push(item)
-    }
-    return out
-  }
-
-  function agentWaitText(agent) {
-    var name = (agent && agent.agent) ? agent.agent : "Agent"
-    var title = agent ? (agent.title || agent.project || "") : ""
-    var state = agent && agent.status === "blocked" ? "needs input" : "finished"
-    return title !== "" ? name + " · " + title + " · " + state : name + " · " + state
-  }
-  // The phone camera as a webcam on this computer. Null when it is not used.
-  readonly property var webcam: view && view.backend && view.backend.state ? (view.backend.state.webcam || null) : null
-  // The phone microphone and the phone screen mirror. Null when not used.
-  readonly property var mic: view && view.backend && view.backend.state ? (view.backend.state.mic || null) : null
-  readonly property var screen: view && view.backend && view.backend.state ? (view.backend.state.screen || null) : null
-  // The remote desktop of this computer on a device. Null when not used.
-  readonly property var desktop: view && view.backend && view.backend.state ? (view.backend.state.desktop || null) : null
-  // Desk↔desk view of the selected peer (desktop.view). Null when idle.
-  readonly property var peerDesktop: view && view.backend && view.backend.state ? (view.backend.state.peerDesktop || null) : null
-  readonly property bool viewingPeer: {
-    var pd = root.peerDesktop
-    if (!pd || !root.dev) return false
-    var from = String(pd.from || "")
-    var name = String(pd.fromName || "").toLowerCase()
-    return from === String(root.dev.id || "") || name === String(root.dev.name || "").toLowerCase()
-  }
-  // Hide battery for desktops and when there is no real charge (no "?" / "—").
-  readonly property bool showBattery: {
-    if (!root.dev || root.dev.type === "desktop") return false
-    var b = root.dev.battery
-    return !!b && b.charge !== undefined && b.charge !== null && b.charge >= 0
-  }
-
-  function startPeerView() {
-    if (!root.view || !root.view.call || !root.dev) return
-    if (!root.online) {
-      root.view.toast((root.dev.name || "Peer") + " is offline")
-      return
-    }
-    var key = root.dev.name || root.dev.id
-    root.view.call("desktop.view", { device: key }, function () {
-      if (root.view) root.view.toast("Showing " + (root.dev.name || "peer") + " desktop")
-    })
-  }
-
-  function stopPeerView() {
-    if (!root.view || !root.view.call) return
-    root.view.call("desktop.viewStop", {}, function () {
-      if (root.view) root.view.toast("Stopped peer desktop")
-    })
-  }
-
-  // True when this computer's global for the device-access key is on.
-  // Agent control also needs herdr. Agent terminals also need herdr control.
-  // Agent globals are on This computer.
-  function accessGlobalOn(key) {
-    var settings = root.settings || ({})
-    var globalKey = key === "clipboard" ? "autoClipboard" : key
-    var on = settings[globalKey] === true
-    if (key === "herdrControl" || key === "herdrTerminals")
-      on = on && settings.herdr === true
-    if (key === "herdrTerminals")
-      on = on && settings.herdrControl === true
-    return on
-  }
-
-  function accessGroupGated(rows) {
-    for (var i = 0; i < rows.length; i++) {
-      if (!root.accessGlobalOn(rows[i].key)) return true
-    }
-    return false
-  }
-
-  function edgeSideFor(d) {
-    if (!d) return ""
-    var side = String(root.settings.edgeSide || "")
-    var who = String(root.settings.edgeDevice || "").toLowerCase()
-    var name = String(d.name || "").toLowerCase()
-    var id = String(d.id || "")
-    if (!side || !who || (id !== root.settings.edgeDevice && name !== who)) return ""
-    return side.toLowerCase()
-  }
-
-  // Wire to settings.edgeSide / edgeDevice (same as flux-cli edge SIDE DEVICE).
-  function setEdgeSide(side) {
-    if (!root.view || !root.view.call || !root.dev) return
-    side = String(side || "").toLowerCase()
-    if (!side) {
-      root.view.call("settings.set", { key: "edgeSide", value: "" })
-      root.view.call("settings.set", { key: "edgeDevice", value: "" })
-      root.view.toast("Screen edge off")
-      return
-    }
-    var device = root.dev.name || root.dev.id
-    root.view.call("settings.set", { key: "edgeSide", value: side })
-    root.view.call("settings.set", { key: "edgeDevice", value: device })
-    root.view.toast(side.charAt(0).toUpperCase() + side.slice(1) + " edge → " + device)
-  }
-
-  function oppositeEdge(side) {
-    if (side === "left") return "right"
-    if (side === "right") return "left"
-    if (side === "top") return "bottom"
-    if (side === "bottom") return "top"
-    return ""
-  }
-
-  // True when the other computer named this one on the opposite edge.
-  function namesThisComputer(who) {
-    who = String(who || "")
-    if (!who || !root.view) return false
-    var self = root.view.selfDevice || ({})
-    if (who === String(self.id || "")) return true
-    return who.toLowerCase() === String(self.name || "").toLowerCase()
-  }
-
-  readonly property bool seamAnswers: {
-    if (!root.edgeSide || !root.dev || !root.dev.seamKnown) return false
-    return String(root.dev.edgeSide || "").toLowerCase() === root.oppositeEdge(root.edgeSide)
-        && root.namesThisComputer(root.dev.edgeDevice)
-  }
-
-  readonly property string seamNote: {
-    var name = (root.dev && root.dev.name) || "The other computer"
-    if (!root.edgeSide) return "Pick the edge that leaves this screen."
-    var opp = root.oppositeEdge(root.edgeSide)
-    if (!root.dev || !root.dev.seamKnown) return name + " has not reported an edge."
-    if (root.seamAnswers) return name + " answers on the " + opp + "."
-    var theirs = String(root.dev.edgeSide || "").toLowerCase()
-    if (!theirs || !root.namesThisComputer(root.dev.edgeDevice))
-      return name + " has not set the " + opp + " edge."
-    return name + " set " + theirs + ", not the " + opp + " edge."
-  }
-
-  // View stays off when that computer has said remote desktop is off.
-  // An older peer that has not reported a seam can still be asked.
-  readonly property bool viewAllowed: root.online && !(root.dev && root.dev.seamKnown && !root.dev.remoteDesktop)
-
-  readonly property string viewNote: {
-    if (!root.dev) return "View desktop"
-    var name = root.dev.name || "The other computer"
-    if (!root.online) return name + " is offline"
-    if (root.dev.seamKnown && !root.dev.remoteDesktop) return name + " has remote desktop off"
-    if (root.viewingPeer) return "View desktop · live"
-    return "View desktop"
-  }
-
-  // "Ring PC" would name a computer wrong. Phones and tablets keep their noun.
-  readonly property string ringLabel: {
-    var noun = Fmt.noun(root.dev ? root.dev.type : "")
-    return "Ring " + (noun === "PC" ? "computer" : noun)
-  }
   // The camera card takes a whole row while its settings are open.
   property bool cameraWide: false
-  // Page load does not fade. Later opens and appearing cards do.
+  // Page load does not fade the certificate. A later Show does.
   property bool motionReady: false
   Component.onCompleted: motionReady = true
-  readonly property bool accessNeedsGlobal: root.accessGroupGated([
-    { key: "clipboard" }, { key: "notifications" }, { key: "shareHome" },
-    { key: "remoteInput" }, { key: "remoteDesktop" },
-    { key: "herdr" }, { key: "herdrControl" }, { key: "herdrTerminals" }
-  ])
 
-  // Now cards, in order. A hidden card is not a cell.
-  function nowShow(key) {
-    if (root.peer) return false
-    if (key === "notif") return true
-    if (key === "camera") return !!root.webcam || root.canAsk
-    if (key === "mic") return !!root.mic || root.canAsk
-    if (key === "agent") return !!root.waitingAgents && root.waitingAgents.length > 0
-    if (key === "browse") return !!root.browse && root.browse.length > 0
-    if (key === "screen") return !!root.screen
-    return false
+  // Seam, View, the card grid, and the pause before a second Start.
+  OverviewRules {
+    id: rules
+    view: root.view
+    cameraWide: root.cameraWide
   }
 
-  // Packs visible Now cards into rows of two. A wide card, or the last
-  // card of an odd count, spans so the row has no empty cell.
-  readonly property var nowLayout: {
-    var slots = [
-      { key: "notif", show: root.nowShow("notif"), wide: false },
-      { key: "camera", show: root.nowShow("camera"), wide: root.cameraWide },
-      { key: "mic", show: root.nowShow("mic"), wide: false },
-      { key: "agent", show: root.nowShow("agent"), wide: false },
-      { key: "browse", show: root.nowShow("browse"), wide: false },
-      { key: "screen", show: root.nowShow("screen"), wide: false }
-    ]
-    var rows = []
-    var current = []
-    for (var i = 0; i < slots.length; i++) {
-      var slot = slots[i]
-      if (!slot.show) continue
-      if (slot.wide) {
-        if (current.length > 0) {
-          rows.push(current)
-          current = []
-        }
-        rows.push([slot])
-        continue
-      }
-      current.push(slot)
-      if (current.length === 2) {
-        rows.push(current)
-        current = []
-      }
-    }
-    if (current.length > 0) rows.push(current)
-    var map = ({})
-    for (var r = 0; r < rows.length; r++) {
-      var row = rows[r]
-      var span = row.length === 1 ? 2 : 1
-      for (var c = 0; c < row.length; c++)
-        map[row[c].key] = { span: span }
-    }
-    return map
-  }
+  property alias dev: rules.dev
+  property alias online: rules.online
+  property alias peer: rules.peer
+  property alias settings: rules.settings
+  property alias edgeSide: rules.edgeSide
+  property alias notifs: rules.notifs
+  property alias waitingAgents: rules.waitingAgents
+  property alias webcam: rules.webcam
+  property alias mic: rules.mic
+  property alias screen: rules.screen
+  property alias viewingPeer: rules.viewingPeer
+  property alias showBattery: rules.showBattery
+  property alias seamNote: rules.seamNote
+  property alias viewAllowed: rules.viewAllowed
+  property alias viewNote: rules.viewNote
+  property alias ringLabel: rules.ringLabel
+  property alias accessNeedsGlobal: rules.accessNeedsGlobal
+  property alias browse: rules.browse
+  property alias canAsk: rules.canAsk
+  property alias webcamAsked: rules.webcamAsked
+  property alias micAsked: rules.micAsked
+  property alias webcamSent: rules.webcamSent
+  property alias micSent: rules.micSent
 
+  function agentWaitText(agent) { return rules.agentWaitText(agent) }
+  function startPeerView() { rules.startPeerView() }
+  function stopPeerView() { rules.stopPeerView() }
+  function accessGlobalOn(key) { return rules.accessGlobalOn(key) }
+  function accessGroupGated(rows) { return rules.accessGroupGated(rows) }
+  function setEdgeSide(side) { rules.setEdgeSide(side) }
+  function nowShow(key) { return rules.nowShow(key) }
+  function browsePeerHome() { rules.browsePeerHome() }
+  function askStream(kind) { rules.askStream(kind) }
+  function canSend(sent) { return rules.canSend(sent) }
+  function confirmNote(asked) { return rules.confirmNote(asked) }
+  function idleTitle(asked, what) { return rules.idleTitle(asked, what) }
+
+  // Width of one Now card. A span of 2, or an unknown key, takes the row.
   function nowWidth(key) {
-    var spot = root.nowLayout[key]
+    var spot = rules.nowLayout[key]
     var full = !spot || spot.span !== 1
     if (full || nowFlow.width <= 0) return nowFlow.width
-    // Floor keeps a pair on one row: two rounded halves can exceed the row.
     return Math.floor((nowFlow.width - 12) / 2)
-  }
-
-  // The only Browse for this peer. Opens their shared home in Files.
-  // Home share is the global toggle on This computer, with no button here.
-  function browsePeerHome() {
-    if (!root.view || !root.dev) return
-    if (!root.online) {
-      root.view.toast((root.dev.name || "Peer") + " is offline")
-      return
-    }
-    var name = root.dev.name || "peer"
-    var id = root.dev.id
-    root.view.call("browse.open", { device: id }, function () {
-      if (root.view) {
-        root.view.toast("Opening " + name + " home…")
-        root.view.go("files")
-      }
-    }, function (err) {
-      if (root.view) root.view.toast((err && (err.message || err.code)) || ("Cannot browse " + name))
-    })
-  }
-  // The browse sessions of the devices on this computer. An earlier
-  // fluxd sends no list.
-  readonly property var browse: view && view.backend && view.backend.state ? (view.backend.state.browse || []) : []
-  // The device can start its camera and its microphone when this computer
-  // asks. The device asks its user first. An earlier fluxd or app does not
-  // list streamrequest.
-  readonly property bool canAsk: online && !!dev.paired && Array.isArray(dev.plugins) && dev.plugins.indexOf("streamrequest") >= 0
-  // The ID of the device that got the last request of this window for the
-  // webcam and for the mic, or "". The card then tells the user to confirm
-  // on the device. The device removes its notification after 60 seconds,
-  // and the card then removes its note too. The next change of the stream
-  // state of the kind also removes the note, for example a stream that
-  // starts or a start that fails at once.
-  property string webcamAsked: ""
-  property string micAsked: ""
-  // The stream state of the kind at the time of the request, as JSON. fluxd
-  // sends at most 1 state every 100 ms, so a start that fails at once can
-  // come only as an error. A comparison with this value finds that change.
-  property string webcamSeen: ""
-  property string micSeen: ""
-  // The ID of the device that got a request of this window for the kind in
-  // the last 3 seconds, or "". fluxd refuses a second request in that time,
-  // so Start is inactive for that device. An error of the request makes
-  // Start active again at once.
-  property string webcamSent: ""
-  property string micSent: ""
-  // streamRequestGap in internal/core/streamrequest.go, in milliseconds.
-  readonly property int requestGap: 3000
-
-  onWebcamChanged: if (webcamAsked !== "" && JSON.stringify(webcam) !== webcamSeen) webcamAsked = ""
-  onMicChanged: if (micAsked !== "" && JSON.stringify(mic) !== micSeen) micAsked = ""
-
-  Timer { id: webcamWait; interval: 60000; onTriggered: root.webcamAsked = "" }
-  Timer { id: micWait; interval: 60000; onTriggered: root.micAsked = "" }
-  Timer { id: webcamGap; interval: root.requestGap; onTriggered: root.webcamSent = "" }
-  Timer { id: micGap; interval: root.requestGap; onTriggered: root.micSent = "" }
-
-  // Asks the device to start its camera or its mic. kind is "webcam" or
-  // "mic". The toast and the card tell the user to confirm on the device.
-  // A second request of the kind to the device in requestGap does nothing.
-  function askStream(kind) {
-    if (!view || !dev) return
-    // The view outlives this page, so the replies use it.
-    var v = view
-    var mic = kind === "mic"
-    var id = dev.id
-    var name = dev.name || "the device"
-    var gap = mic ? micGap : webcamGap
-    if ((mic ? micSent : webcamSent) === id) return
-    if (mic) micSent = id
-    else webcamSent = id
-    gap.restart()
-    v.call(kind + ".start", { device: id }, function () {
-      // The gap of fluxd starts before this reply. A restart here keeps
-      // Start inactive until that gap ends.
-      gap.restart()
-      if (mic) {
-        root.micAsked = id
-        root.micSeen = JSON.stringify(root.mic)
-        micWait.restart()
-      } else {
-        root.webcamAsked = id
-        root.webcamSeen = JSON.stringify(root.webcam)
-        webcamWait.restart()
-      }
-      v.toast("Asked " + name + " to start " + (mic ? "the mic" : "the webcam") + ". Confirm on " + name + ".")
-    }, function (err) {
-      if (mic && root.micSent === id) root.micSent = ""
-      if (!mic && root.webcamSent === id) root.webcamSent = ""
-      v.toast(err.message || err.code || "Error")
-    })
-  }
-
-  // True when Start can send a request to the device. sent is webcamSent
-  // or micSent.
-  function canSend(sent) {
-    return !dev || sent !== dev.id
-  }
-
-  // The line under an idle card: the device to confirm on, or "".
-  function confirmNote(asked) {
-    return asked !== "" && !!dev && asked === dev.id ? "Confirm on " + (dev.name || "the device") + "." : ""
-  }
-
-  // The title of an idle card: the request that waits, or that no stream
-  // of the kind runs. what is "the webcam" or "the mic".
-  function idleTitle(asked, what) {
-    if (confirmNote(asked) !== "") return "Asked " + (dev.name || "the device") + " to start " + what
-    return what.charAt(0).toUpperCase() + what.slice(1) + " is off"
   }
 
   // Certificate fingerprint. Closed until the user selects Show.

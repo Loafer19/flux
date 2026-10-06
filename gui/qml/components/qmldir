@@ -5,7 +5,9 @@ DashedRect 1.0 DashedRect.qml
 DeviceRow 1.0 DeviceRow.qml
 Field 1.0 Field.qml
 FluxMark 1.0 FluxMark.qml
+FluxRules 1.0 FluxRules.qml
 OutlineButton 1.0 OutlineButton.qml
+OverviewRules 1.0 OverviewRules.qml
 PairCard 1.0 PairCard.qml
 SectionLabel 1.0 SectionLabel.qml
 Stripes 1.0 Stripes.qml

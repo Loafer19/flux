@@ -140,6 +140,30 @@ Item {
     })
   }
 
+  // discover returns at once. Replies from the network arrive after it.
+  property bool searching: false
+  Timer {
+    id: searchTimer
+    interval: 1200
+    onTriggered: root.searching = false
+  }
+  function beginSearch() {
+    searching = true
+    searchTimer.restart()
+  }
+  Component.onCompleted: beginSearch()
+  Connections {
+    target: root.view
+    ignoreUnknownSignals: true
+    function onDiscoveredRowsChanged() {
+      if (!root.searching || !root.view || !root.view.discoveredRows) return
+      if (root.view.discoveredRows.length > 0) {
+        root.searching = false
+        searchTimer.stop()
+      }
+    }
+  }
+
   // view.call does not invoke cb on error; these clear busy flags after a beat.
   Timer {
     id: inviteBusyTimer
@@ -196,8 +220,6 @@ Item {
     width: parent.width
     spacing: 12
 
-    SectionLabel { text: "PAIR" }
-
     SectionLabel { text: "THIS NETWORK" }
 
     Txt {
@@ -205,7 +227,9 @@ Item {
       width: parent.width
       wrapMode: Text.Wrap
       color: Theme.dim
-      text: "Searching this network. Open Flux on the phone. A computer that never appears can use the invite below."
+      text: root.searching
+            ? "Looking for devices. Open Flux on the phone."
+            : "No devices found. Open Flux on the phone. A computer that never appears can use the invite below."
     }
 
     Repeater {
@@ -292,9 +316,13 @@ Item {
 
     OutlineButton {
       objectName: "searchAgain"
-      text: "Search again"
+      text: root.searching ? "Searching…" : "Search again"
       icon: "refresh"
-      onClicked: if (root.view) root.view.call("discover", {})
+      busy: root.searching
+      onClicked: {
+        root.beginSearch()
+        if (root.view) root.view.call("discover", {})
+      }
     }
 
     Card {

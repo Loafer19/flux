@@ -6,8 +6,8 @@ import "../components"
 // This computer, Devices list, and Pair (Invite/Join) as a Network segment —
 // not a long scroll under Devices. Relay stays advanced/collapsed.
 // Devices | Pair | This computer. This computer holds the global toggles
-// (sharing, remote access) and the modules status. Screen edge stays on the
-// peer in Overview. Browse is one tile there, not on these cards.
+// (sharing, remote access, agents) and the modules status. Screen edge stays
+// on the peer in Overview. Browse is one tile there, not on these cards.
 // Self is only the This computer card, never a peer row like other desks.
 Item {
   id: root
@@ -596,7 +596,7 @@ Item {
 
           Txt {
             width: parent.width
-            text: "Share a flux1 invite when the other desk is not discovered. Prefer LAN or Tailscale; enable Relay below only if there is no direct path. Confirm the matching key on both sides."
+            text: "Share a flux1 invite when the other desk is not discovered. Prefer LAN; Tailscale stays as an option. Enable Relay below only if there is no direct path. Confirm the matching key on both sides."
             color: Theme.dim
             font.pixelSize: 12
             wrapMode: Text.Wrap
@@ -608,7 +608,7 @@ Item {
           }
           Txt {
             width: parent.width
-            text: "Host the other side can reach (Tailscale name or IP). Leave empty to auto-pick when possible."
+            text: "Host the other side can reach (LAN IP preferred, or Tailscale name/IP). Leave empty to auto-pick LAN when available."
             color: Theme.dim
             font.pixelSize: 11
             wrapMode: Text.Wrap
@@ -619,7 +619,7 @@ Item {
             Field {
               id: hostField
               Layout.fillWidth: true
-              placeholder: "e.g. dragon or 100.99.87.88"
+              placeholder: "e.g. 192.168.1.8 or dragon"
               onAccepted: root.generateInvite()
             }
             AccentButton {
@@ -728,7 +728,7 @@ Item {
       }
     }
 
-    // ── This computer: global sharing, remote access, modules ──
+    // ── This computer: global sharing, remote access, agents, modules ──
     Column {
       visible: root.networkPane === "computer"
       width: parent.width
@@ -817,6 +817,45 @@ Item {
               text: "Stop"
               onClicked: root.view.call("desktop.stop", {})
             }
+          }
+        }
+      }
+
+      Card {
+        id: agentsCard
+        objectName: "agentsCard"
+        function set(key, on) {
+          if (root.view) root.view.call("settings.set", { key: key, value: on })
+        }
+        width: parent.width
+        implicitHeight: agentsCol.implicitHeight + 32
+        Column {
+          id: agentsCol
+          x: 16
+          y: 14
+          width: parent.width - 32
+          spacing: 8
+          SectionLabel { text: "AGENTS" }
+          CompactToggle {
+            objectName: "herdrToggle"
+            label: "Agent output"
+            hint: "Show herdr agents of this computer on paired devices."
+            checked: root.settings.herdr !== false
+            onToggled: function (on) { agentsCard.set("herdr", on) }
+          }
+          CompactToggle {
+            objectName: "herdrControlToggle"
+            label: "Agent control"
+            hint: "Paired devices can send prompts and control agents."
+            checked: !!root.settings.herdrControl
+            onToggled: function (on) { agentsCard.set("herdrControl", on) }
+          }
+          CompactToggle {
+            objectName: "herdrTerminalsToggle"
+            label: "Agent terminals"
+            hint: "Paired devices can open and type in herdr terminals."
+            checked: !!root.settings.herdrTerminals
+            onToggled: function (on) { agentsCard.set("herdrTerminals", on) }
           }
         }
       }

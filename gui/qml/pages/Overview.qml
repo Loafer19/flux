@@ -60,7 +60,7 @@ Item {
 
   // True when this computer's global for the device-access key is on.
   // Agent control also needs herdr. Agent terminals also need herdr control.
-  // There is no Network → This computer switch for the agent globals.
+  // Agent globals are under Network → This computer → Agents.
   function accessGlobalOn(key) {
     var settings = root.settings || ({})
     var globalKey = key === "clipboard" ? "autoClipboard" : key
@@ -447,8 +447,9 @@ Item {
       }
     }
 
-    // Latest notifications
+    // Latest notifications — phones only. Desk peers have no useful feed here.
     Card {
+      visible: !root.peer
       Layout.fillWidth: true
       Layout.fillHeight: true
       Layout.preferredWidth: 320
@@ -515,7 +516,6 @@ Item {
           model: [
             {
               title: "Sharing",
-              agents: false,
               rows: [
                 { key: "clipboard", label: "Clipboard sync" },
                 { key: "notifications", label: "Notifications" },
@@ -524,7 +524,6 @@ Item {
             },
             {
               title: "Remote",
-              agents: false,
               rows: [
                 { key: "remoteInput", label: "Remote input" },
                 { key: "remoteDesktop", label: "Remote desktop" }
@@ -532,7 +531,6 @@ Item {
             },
             {
               title: "Agents",
-              agents: true,
               rows: [
                 { key: "herdr", label: "Agent output" },
                 { key: "herdrControl", label: "Agent control" },
@@ -575,9 +573,7 @@ Item {
             Txt {
               visible: groupCol.gated
               width: parent.width
-              text: groupCol.group.agents
-                    ? "No switch under Network → This computer"
-                    : "Turn on under Network → This computer"
+              text: "Turn on under Network → This computer"
               color: Theme.dim
               font.pixelSize: 11
               elide: Text.ElideRight

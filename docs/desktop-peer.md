@@ -105,9 +105,9 @@ When the other computer never appears in the list, share an invite instead of op
 
 ### From the window
 
-1. Pick a host the other computer can already reach: a Tailscale name or IP, or a LAN address after both sides allow TCP 12070–12108 from each other only.
+1. Pick a host the other computer can already reach: a LAN address after both sides allow TCP 12070–12108 from each other only, or a Tailscale name or IP.
 2. On the computer that listens at that host, open **Network**.
-3. Under **Pair with invite**, set the host (or leave empty when fluxd can pick the only Tailscale address), then **Create invite**.
+3. Under **Pair with invite**, set the host (or leave empty when fluxd can auto-pick a private LAN address, then Tailscale), then **Create invite**.
 4. Copy the `flux1:…` code, or show the QR when the window draws one.
 5. On the other computer, open **Network**, paste the invite, and select **Join**.
 6. Compare the 8-character key on both screens and accept.

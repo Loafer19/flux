@@ -64,22 +64,47 @@ func TestFormatInviteStable(t *testing.T) {
 }
 
 func TestPickInviteHost(t *testing.T) {
-	// Sole Tailscale wins even when LAN/docker addresses are listed too.
+	// Sole 192.168 LAN wins over Tailscale and docker private ranges.
 	got, err := pickInviteHost([]string{"100.75.127.31", "192.168.1.8", "172.18.0.1", "172.17.0.1"})
+	if err != nil || got != "192.168.1.8" {
+		t.Fatalf("LAN over Tailscale: got %q err %v", got, err)
+	}
+	got, err = pickInviteHost([]string{"100.75.127.31", "172.18.0.1"})
+	if err != nil || got != "172.18.0.1" {
+		t.Fatalf("sole LAN over Tailscale: got %q err %v", got, err)
+	}
+	got, err = pickInviteHost([]string{"100.75.127.31"})
 	if err != nil || got != "100.75.127.31" {
 		t.Fatalf("sole Tailscale: got %q err %v", got, err)
 	}
 	got, err = pickInviteHost([]string{"192.168.1.8"})
 	if err != nil || got != "192.168.1.8" {
-		t.Fatalf("sole other: got %q err %v", got, err)
+		t.Fatalf("sole LAN: got %q err %v", got, err)
+	}
+	// Sole 192.168 still wins when another private class is listed.
+	got, err = pickInviteHost([]string{"192.168.1.8", "10.0.0.2"})
+	if err != nil || got != "192.168.1.8" {
+		t.Fatalf("sole 192.168 over 10.x: got %q err %v", got, err)
 	}
 	if _, err := pickInviteHost(nil); err == nil {
 		t.Fatal("empty candidates should fail")
 	}
-	if _, err := pickInviteHost([]string{"192.168.1.8", "10.0.0.2"}); err == nil {
-		t.Fatal("ambiguous non-Tailscale should fail")
+	if _, err := pickInviteHost([]string{"192.168.1.8", "192.168.1.9"}); err == nil {
+		t.Fatal("ambiguous 192.168 should fail")
+	}
+	if _, err := pickInviteHost([]string{"10.0.0.2", "10.0.0.3"}); err == nil {
+		t.Fatal("ambiguous 10.x should fail")
 	}
 	if _, err := pickInviteHost([]string{"100.64.0.1", "100.64.0.2"}); err == nil {
 		t.Fatal("ambiguous Tailscale should fail")
+	}
+}
+
+func TestIsPrivateLANIP(t *testing.T) {
+	if !isPrivateLANIP(net.IP{192, 168, 1, 8}) || !isPrivateLANIP(net.IP{10, 0, 0, 2}) || !isPrivateLANIP(net.IP{172, 16, 0, 1}) {
+		t.Fatal("RFC1918")
+	}
+	if isPrivateLANIP(net.IP{100, 75, 127, 31}) || isPrivateLANIP(net.IP{8, 8, 8, 8}) {
+		t.Fatal("not private LAN")
 	}
 }

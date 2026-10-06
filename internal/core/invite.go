@@ -213,43 +213,78 @@ func (d *Daemon) connectEndpoint(id, name, host string, port int) error {
 	return nil
 }
 
-// pickInviteHost chooses a host when the user left it empty. Prefer the only
-// Tailscale IPv4 address even when LAN or docker addresses are also up, matching
-// the Network page copy and desktop-peer docs. Fall back to a single non-Tailscale
-// candidate. Several candidates require an explicit --host.
+// pickInviteHost chooses a host when the user left it empty. Prefer a private
+// LAN IPv4 (192.168/10/172.16-31) over Tailscale 100.x when both are up, so a
+// home-network invite reaches the other desk on LAN first. Among several LAN
+// addresses, prefer a sole 192.168, then a sole 10.x, then a sole 172.16-31.
+// Then a sole Tailscale address, then any sole other candidate. Several
+// candidates in the same class require an explicit --host.
 func pickInviteHost(cands []string) (string, error) {
-	var tailscale []string
+	var lan192, lan10, lan172, tailscale, other []string
 	for _, c := range cands {
 		ip := net.ParseIP(c)
 		if ip == nil {
 			continue
 		}
 		ip4 := ip.To4()
-		if ip4 != nil && isTailscaleIP(ip4) {
-			tailscale = append(tailscale, c)
+		if ip4 == nil {
+			continue
 		}
+		switch {
+		case isTailscaleIP(ip4):
+			tailscale = append(tailscale, c)
+		case isPrivateLANIP(ip4):
+			switch {
+			case ip4[0] == 192 && ip4[1] == 168:
+				lan192 = append(lan192, c)
+			case ip4[0] == 10:
+				lan10 = append(lan10, c)
+			default:
+				lan172 = append(lan172, c)
+			}
+		default:
+			other = append(other, c)
+		}
+	}
+	lan := append(append(append([]string{}, lan192...), lan10...), lan172...)
+	if len(lan) == 1 {
+		return lan[0], nil
+	}
+	if len(lan) > 1 {
+		if len(lan192) == 1 {
+			return lan192[0], nil
+		}
+		if len(lan192) == 0 && len(lan10) == 1 {
+			return lan10[0], nil
+		}
+		if len(lan192) == 0 && len(lan10) == 0 && len(lan172) == 1 {
+			return lan172[0], nil
+		}
+		return "", apiErr("need_host", "Give --host with one of: %s", strings.Join(cands, ", "))
 	}
 	switch {
 	case len(tailscale) == 1:
 		return tailscale[0], nil
+	case len(other) == 1 && len(tailscale) == 0:
+		return other[0], nil
 	case len(cands) == 1:
 		return cands[0], nil
 	case len(cands) == 0:
-		return "", apiErr("need_host", "Give --host with a reachable address, for example a Tailscale name. Run: flux-cli pair invite --host HOST")
+		return "", apiErr("need_host", "Give --host with a reachable address, for example a LAN or Tailscale name. Run: flux-cli pair invite --host HOST")
 	default:
 		return "", apiErr("need_host", "Give --host with one of: %s", strings.Join(cands, ", "))
 	}
 }
 
 // inviteHostCandidates lists addresses that another computer might reach:
-// Tailscale IPv4 first, then other global unicast IPv4 addresses. Loopback
-// and link-local addresses stay out.
+// private LAN IPv4 first, then Tailscale, then other global unicast IPv4.
+// Loopback and link-local addresses stay out.
 func (d *Daemon) inviteHostCandidates() []string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil
 	}
-	var tailscale, other []string
+	var lan, tailscale, other []string
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
 			continue
@@ -278,17 +313,44 @@ func (d *Daemon) inviteHostCandidates() []string {
 				}
 				continue
 			}
-			if !containsString(other, s) && !containsString(tailscale, s) {
+			if isPrivateLANIP(ip4) {
+				if !containsString(lan, s) {
+					lan = append(lan, s)
+				}
+				continue
+			}
+			if !containsString(other, s) && !containsString(lan, s) && !containsString(tailscale, s) {
 				other = append(other, s)
 			}
 		}
 	}
-	return append(tailscale, other...)
+	return append(append(lan, tailscale...), other...)
 }
 
 func isTailscaleIP(ip net.IP) bool {
 	// Tailscale CGNAT: 100.64.0.0/10
 	return ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127
+}
+
+// isPrivateLANIP reports RFC1918 private IPv4 that is not Tailscale CGNAT.
+func isPrivateLANIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	ip4 := ip.To4()
+	if ip4 == nil || isTailscaleIP(ip4) {
+		return false
+	}
+	if ip4[0] == 10 {
+		return true
+	}
+	if ip4[0] == 192 && ip4[1] == 168 {
+		return true
+	}
+	if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+		return true
+	}
+	return false
 }
 
 func containsString(list []string, s string) bool {

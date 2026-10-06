@@ -65,7 +65,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 12070:12108 proto tcp comment 'fl
 
 1. On both computers, run `flux-cli status` and confirm `fluxd` is up.
 2. Open the window with `flux-cli open`.
-3. Select **+ Pair new device**. The list opens on **Network → Pair**.
+3. Select **+ Pair new device**.
 4. Select the other computer. When it does not appear, share or paste an invite on that page.
 5. Compare the 16-character key on both screens, for example `5EE6 825F 974E D59A`.
 6. Accept the matching request.
@@ -84,13 +84,8 @@ flux-cli status
 Accept it on the other computer.
 `status` then shows that computer as `laptop` or `desktop`, role `peer`, and `paired`.
 
-Open **Network** to see each paired device.
-The window header shows the name of this computer and its TCP port.
-A row shows the device type, the address, and whether it is online.
-When the link is up, the row also shows LAN, Tailscale, or Relay for that socket.
-The address and the relay switch do not choose the word. An offline device has no path word.
-A row shows **Viewing** while this computer shows that desk.
-Select the row to open that device on Overview.
+The sidebar lists each paired device.
+Select a device to open it on Overview.
 Screen edge, view desktop, and home browse are on Overview.
 The switches for this computer are on **This computer**.
 
@@ -112,10 +107,10 @@ When the other computer never appears in the list, share an invite instead of op
 ### From the window
 
 1. Pick a host the other computer can already reach: a LAN address after both sides allow TCP 12070–12108 from each other only, or a Tailscale name or IP.
-2. On the computer that listens at that host, open **Network**.
+2. On the computer that listens at that host, select **+ Pair new device**.
 3. Under **Pair with invite**, set the host (or leave empty when fluxd can auto-pick a private LAN address, then Tailscale), then **Create invite**.
 4. Copy the `flux1:…` code, or show the QR when the window draws one.
-5. On the other computer, open **Network**, paste the invite, and select **Join**.
+5. On the other computer, select **+ Pair new device**, paste the invite, and select **Join**.
 6. Compare the 16-character key on both screens and accept.
 
 ### From the terminal
@@ -163,7 +158,7 @@ Prefer LAN or Tailscale. Use a relay only when neither computer can dial the oth
 
 4. Compare the 16-character key and accept.
 
-`relay` defaults to off. **Network → Pair** has the same toggle and URL field.
+`relay` defaults to off. The pair page has the same toggle and URL field.
 The helper splices TCP only; Flux still runs its TLS handshake end to end.
 A full STUN/TURN mesh is out of scope; this is a small rendezvous scaffold you can self-host for NAT/cross-network pairing.
 
@@ -262,7 +257,6 @@ A paired desk can show the other desk screen when both sides allow it.
 
 3. Close the player window, select **Stop** on that Overview row, or run
    `flux-cli desktop view-stop`.
-   Network shows **Viewing** on the row and opens Overview.
 
 The peer role still hides phone-only features (ring, SMS, camera, fingerprint approval).
 Home browse of the other computer stays.

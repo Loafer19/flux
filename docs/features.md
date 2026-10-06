@@ -16,7 +16,7 @@ See [sync switches](android-setup.md#sync-switches) and [security](security.md).
 2. Connect the phone and desktop to the same local network.
 3. Open Flux on the phone.
 4. Run `flux-cli open` on the desktop.
-5. Select **+ Pair new device**. The list opens on **Network → Pair**.
+5. Select **+ Pair new device**.
 6. Select the phone.
 7. Compare the 16-character key on both screens, for example `5EE6 825F 974E D59A`.
 8. Accept the matching request on the phone.

@@ -14,9 +14,9 @@ Rectangle {
   signal secondaryActivated()
 
   width: Math.min(360, (parent ? parent.width : 392) - 32)
-  implicitHeight: col.implicitHeight + 28
+  implicitHeight: col.implicitHeight + 32
   color: Theme.bg2
-  border.width: 2
+  border.width: 1
   border.color: Theme.warn
 
   Column {
@@ -24,7 +24,7 @@ Rectangle {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 14
+    anchors.margins: 16
     spacing: 8
     Txt { text: root.title; color: Theme.warn; font.pixelSize: 12 }
     Txt {
@@ -39,13 +39,13 @@ Rectangle {
       AccentButton {
         visible: root.action !== ""
         text: root.action
-        fontSize: 12
+        quiet: true
         onClicked: root.activated()
       }
       OutlineButton {
         visible: root.secondary !== ""
         text: root.secondary
-        fontSize: 12
+        quiet: true
         onClicked: root.secondaryActivated()
       }
     }

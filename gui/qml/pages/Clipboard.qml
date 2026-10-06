@@ -41,54 +41,62 @@ Item {
   Column {
     id: list
     width: parent.width
-    spacing: 10
+    spacing: 12
 
-    Field { id: search; width: parent.width; placeholder: "Search clipboard entries"; onTextChanged: searchDelay.restart() }
-    Row {
-      spacing: 8
-      OutlineButton { text: root.savedOnly ? "Show all" : "Saved snippets"; onClicked: root.savedOnly = !root.savedOnly }
-      OutlineButton {
-        id: clearBtn
-        icon: "trash"
-        text: root.savedOnly ? "Clear snippets" : "Clear history"
-        visible: root.savedOnly ? root.allEntries.some(e => e.pinned) : root.allEntries.some(e => !e.pinned)
-        onClicked: {
-          if (root.savedOnly) {
-            root.view.call("clipboard.clear", { all: true }, function () { root.view.toast("Saved snippets cleared") })
-          } else {
-            root.view.call("clipboard.clear", {}, function () { root.view.toast("Clipboard history cleared") })
+    Column {
+      width: parent.width
+      spacing: 10
+      Field { id: search; width: parent.width; placeholder: "Search clipboard entries"; onTextChanged: searchDelay.restart() }
+      Row {
+        spacing: 8
+        OutlineButton { text: root.savedOnly ? "Show all" : "Saved snippets"; onClicked: root.savedOnly = !root.savedOnly }
+        OutlineButton {
+          id: clearBtn
+          icon: "trash"
+          text: root.savedOnly ? "Clear snippets" : "Clear history"
+          visible: root.savedOnly ? root.allEntries.some(e => e.pinned) : root.allEntries.some(e => !e.pinned)
+          onClicked: {
+            if (root.savedOnly) {
+              root.view.call("clipboard.clear", { all: true }, function () { root.view.toast("Saved snippets cleared") })
+            } else {
+              root.view.call("clipboard.clear", {}, function () { root.view.toast("Clipboard history cleared") })
+            }
           }
         }
       }
-    }
-    Txt { width: parent.width; text: "Saved snippets stay after a restart."; color: Theme.dim; font.pixelSize: 11; wrapMode: Text.Wrap }
+      Txt { width: parent.width; text: "Saved snippets stay after a restart."; color: Theme.dim; font.pixelSize: 11; wrapMode: Text.Wrap }
 
-    Txt {
-      visible: root.entries.length === 0
+      Txt {
+        visible: root.entries.length === 0
+        width: parent.width
+        text: search.text !== "" ? "No entries match this search." : root.savedOnly ? "No saved snippets. Select Save beside a clipboard entry." : "No clipboard entries yet. Copy text or an image on this computer or on the phone."
+        color: Theme.dim
+        wrapMode: Text.Wrap
+      }
+    }
+
+    Column {
       width: parent.width
-      text: search.text !== "" ? "No entries match this search." : root.savedOnly ? "No saved snippets. Select Save beside a clipboard entry." : "No clipboard entries yet. Copy text or an image on this computer or on the phone."
-      color: Theme.dim
-      wrapMode: Text.Wrap
-    }
+      spacing: 12
+      visible: root.entries.length > 0
+      Repeater {
+        model: rows
+        delegate: Card {
+          required property string key
+          readonly property var modelData: rows.byId[key] || ({})
+          readonly property bool incoming: modelData.dir !== "out"
+          width: list.width
+          implicitHeight: Math.max(textCol.implicitHeight, actions.implicitHeight) + 32
 
-    Repeater {
-      model: rows
-      delegate: Card {
-        required property string key
-        readonly property var modelData: rows.byId[key] || ({})
-        readonly property bool incoming: modelData.dir !== "out"
-        width: list.width
-        implicitHeight: Math.max(textCol.implicitHeight, actions.implicitHeight) + 30
-
-        // The direction: from the device, or from this computer.
-        Icon {
-          id: arrow
-          x: 17
-          anchors.verticalCenter: parent.verticalCenter
-          name: parent.incoming ? "arrow-in" : "arrow-out"
-          size: 18
-          color: parent.incoming ? Theme.ok : Theme.accent
-        }
+          // The direction: from the device, or from this computer.
+          Icon {
+            id: arrow
+            x: 16
+            anchors.verticalCenter: parent.verticalCenter
+            name: parent.incoming ? "arrow-in" : "arrow-out"
+            size: 18
+            color: Theme.dim
+          }
         Column {
           id: textCol
           anchors.left: arrow.right
@@ -125,23 +133,19 @@ Item {
         Column {
           id: actions
           anchors.right: parent.right
-          anchors.rightMargin: 19
+          anchors.rightMargin: 16
           anchors.verticalCenter: parent.verticalCenter
           spacing: 6
           OutlineButton {
             text: modelData.pinned ? "Unsave" : "Save"
-            fontSize: 12
-            padX: 12
-            padY: 5
+            quiet: true
             onClicked: root.view.call(modelData.pinned ? "clipboard.unpin" : "clipboard.pin", { id: modelData.id })
           }
           OutlineButton {
             id: copy
             icon: "copy"
             text: "Copy"
-            padX: 12
-            padY: 5
-            fontSize: 12
+            quiet: true
             // fluxd copies the full text or the image of the entry. The row
             // can have only the start of a long text.
             onClicked: root.view.call("clipboard.copy", { id: modelData.id }, function () { root.view.toast("Copied to the clipboard") })
@@ -150,11 +154,10 @@ Item {
             id: remove
             icon: "trash"
             text: "Delete"
-            padX: 12
-            padY: 5
-            fontSize: 12
+            quiet: true
             onClicked: root.view.call("clipboard.delete", { id: modelData.id }, function () { root.view.toast("Entry deleted") })
           }
+        }
         }
       }
     }

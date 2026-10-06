@@ -83,7 +83,7 @@ Item {
   Column {
     id: col
     width: parent.width
-    spacing: 18
+    spacing: 12
 
     Card {
       width: parent.width
@@ -91,10 +91,14 @@ Item {
       Column {
         id: shareCol
         x: 16
-        y: 14
+        y: 16
         width: parent.width - 32
         spacing: 8
-        SectionLabel { text: "SHARING" }
+        SectionLabel {
+          text: "SHARING"
+          font.pixelSize: 11
+          font.weight: Font.DemiBold
+        }
         CompactToggle {
           objectName: "clipboardToggle"
           label: "Clipboard"
@@ -130,10 +134,24 @@ Item {
       Column {
         id: remoteCol
         x: 16
-        y: 14
+        y: 16
         width: parent.width - 32
         spacing: 8
-        SectionLabel { text: root.desktopLive ? "REMOTE ACCESS · LIVE" : "REMOTE ACCESS" }
+        Row {
+          spacing: 8
+          Icon {
+            anchors.verticalCenter: parent.verticalCenter
+            name: "monitor"
+            size: 14
+            color: Theme.dim
+          }
+          SectionLabel {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.desktopLive ? "REMOTE ACCESS · LIVE" : "REMOTE ACCESS"
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+          }
+        }
         CompactToggle {
           objectName: "remoteDesktopToggle"
           label: "Remote desktop"
@@ -183,10 +201,14 @@ Item {
       Column {
         id: agentsCol
         x: 16
-        y: 14
+        y: 16
         width: parent.width - 32
         spacing: 8
-        SectionLabel { text: "AGENTS" }
+        SectionLabel {
+          text: "AGENTS"
+          font.pixelSize: 11
+          font.weight: Font.DemiBold
+        }
         CompactToggle {
           objectName: "herdrToggle"
           label: "Agent output"
@@ -214,19 +236,32 @@ Item {
     Card {
       objectName: "modulesCard"
       width: parent.width
-      implicitHeight: modCol.implicitHeight + 28
+      implicitHeight: modCol.implicitHeight + 32
       Column {
         id: modCol
         x: 16
-        y: 12
+        y: 16
         width: parent.width - 32
         spacing: 8
         RowLayout {
           width: parent.width
           spacing: 10
-          Txt {
-            text: "Modules"
-            font.weight: Font.DemiBold
+          Row {
+            spacing: 8
+            Layout.alignment: Qt.AlignVCenter
+            Icon {
+              anchors.verticalCenter: parent.verticalCenter
+              name: "cog"
+              size: 14
+              color: Theme.dim
+            }
+            Txt {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Modules"
+              color: Theme.dim
+              font.pixelSize: 11
+              font.weight: Font.DemiBold
+            }
           }
           Item { Layout.fillWidth: true }
           Txt {
@@ -241,7 +276,10 @@ Item {
           }
         }
         Column {
-          visible: root.modulesOpen
+          id: moduleList
+          visible: root.modulesOpen || moduleList.opacity > 0
+          opacity: root.modulesOpen ? 1 : 0
+          Behavior on opacity { NumberAnimation { duration: 80 } }
           width: parent.width
           spacing: 2
           Repeater {

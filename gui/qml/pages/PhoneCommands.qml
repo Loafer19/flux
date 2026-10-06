@@ -62,7 +62,7 @@ Item {
   Column {
     id: col
     width: parent.width
-    spacing: 18
+    spacing: 12
 
     Txt {
       width: parent.width
@@ -95,13 +95,13 @@ Item {
           required property var modelData
           Layout.preferredWidth: grid.cell
           Layout.fillHeight: true
-          implicitHeight: cCol.implicitHeight + 34
+          implicitHeight: cCol.implicitHeight + 32
 
           Column {
             id: cCol
-            x: 17
-            y: 17
-            width: parent.width - 34
+            x: 16
+            y: 16
+            width: parent.width - 32
             spacing: 8
             Row {
               width: parent.width
@@ -130,8 +130,7 @@ Item {
                 y: 6
                 icon: "trash"
                 text: "Remove"
-                padX: 14
-                padY: 6
+                quiet: true
                 onClicked: root.remove(modelData)
               }
             }
@@ -143,7 +142,7 @@ Item {
       Item {
         Layout.preferredWidth: grid.cell
         Layout.fillHeight: true
-        implicitHeight: root.adding ? form.implicitHeight + 34 : 60
+        implicitHeight: root.adding ? form.implicitHeight + 32 : 60
 
         DashedRect {
           anchors.fill: parent
@@ -171,14 +170,13 @@ Item {
           border.color: Theme.accent
           Column {
             id: form
-            x: 17
-            y: 17
-            width: parent.width - 34
+            x: 16
+            y: 16
+            width: parent.width - 32
             spacing: 8
             Field {
               id: nameField
               width: parent.width
-              padY: 7
               placeholder: "Name"
               onAccepted: commandField.input.forceActiveFocus()
               onEscaped: root.cancel()
@@ -186,7 +184,6 @@ Item {
             Field {
               id: commandField
               width: parent.width
-              padY: 7
               placeholder: "omarchy-system-lock"
               onAccepted: root.save()
               onEscaped: root.cancel()
@@ -197,17 +194,13 @@ Item {
               AccentButton {
                 icon: "check"
                 text: root.saving ? "Saving…" : "Save"
-                padX: 12
-                padY: 6
-                fontSize: 12
+                quiet: true
                 active: root.canSave
                 onClicked: root.save()
               }
               OutlineButton {
                 text: "Cancel"
-                padX: 12
-                padY: 6
-                fontSize: 12
+                quiet: true
                 onClicked: root.cancel()
               }
             }

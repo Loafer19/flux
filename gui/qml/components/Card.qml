@@ -1,7 +1,9 @@
 import QtQuick
 import ".."
 
-// A surface with the bg2 fill and a 1 px bg3 border.
+// A surface on the window. Fill is bg2. The border is 1 px bg3.
+// A card that needs a person uses an accent or warn border instead.
+// Corners stay square, like the switches and the buttons.
 Rectangle {
   color: Theme.bg2
   border.width: 1

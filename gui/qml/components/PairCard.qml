@@ -20,8 +20,8 @@ Rectangle {
   signal accept()
   signal reject()
 
-  implicitHeight: col.implicitHeight + 28
-  color: Theme.bg
+  implicitHeight: col.implicitHeight + 32
+  color: Theme.bg2
   border.width: 1
   border.color: Theme.accent
 
@@ -53,7 +53,7 @@ Rectangle {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 14
+    anchors.margins: 16
     spacing: 8
 
     Txt {
@@ -93,8 +93,8 @@ Rectangle {
       spacing: 8
       topPadding: 2
       onYChanged: root.hold()
-      AccentButton { icon: "link"; text: root.confirm ? "Confirm" : "Accept"; padX: 12; padY: 6; fontSize: 12; active: root.armed; onClicked: root.accept() }
-      OutlineButton { icon: "close"; text: "Reject"; padX: 12; padY: 6; fontSize: 12; onClicked: root.reject() }
+      AccentButton { icon: "link"; text: root.confirm ? "Confirm" : "Accept"; quiet: true; active: root.armed; onClicked: root.accept() }
+      OutlineButton { icon: "close"; text: "Reject"; quiet: true; onClicked: root.reject() }
     }
   }
 }

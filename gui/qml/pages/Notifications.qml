@@ -37,7 +37,7 @@ Item {
   Column {
     id: list
     width: Math.min(parent.width, 760)
-    spacing: 10
+    spacing: 12
 
     Repeater {
       model: root.view && root.view.backend && root.view.backend.state.settings ?
@@ -47,7 +47,7 @@ Item {
         width: list.width
         spacing: 8
         Txt { width: Math.max(0, parent.width - removeRule.width - parent.spacing); anchors.verticalCenter: parent.verticalCenter; text: root.ruleText(modelData); color: Theme.dim; wrapMode: Text.Wrap }
-        OutlineButton { id: removeRule; anchors.verticalCenter: parent.verticalCenter; text: "Remove rule"; fontSize: 11; onClicked: root.view.call("notification.rule.remove", { id: modelData.id }) }
+        OutlineButton { id: removeRule; anchors.verticalCenter: parent.verticalCenter; text: "Remove rule"; quiet: true; onClicked: root.view.call("notification.rule.remove", { id: modelData.id }) }
       }
     }
 
@@ -93,12 +93,12 @@ Item {
         readonly property string actionsText: JSON.stringify(Array.isArray(modelData.actions) ? modelData.actions.slice(0, root.maxActions) : [])
         readonly property var actions: JSON.parse(actionsText)
         width: list.width
-        implicitHeight: Math.max(36, body.implicitHeight) + 30
+        implicitHeight: Math.max(36, body.implicitHeight) + 32
 
         Rectangle {
           id: badge
-          x: 19
-          y: 15
+          x: 16
+          y: 16
           width: 36
           height: 36
           color: Theme.alpha(Theme[Fmt.appToken(modelData.app)], 0.18)
@@ -115,8 +115,8 @@ Item {
           anchors.left: badge.right
           anchors.leftMargin: 14
           anchors.right: parent.right
-          anchors.rightMargin: 19
-          y: 15
+          anchors.rightMargin: 16
+          y: 16
           spacing: 2
 
           Item {
@@ -175,17 +175,14 @@ Item {
             visible: true
             OutlineButton {
               text: "Mute app for 1 hour"
-              fontSize: 11
-              padY: 4
+              quiet: true
               onClicked: root.view.call("notification.rule.add", { config: { device: root.dev.id, app: modelData.app, mode: "mute", until: Math.floor(Date.now() / 1000) + 3600 } })
             }
             OutlineButton {
               visible: card.replyable && !card.replying
               icon: "reply"
               text: "Reply"
-              padX: 10
-              padY: 4
-              fontSize: 11
+              quiet: true
               onClicked: {
                 card.replying = true
                 reply.input.forceActiveFocus()
@@ -196,9 +193,7 @@ Item {
               delegate: OutlineButton {
                 required property var modelData
                 text: modelData
-                padX: 10
-                padY: 4
-                fontSize: 11
+                quiet: true
                 onClicked: root.view.call("notification.action", { device: root.dev.id, id: card.modelData.id, action: modelData })
               }
             }
@@ -212,7 +207,6 @@ Item {
             Field {
               id: reply
               width: parent.width - send.width - 10
-              padY: 7
               placeholder: "Reply to " + (card.modelData.title || card.modelData.app || "")
               onAccepted: send.clicked()
             }
@@ -220,7 +214,6 @@ Item {
               id: send
               icon: "send"
               text: "Send"
-              padY: 8
               onClicked: {
                 var msg = reply.text.trim()
                 if (msg === "") return

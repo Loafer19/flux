@@ -4,7 +4,8 @@ import ".."
 import "../components"
 
 // Per-device overview. A desk peer is one column: seam, view, and the
-// switches that role can honor. A phone stays a grid.
+// switches that role can honor. A phone is one column: identity, a short
+// action row, the cards that need a person, then device access.
 // Global switches live on This computer. One Browse opens the peer's home.
 Item {
   id: root
@@ -173,6 +174,83 @@ Item {
     return "View desktop"
   }
 
+  // "Ring PC" would name a computer wrong. Phones and tablets keep their noun.
+  readonly property string ringLabel: {
+    var noun = Fmt.noun(root.dev ? root.dev.type : "")
+    return "Ring " + (noun === "PC" ? "computer" : noun)
+  }
+  // The camera card takes a whole row while its settings are open.
+  property bool cameraWide: false
+  // Page load does not fade. Later opens and appearing cards do.
+  property bool motionReady: false
+  Component.onCompleted: motionReady = true
+  readonly property bool accessNeedsGlobal: root.accessGroupGated([
+    { key: "clipboard" }, { key: "notifications" }, { key: "shareHome" },
+    { key: "remoteInput" }, { key: "remoteDesktop" },
+    { key: "herdr" }, { key: "herdrControl" }, { key: "herdrTerminals" }
+  ])
+
+  // Now cards, in order. A hidden card is not a cell.
+  function nowShow(key) {
+    if (root.peer) return false
+    if (key === "notif") return true
+    if (key === "camera") return !!root.webcam || root.canAsk
+    if (key === "mic") return !!root.mic || root.canAsk
+    if (key === "agent") return !!root.waitingAgents && root.waitingAgents.length > 0
+    if (key === "browse") return !!root.browse && root.browse.length > 0
+    if (key === "screen") return !!root.screen
+    return false
+  }
+
+  // Packs visible Now cards into rows of two. A wide card, or the last
+  // card of an odd count, spans so the row has no empty cell.
+  readonly property var nowLayout: {
+    var slots = [
+      { key: "notif", show: root.nowShow("notif"), wide: false },
+      { key: "camera", show: root.nowShow("camera"), wide: root.cameraWide },
+      { key: "mic", show: root.nowShow("mic"), wide: false },
+      { key: "agent", show: root.nowShow("agent"), wide: false },
+      { key: "browse", show: root.nowShow("browse"), wide: false },
+      { key: "screen", show: root.nowShow("screen"), wide: false }
+    ]
+    var rows = []
+    var current = []
+    for (var i = 0; i < slots.length; i++) {
+      var slot = slots[i]
+      if (!slot.show) continue
+      if (slot.wide) {
+        if (current.length > 0) {
+          rows.push(current)
+          current = []
+        }
+        rows.push([slot])
+        continue
+      }
+      current.push(slot)
+      if (current.length === 2) {
+        rows.push(current)
+        current = []
+      }
+    }
+    if (current.length > 0) rows.push(current)
+    var map = ({})
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r]
+      var span = row.length === 1 ? 2 : 1
+      for (var c = 0; c < row.length; c++)
+        map[row[c].key] = { span: span }
+    }
+    return map
+  }
+
+  function nowWidth(key) {
+    var spot = root.nowLayout[key]
+    var full = !spot || spot.span !== 1
+    if (full || nowFlow.width <= 0) return nowFlow.width
+    // Floor keeps a pair on one row: two rounded halves can exceed the row.
+    return Math.floor((nowFlow.width - 12) / 2)
+  }
+
   // The only Browse for this peer. Opens their shared home in Files.
   // Home share is the global toggle on This computer, with no button here.
   function browsePeerHome() {
@@ -192,7 +270,7 @@ Item {
       if (root.view) root.view.toast((err && (err.message || err.code)) || ("Cannot browse " + name))
     })
   }
-  // The Browse PC sessions of the devices on this computer. An earlier
+  // The browse sessions of the devices on this computer. An earlier
   // fluxd sends no list.
   readonly property var browse: view && view.backend && view.backend.state ? (view.backend.state.browse || []) : []
   // The device can start its camera and its microphone when this computer
@@ -290,7 +368,7 @@ Item {
     property string value: ""
     property bool open: false
     width: parent ? parent.width : implicitWidth
-    spacing: 2
+    spacing: 8
     visible: value !== ""
 
     function toggle() { line.open = !line.open }
@@ -313,34 +391,99 @@ Item {
         }
       }
     }
+    // The value stays out of the layout until Show. Opacity fades in.
     Txt {
+      id: certValue
       objectName: "certificateValue"
       visible: line.open
+      opacity: line.open ? 1 : 0
       width: line.width
       text: Fmt.hexGroups(line.value)
       color: Theme.dim
       font.pixelSize: 11
       wrapMode: Text.Wrap
+      Behavior on opacity {
+        enabled: root.motionReady
+        NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
+      }
     }
   }
 
-  implicitHeight: root.peer ? peerCol.implicitHeight : grid.implicitHeight
+  // A short action. Icon and label, fixed height, not stretched.
+  component ActionTile: Card {
+    id: tile
+    property string icon: ""
+    property string label: ""
+    property bool active: true
+    signal clicked()
 
-  // A desk is one column. The phone grid below stays hidden.
+    implicitHeight: 72
+    height: 72
+    opacity: active ? 1 : 0.4
+    border.color: hover.containsMouse && active ? Theme.accent : Theme.bg3
+
+    Row {
+      anchors.fill: parent
+      anchors.margins: 16
+      spacing: 12
+      Icon {
+        anchors.verticalCenter: parent.verticalCenter
+        name: tile.icon
+        size: 16
+        color: Theme.accent
+      }
+      Txt {
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.max(0, parent.width - 32)
+        text: tile.label
+        font.weight: Font.DemiBold
+        elide: Text.ElideRight
+      }
+    }
+
+    MouseArea {
+      id: hover
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: tile.active ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onClicked: if (tile.active) tile.clicked()
+    }
+  }
+
+  // One device-access switch. A global that is off keeps it off and inactive.
+  component AccessSwitch: Toggle {
+    id: sw
+    property string key: ""
+    width: parent ? parent.width : implicitWidth
+    readonly property var rules: {
+      if (!root.dev || !root.settings || !root.settings.deviceRules) return ({})
+      return root.settings.deviceRules[root.dev.id] || ({})
+    }
+    readonly property bool globalOn: root.accessGlobalOn(sw.key)
+    active: !!root.dev && globalOn
+    checked: globalOn && rules[sw.key] !== false
+    onToggled: function (value) {
+      root.view.call("device.settings.set", { device: root.dev.id, key: sw.key, value: value })
+    }
+  }
+
+  implicitHeight: root.peer ? peerCol.implicitHeight : phoneCol.implicitHeight
+
+  // A desk is one column. The phone column below stays hidden.
   Column {
     id: peerCol
     visible: root.peer
     width: parent.width
-    spacing: 18
+    spacing: 12
 
     Card {
       width: parent.width
-      implicitHeight: peerHead.implicitHeight + 36
+      implicitHeight: peerHead.implicitHeight + 32
       Column {
         id: peerHead
-        x: 18
-        y: 18
-        width: parent.width - 36
+        x: 16
+        y: 16
+        width: parent.width - 32
         spacing: 4
         Txt {
           width: parent.width
@@ -349,17 +492,28 @@ Item {
           font.weight: Font.Bold
           elide: Text.ElideRight
         }
-        Txt {
+        // Type and address stay dim. Only the link word takes the status color.
+        Row {
           width: parent.width
-          text: {
-            var bits = []
-            if (root.dev) bits.push(Fmt.typeName(root.dev.type))
-            if (root.dev && root.dev.ip) bits.push(root.dev.ip)
-            bits.push(root.online ? "connected" : "offline")
-            return bits.join(" · ")
+          spacing: 0
+          clip: true
+          Txt {
+            id: peerFacts
+            width: Math.min(implicitWidth, Math.max(0, parent.width - peerLink.implicitWidth))
+            text: {
+              var bits = []
+              if (root.dev) bits.push(Fmt.typeName(root.dev.type))
+              if (root.dev && root.dev.ip) bits.push(root.dev.ip)
+              return bits.join(" · ")
+            }
+            color: Theme.dim
+            elide: Text.ElideRight
           }
-          color: root.online ? Theme.ok : Theme.dim
-          elide: Text.ElideRight
+          Txt {
+            id: peerLink
+            text: (peerFacts.text !== "" ? " · " : "") + (root.online ? "connected" : "offline")
+            color: root.online ? Theme.ok : Theme.dim
+          }
         }
         CertLine {
           objectName: "peerCertificate"
@@ -370,16 +524,16 @@ Item {
 
     Row {
       width: parent.width
-      spacing: 10
-      Tile {
-        width: (parent.width - 10) / 2
+      spacing: 12
+      ActionTile {
+        width: (parent.width - 12) / 2
         icon: "upload"
         label: "Files"
         onClicked: root.view.go("files")
       }
-      Tile {
+      ActionTile {
         objectName: "browseHomeTile"
-        width: (parent.width - 10) / 2
+        width: (parent.width - 12) / 2
         icon: "browse"
         label: "Browse home"
         active: root.online
@@ -390,13 +544,12 @@ Item {
     Card {
       objectName: "screenEdgeRow"
       width: parent.width
-      implicitHeight: edgeCol.implicitHeight + 28
+      implicitHeight: edgeCol.implicitHeight + 32
       Column {
         id: edgeCol
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 14
+        x: 16
+        y: 16
+        width: parent.width - 32
         spacing: 8
         Txt {
           text: "Screen edge"
@@ -404,7 +557,7 @@ Item {
         }
         Flow {
           width: parent.width
-          spacing: 6
+          spacing: 8
           Repeater {
             model: ["", "left", "right", "top", "bottom"]
             delegate: Chip {
@@ -419,7 +572,7 @@ Item {
           objectName: "seamNote"
           width: parent.width
           text: root.seamNote
-          color: root.seamAnswers ? Theme.ok : Theme.dim
+          color: Theme.dim
           font.pixelSize: 12
           wrapMode: Text.Wrap
         }
@@ -429,20 +582,20 @@ Item {
     Card {
       objectName: "viewDesktopRow"
       width: parent.width
-      implicitHeight: viewDeskRow.implicitHeight + 24
+      implicitHeight: viewDeskRow.implicitHeight + 32
       RowLayout {
         id: viewDeskRow
         x: 16
-        y: 12
+        y: 16
         width: parent.width - 32
-        spacing: 10
+        spacing: 12
         Icon {
           Layout.alignment: Qt.AlignVCenter
           Layout.preferredWidth: 14
           Layout.preferredHeight: 14
           name: "screen-share"
           size: 14
-          color: root.viewingPeer ? Theme.err : Theme.dim
+          color: Theme.dim
         }
         Txt {
           Layout.fillWidth: true
@@ -469,35 +622,18 @@ Item {
 
     Card {
       width: parent.width
-      implicitHeight: peerAccess.implicitHeight + 28
+      implicitHeight: peerAccess.implicitHeight + 32
       Column {
         id: peerAccess
-        x: 14
-        y: 12
-        width: parent.width - 28
+        x: 16
+        y: 16
+        width: parent.width - 32
         spacing: 8
         Txt { text: "Device access"; font.weight: Font.DemiBold }
-        Repeater {
-          model: [
-            { key: "clipboard", label: "Clipboard sync" },
-            { key: "shareHome", label: "Shared folders" },
-            { key: "remoteInput", label: "Remote input" },
-            { key: "remoteDesktop", label: "Remote desktop" }
-          ]
-          delegate: Toggle {
-            required property var modelData
-            readonly property var row: modelData
-            readonly property var rules: root.dev && root.settings.deviceRules ? (root.settings.deviceRules[root.dev.id] || {}) : ({})
-            readonly property bool globalOn: root.accessGlobalOn(row.key)
-            width: peerAccess.width
-            text: row.label
-            active: !!root.dev && globalOn
-            checked: globalOn && rules[row.key] !== false
-            onToggled: function (value) {
-              root.view.call("device.settings.set", { device: root.dev.id, key: row.key, value: value })
-            }
-          }
-        }
+        AccessSwitch { key: "clipboard"; text: "Clipboard sync" }
+        AccessSwitch { key: "shareHome"; text: "Shared folders" }
+        AccessSwitch { key: "remoteInput"; text: "Remote input" }
+        AccessSwitch { key: "remoteDesktop"; text: "Remote desktop" }
         Txt {
           visible: root.accessGroupGated([
             { key: "clipboard" }, { key: "shareHome" },
@@ -513,162 +649,165 @@ Item {
     }
   }
 
-  GridLayout {
-    id: grid
+  Column {
+    id: phoneCol
     visible: !root.peer
     width: parent.width
-    columns: Math.max(1, Math.floor((width + 18) / (320 + 18)))
-    columnSpacing: 18
-    rowSpacing: 18
-    uniformCellWidths: true
+    spacing: 12
 
-    // Device facts (and battery when the device reports a real charge)
+    // Identity. Battery sits in the card, not in its own column of the page.
     Card {
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
-      implicitHeight: Math.max(root.showBattery ? batteryCol.implicitHeight : 0, facts.implicitHeight) + 46
+      width: parent.width
+      implicitHeight: idBody.implicitHeight + 32
+      height: implicitHeight
 
-      Column {
-        id: batteryCol
-        visible: root.showBattery
-        x: 23
-        anchors.verticalCenter: parent.verticalCenter
-        width: 110
-        spacing: 8
-        Txt {
-          text: Fmt.battery(root.dev ? root.dev.battery : null)
-          font.pixelSize: 30
-          font.weight: Font.Bold
-          lineHeightMode: Text.FixedHeight
-          lineHeight: 30
-        }
-        Bar {
-          width: parent.width
-          height: 8
-          fill: Theme.ok
-          value: root.dev && root.dev.battery ? (root.dev.battery.charge || 0) / 100 : 0
-        }
-        Row {
-          spacing: 4
-          Icon {
-            anchors.verticalCenter: parent.verticalCenter
-            name: Fmt.batteryIcon(root.dev ? root.dev.battery : null)
-            size: 13
-            color: Theme.dim
+      Row {
+        id: idBody
+        x: 16
+        y: 16
+        width: parent.width - 32
+        spacing: 16
+
+        Column {
+          id: batteryCol
+          visible: root.showBattery
+          width: 96
+          spacing: 8
+          Txt {
+            text: Fmt.battery(root.dev ? root.dev.battery : null)
+            font.pixelSize: 30
+            font.weight: Font.Bold
+            lineHeightMode: Text.FixedHeight
+            lineHeight: 30
           }
-          Txt { anchors.verticalCenter: parent.verticalCenter; text: "battery"; color: Theme.dim; font.pixelSize: 11 }
+          Bar {
+            width: parent.width
+            height: 8
+            fill: {
+              var b = root.dev && root.dev.battery
+              return b && b.charge <= 15 && !b.charging ? Theme.err : Theme.ok
+            }
+            value: root.dev && root.dev.battery ? (root.dev.battery.charge || 0) / 100 : 0
+          }
+          Row {
+            spacing: 8
+            Icon {
+              anchors.verticalCenter: parent.verticalCenter
+              name: Fmt.batteryIcon(root.dev ? root.dev.battery : null)
+              size: 13
+              color: Theme.dim
+            }
+            Txt { anchors.verticalCenter: parent.verticalCenter; text: "battery"; color: Theme.dim; font.pixelSize: 11 }
+          }
         }
-      }
 
-      Column {
-        id: facts
-        // When battery is hidden, start at the left padding (invisible
-        // batteryCol still has geometry, so do not anchor to it).
-        x: root.showBattery ? batteryCol.x + batteryCol.width + 22 : 23
-        width: parent.width - x - 23
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: 4
-        Txt {
-          width: parent.width
-          text: root.dev ? root.dev.name : ""
-          font.pixelSize: 22
-          font.weight: Font.Bold
-          elide: Text.ElideRight
-        }
-        Txt {
-          width: parent.width
-          text: root.dev ? Fmt.typeName(root.dev.type) + (root.dev.pairedAt ? " · paired " + root.dev.pairedAt : "") : ""
-          color: Theme.dim
-          elide: Text.ElideRight
-        }
-        // The Flux app of the device and its version. An earlier app sends
-        // no version.
-        Txt {
-          width: parent.width
-          visible: text !== ""
-          text: root.dev && root.dev.appVersion ? "Flux " + root.dev.appVersion + (root.dev.appUpdate ? " · " + root.dev.appUpdate + " is available" : "") : ""
-          color: root.dev && root.dev.appUpdate ? Theme.warn : Theme.dim
-          elide: Text.ElideRight
-        }
-        Txt {
-          width: parent.width
-          readonly property var b: root.dev ? root.dev.battery : null
-          text: "● " + (root.online ? "connected" : "offline") + (root.online && root.showBattery && b ? " · " + (b.charging ? "charging" : "discharging") : "")
-          color: root.online ? Theme.ok : Theme.dim
-          elide: Text.ElideRight
-        }
-        // The certificate fingerprint stays behind Show. It is not the pair key.
-        // Network → Pair still shows the certificate on the row.
-        CertLine {
-          objectName: "fingerprint"
-          value: root.dev && root.dev.fingerprint ? root.dev.fingerprint : ""
+        Column {
+          id: facts
+          // A hidden battery column is not in the row, so the facts use the full width.
+          width: idBody.width - (batteryCol.visible ? batteryCol.width + idBody.spacing : 0)
+          spacing: 4
+          Txt {
+            width: parent.width
+            text: root.dev ? root.dev.name : ""
+            font.pixelSize: 22
+            font.weight: Font.Bold
+            elide: Text.ElideRight
+          }
+          Txt {
+            width: parent.width
+            text: root.dev ? Fmt.typeName(root.dev.type) + (root.dev.pairedAt ? " · paired " + root.dev.pairedAt : "") : ""
+            color: Theme.dim
+            elide: Text.ElideRight
+          }
+          // The Flux app of the device and its version. An earlier app sends
+          // no version.
+          Txt {
+            width: parent.width
+            visible: text !== ""
+            text: root.dev && root.dev.appVersion ? "Flux " + root.dev.appVersion + (root.dev.appUpdate ? " · " + root.dev.appUpdate + " is available" : "") : ""
+            color: root.dev && root.dev.appUpdate ? Theme.warn : Theme.dim
+            elide: Text.ElideRight
+          }
+          Row {
+            width: parent.width
+            spacing: 0
+            clip: true
+            Txt {
+              text: "● " + (root.online ? "connected" : "offline")
+              color: root.online ? Theme.ok : Theme.dim
+              font.pixelSize: 13
+            }
+            Txt {
+              readonly property var b: root.dev ? root.dev.battery : null
+              visible: root.online && root.showBattery && !!b
+              text: " · " + (b && b.charging ? "charging" : "discharging")
+              color: Theme.dim
+              font.pixelSize: 13
+              elide: Text.ElideRight
+            }
+          }
+          // The certificate fingerprint stays behind Show. It is not the pair key.
+          // Network → Pair still shows the certificate on the row.
+          CertLine {
+            objectName: "fingerprint"
+            value: root.dev && root.dev.fingerprint ? root.dev.fingerprint : ""
+          }
         }
       }
     }
 
-    // Quick actions — phone: Ring + Send file; desk peer: Send file + Browse home
-    GridLayout {
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
-      columns: 2
-      columnSpacing: 10
-      rowSpacing: 10
-      uniformCellWidths: true
-
-      // The tiles fill the height of the row, so they line up with the
-      // battery card. Flux rings only phones. A computer does not list
-      // findmyphone.
-      Tile {
-        id: ringTile
-        Layout.fillWidth: true
-        Layout.fillHeight: true
+    // Ring and Send file are not the whole page. They stay short.
+    // Flux rings only phones. A computer does not list findmyphone.
+    Row {
+      id: phoneActions
+      width: parent.width
+      spacing: 12
+      ActionTile {
+        id: ringAction
         visible: root.view ? root.view.has("findmyphone") : true
+        width: ringAction.visible ? (phoneActions.width - phoneActions.spacing) / 2 : phoneActions.width
         icon: "bell-ring"
-        label: "Ring " + Fmt.noun(root.dev ? root.dev.type : "")
+        label: root.ringLabel
         active: root.online
         onClicked: root.view.ring()
       }
-      Tile {
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        Layout.columnSpan: (ringTile.visible || root.peer) ? 1 : 2
+      ActionTile {
+        width: ringAction.visible ? (phoneActions.width - phoneActions.spacing) / 2 : phoneActions.width
         icon: "upload"
         label: "Send file"
         onClicked: root.view.go("files")
       }
-      Tile {
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        Layout.columnSpan: ringTile.visible ? 2 : 1
-        visible: root.peer
-        icon: "browse"
-        label: "Browse home"
-        active: root.online
-        onClicked: root.browsePeerHome()
-      }
     }
 
-    // Latest notifications — phones only. Desk peers have no useful feed here.
-    // This card, the agent card, and the camera and mic cards sit above the
-    // device-access switches. Those switches do not need a person.
+    // Notifications, streams, and waiting agents. Switches sit under this group.
+    Flow {
+        id: nowFlow
+        width: parent.width
+        spacing: 12
+
     Card {
       objectName: "notifCard"
-      visible: !root.peer
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
-      implicitHeight: notifCol.implicitHeight + 38
+      visible: root.nowShow("notif")
+      width: root.nowWidth("notif")
+      implicitHeight: notifCol.implicitHeight + 32
+      height: implicitHeight
 
       Column {
         id: notifCol
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 19
-        spacing: 12
-        SectionLabel { text: "LATEST NOTIFICATIONS" }
+        x: 16
+        y: 16
+        width: parent.width - 32
+        spacing: 8
+        Row {
+          spacing: 8
+          Icon {
+            anchors.verticalCenter: parent.verticalCenter
+            name: "bell"
+            size: 14
+            color: Theme.dim
+          }
+          SectionLabel { anchors.verticalCenter: parent.verticalCenter; text: "LATEST NOTIFICATIONS" }
+        }
         Txt {
           visible: root.notifs.length === 0
           text: "No notifications"
@@ -710,21 +849,29 @@ Item {
 
     // Agents that wait for a person. A working agent stays off this card.
     Card {
+      id: agentCard
       objectName: "agentCard"
-      visible: !root.peer && root.waitingAgents.length > 0
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
-      implicitHeight: agentCol.implicitHeight + 38
+      visible: root.nowShow("agent")
+      width: root.nowWidth("agent")
+      implicitHeight: agentCol.implicitHeight + 32
+      height: implicitHeight
 
       Column {
         id: agentCol
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 19
+        x: 16
+        y: 16
+        width: parent.width - 32
         spacing: 8
-        SectionLabel { text: "AGENTS" }
+        Row {
+          spacing: 8
+          Icon {
+            anchors.verticalCenter: parent.verticalCenter
+            name: "console"
+            size: 14
+            color: Theme.dim
+          }
+          SectionLabel { anchors.verticalCenter: parent.verticalCenter; text: "AGENTS" }
+        }
         Repeater {
           model: root.waitingAgents.slice(0, 3)
           delegate: Txt {
@@ -745,8 +892,11 @@ Item {
 
     // Phone camera only. A desk peer never shows this card.
     CameraCard {
+      id: cameraCard
       objectName: "cameraCard"
-      visible: !root.peer && (!!root.webcam || root.canAsk)
+      visible: root.nowShow("camera")
+      width: root.nowWidth("camera")
+      height: implicitHeight
       view: root.view
       webcam: root.webcam
       canStart: root.canAsk
@@ -754,19 +904,16 @@ Item {
       idleTitle: root.idleTitle(root.webcamAsked, "the webcam")
       startActive: root.canSend(root.webcamSent)
       onStart: root.askStream("webcam")
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
-      Layout.columnSpan: settingsOpen ? grid.columns : 1
+      onSettingsOpenChanged: root.cameraWide = settingsOpen
+      Component.onCompleted: root.cameraWide = settingsOpen
     }
 
     // Phone microphone
     StreamCard {
       objectName: "micCard"
-      visible: !root.peer && (!!root.mic || root.canAsk)
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
+      visible: root.nowShow("mic")
+      width: root.nowWidth("mic")
+      height: implicitHeight
       icon: "mic"
       heading: "PHONE MICROPHONE"
       stream: root.mic || ({})
@@ -784,12 +931,11 @@ Item {
     // The devices that browse the files of this computer
     StreamCard {
       objectName: "browseCard"
-      visible: root.browse.length > 0
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
+      visible: root.nowShow("browse")
+      width: root.nowWidth("browse")
+      height: implicitHeight
       icon: "folder"
-      heading: "BROWSE PC"
+      heading: "BROWSE COMPUTER"
       stream: ({ active: true })
       title: root.browse.map(function (b) { return b.name || "A device" }).join(", ") + (root.browse.length > 1 ? " browse" : " browses") + " this computer"
       detail: root.browse.length > 0 ? "Since " + Qt.formatTime(new Date(root.browse[0].since * 1000), "hh:mm") + " · read-only" : ""
@@ -799,10 +945,9 @@ Item {
     // Phone screen mirror
     StreamCard {
       objectName: "screenCard"
-      visible: !root.peer && !!root.screen
-      Layout.fillWidth: true
-      Layout.fillHeight: true
-      Layout.preferredWidth: 320
+      visible: root.nowShow("screen")
+      width: root.nowWidth("screen")
+      height: implicitHeight
       icon: "screen-share"
       heading: "PHONE SCREEN"
       stream: root.screen || ({})
@@ -810,86 +955,69 @@ Item {
       detail: root.screen && root.screen.width ? root.screen.width + "×" + root.screen.height + " · close the window to stop" : ""
       onStop: root.view.call("screen.stop", {})
     }
+    }
 
-    // The switches sit on their own row, under the cards that wait.
+    // One card. The global line is once, not once per group.
     Card {
       objectName: "phoneAccess"
-      Layout.fillWidth: true
-      Layout.preferredWidth: 320
-      Layout.columnSpan: grid.columns
-      implicitHeight: access.implicitHeight + 28
+      width: parent.width
+      implicitHeight: access.implicitHeight + 32
+      height: implicitHeight
       Column {
         id: access
-        x: 14; y: 12
-        width: parent.width - 28
+        x: 16
+        y: 16
+        width: parent.width - 32
         spacing: 8
         Txt { text: "Device access"; font.weight: Font.DemiBold }
-        Repeater {
-          model: [
-            {
-              title: "Sharing",
-              rows: [
-                { key: "clipboard", label: "Clipboard sync" },
-                { key: "notifications", label: "Notifications" },
-                { key: "shareHome", label: "Shared folders" }
-              ]
-            },
-            {
-              title: "Remote",
-              rows: [
-                { key: "remoteInput", label: "Remote input" },
-                { key: "remoteDesktop", label: "Remote desktop" }
-              ]
-            },
-            {
-              title: "Agents",
-              rows: [
-                { key: "herdr", label: "Agent output" },
-                { key: "herdrControl", label: "Agent control" },
-                { key: "herdrTerminals", label: "Agent terminals" }
-              ]
-            }
-          ]
-          delegate: Column {
-            id: groupCol
-            required property var modelData
-            readonly property var group: modelData
-            readonly property bool gated: root.accessGroupGated(group.rows)
-            width: access.width
-            spacing: 1
-            Txt {
-              width: parent.width
-              text: groupCol.group.title
-              color: Theme.dim
-              font.pixelSize: 11
-              font.weight: Font.DemiBold
-            }
-            Repeater {
-              model: groupCol.group.rows
-              delegate: Toggle {
-                required property var modelData
-                readonly property var row: modelData
-                readonly property var settings: root.settings || ({})
-                readonly property var rules: root.dev && settings.deviceRules ? (settings.deviceRules[root.dev.id] || {}) : ({})
-                readonly property bool globalOn: root.accessGlobalOn(row.key)
-                width: access.width
-                text: row.label
-                active: !!root.dev && globalOn
-                checked: globalOn && rules[row.key] !== false
-                onToggled: function (value) {
-                  root.view.call("device.settings.set", { device: root.dev.id, key: row.key, value: value })
-                }
-              }
-            }
-            Txt {
-              visible: groupCol.gated
-              width: parent.width
-              text: "Turn on under This computer"
-              color: Theme.dim
-              font.pixelSize: 11
-              elide: Text.ElideRight
-            }
+        Column {
+          width: parent.width
+          spacing: 8
+          Txt {
+            width: parent.width
+            text: "Sharing"
+            color: Theme.dim
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
           }
+          AccessSwitch { key: "clipboard"; text: "Clipboard sync" }
+          AccessSwitch { key: "notifications"; text: "Notifications" }
+          AccessSwitch { key: "shareHome"; text: "Shared folders" }
+        }
+        Column {
+          width: parent.width
+          spacing: 8
+          Txt {
+            width: parent.width
+            text: "Remote"
+            color: Theme.dim
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+          }
+          AccessSwitch { key: "remoteInput"; text: "Remote input" }
+          AccessSwitch { key: "remoteDesktop"; text: "Remote desktop" }
+        }
+        Column {
+          width: parent.width
+          spacing: 8
+          Txt {
+            width: parent.width
+            text: "Agents"
+            color: Theme.dim
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+          }
+          AccessSwitch { key: "herdr"; text: "Agent output" }
+          AccessSwitch { key: "herdrControl"; text: "Agent control" }
+          AccessSwitch { key: "herdrTerminals"; text: "Agent terminals" }
+        }
+        Txt {
+          visible: root.accessNeedsGlobal
+          width: parent.width
+          text: "Turn on under This computer"
+          color: Theme.dim
+          font.pixelSize: 11
+          wrapMode: Text.Wrap
         }
       }
     }

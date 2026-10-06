@@ -14,7 +14,7 @@ Card {
   readonly property bool shown: !!desktop && !desktop.error
   readonly property bool live: shown && !!desktop.active
 
-  implicitHeight: col.implicitHeight + 38
+  implicitHeight: col.implicitHeight + 32
 
   function set(key, on) {
     if (view) view.call("settings.set", { key: key, value: on })
@@ -25,8 +25,8 @@ Card {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 19
-    spacing: 14
+    anchors.margins: 16
+    spacing: 8
 
     Row {
       spacing: 8

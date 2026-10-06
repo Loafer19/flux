@@ -7,16 +7,21 @@ Rectangle {
   property string text: ""
   // An Icon name, shown before the text.
   property string icon: ""
-  property int padX: 14
-  property int padY: 7
-  property int fontSize: Theme.size
+  // quiet is the in-card size. The header and a page action use the default.
+  // The 1 px border matches OutlineButton, so the two heights agree.
+  property bool quiet: false
+  property int padX: quiet ? 12 : 14
+  property int padY: quiet ? 6 : 7
+  property int fontSize: quiet ? 12 : Theme.size
   property int fontWeight: Font.Bold
   property bool active: true
   signal clicked()
 
-  implicitWidth: content.implicitWidth + padX * 2
-  implicitHeight: content.implicitHeight + padY * 2
+  implicitWidth: content.implicitWidth + padX * 2 + 2
+  implicitHeight: content.implicitHeight + padY * 2 + 2
   color: area.containsMouse && root.active ? Theme.mix(Theme.accent, Theme.fg, 0.15) : Theme.accent
+  border.width: 1
+  border.color: color
   opacity: active ? 1 : 0.4
 
   Row {

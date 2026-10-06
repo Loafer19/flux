@@ -485,7 +485,7 @@ Item {
       view.openPair()
       compare(view.tab, "network")
       verify(view.pairPane)
-      tryVerify(function () { return !!page(view) && page(view).networkPane === "pair" })
+      tryVerify(function () { return !!page(view) && !!findVisibleBy(view, "text", "Pair") })
       compare(requestsOf("discover").length, 1)
       verify(!!findVisibleBy(page(view), "text", "OnePlus 12"))
       verify(!!findVisibleBy(page(view), "text", "Certificate D02B 6E4F 19A7 C385"))
@@ -515,8 +515,10 @@ Item {
       findVisibleBy(page(view), "objectName", "searchAgain").clicked()
       compare(requestsOf("discover").length, 2)
 
-      view.pairPane = false
-      tryCompare(page(view), "networkPane", "devices")
+      view.leavePair()
+      compare(view.tab, "overview")
+      verify(!view.pairPane)
+      verify(!findVisibleBy(view, "text", "OnePlus 12"))
     }
   }
 
@@ -1107,12 +1109,13 @@ Item {
         s.peerDesktop = { from: "0123456789abcdef0123456789abcdef", fromName: "work-thinkpad" }
       })
       var view = createTemporaryObject(viewComponent, top)
-      view.tab = "network"
-      tryVerify(function () { return !!page(view) && page(view).networkPane === "devices" })
+      view.selectedId = "0123456789abcdef0123456789abcdef"
+      view.tab = "overview"
+      tryVerify(function () { return !!page(view) && page(view).peer === true })
       verify(!findBy(page(view), "objectName", "remoteCard"))
       var badge = null
-      tryVerify(function () { badge = findVisibleBy(page(view), "text", " · Viewing"); return !!badge })
-      verify(!findVisibleBy(page(view), "text", "Stop"))
+      tryVerify(function () { badge = findVisibleBy(view, "text", " · 192.168.1.70 · Viewing"); return !!badge })
+      verify(!!findVisibleBy(page(view), "text", "Stop"))
     }
 
     function test_networkShowsSocketPath() {
@@ -1125,33 +1128,26 @@ Item {
       })
       mock.setState(function (s) { s.settings.relay = true })
       var view = createTemporaryObject(viewComponent, top)
-      view.tab = "network"
-      tryVerify(function () { return !!page(view) && !!findVisibleBy(page(view), "text", " · 100.1.2.3") })
-      verify(!findVisibleBy(page(view), "text", " · LAN"))
-      verify(!findVisibleBy(page(view), "text", " · Tailscale"))
-      verify(!findVisibleBy(page(view), "text", " · Relay"))
+      tryVerify(function () { return !!findVisibleBy(view, "text", " · 100.1.2.3") })
+      verify(!findVisibleBy(view, "text", " · LAN"))
+      verify(!findVisibleBy(view, "text", " · Tailscale"))
+      verify(!findVisibleBy(view, "text", " · Relay"))
       mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
         d.path = "tailscale"
         return d
       })
-      tryVerify(function () {
-        var word = findVisibleBy(page(view), "objectName", "pathWord")
-        return !!word && word.text === " · Tailscale"
-      })
+      tryVerify(function () { return !!findVisibleBy(view, "text", " · 100.1.2.3 · Tailscale") })
       mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
         d.path = "relay"
         return d
       })
-      tryVerify(function () {
-        var word = findVisibleBy(page(view), "objectName", "pathWord")
-        return !!word && word.text === " · Relay"
-      })
+      tryVerify(function () { return !!findVisibleBy(view, "text", " · 100.1.2.3 · Relay") })
       mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
         d.online = false
         d.path = "relay"
         return d
       })
-      tryVerify(function () { return !findVisibleBy(page(view), "text", " · Relay") })
+      tryVerify(function () { return !findVisibleBy(view, "text", " · 100.1.2.3 · Relay") })
     }
   }
 }

@@ -7,9 +7,11 @@ Rectangle {
   property string text: ""
   // An Icon name, shown before the text.
   property string icon: ""
-  property int padX: 14
-  property int padY: 7
-  property int fontSize: Theme.size
+  // quiet is the in-card size. The header and a page action use the default.
+  property bool quiet: false
+  property int padX: quiet ? 12 : 14
+  property int padY: quiet ? 6 : 7
+  property int fontSize: quiet ? 12 : Theme.size
   property color textColor: Theme.fg
   property color iconColor: textColor
   property bool active: true

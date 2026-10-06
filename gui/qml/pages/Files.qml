@@ -136,7 +136,7 @@ Item {
   Column {
     id: col
     width: parent.width
-    spacing: 0
+    spacing: 12
 
     // Desk peer: remote home listing (browse.open / peerBrowse).
     // Accent border + AccentButton so PEER HOME is impossible to miss.
@@ -144,7 +144,7 @@ Item {
       objectName: "peerHomeCard"
       visible: root.peer
       width: parent.width
-      implicitHeight: browseCol.implicitHeight + 38
+      implicitHeight: browseCol.implicitHeight + 32
       border.width: 1
       border.color: Theme.accent
 
@@ -153,7 +153,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 19
+        anchors.margins: 16
         spacing: 12
 
         Item {
@@ -165,11 +165,22 @@ Item {
             anchors.right: browseBtnRow.left
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
-            SectionLabel {
-              id: peerHomeTitle
-              text: "PEER HOME"
-              color: Theme.accent
+            spacing: 8
+            Row {
+              spacing: 8
+              Icon {
+                anchors.verticalCenter: parent.verticalCenter
+                name: "folder"
+                size: 14
+                color: Theme.dim
+              }
+              SectionLabel {
+                id: peerHomeTitle
+                anchors.verticalCenter: parent.verticalCenter
+                text: "PEER HOME"
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+              }
             }
             Txt {
               width: parent.width
@@ -322,8 +333,6 @@ Item {
       }
     }
 
-    Item { visible: root.peer; width: 1; height: 18 }
-
     DashedRect {
       id: zone
       width: parent.width
@@ -386,35 +395,30 @@ Item {
       }
     }
 
-    Item { width: 1; height: 22 }
-
-    Txt {
-      width: parent.width
-      text: "Folders use ZIP archives. Queued files stay in the outbox until the device connects."
-      color: Theme.dim
-      wrapMode: Text.Wrap
-    }
-
-    Item { width: 1; height: 12 }
-
-    Txt {
-      visible: root.pending.length > 0
-      width: parent.width
-      text: root.pending.length + " pending · " + Fmt.bytes(root.pendingDone) + " of " + Fmt.bytes(root.pendingBytes)
-      color: Theme.dim
-    }
-
-    Item { width: 1; height: root.pending.length > 0 ? 12 : 0 }
-
-    Txt {
-      visible: root.transfers.length === 0
-      text: "No transfers yet."
-      color: Theme.dim
-    }
-
     Column {
       width: parent.width
-      spacing: 10
+      spacing: 12
+
+      Txt {
+        width: parent.width
+        text: "Folders use ZIP archives. Queued files stay in the outbox until the device connects."
+        color: Theme.dim
+        wrapMode: Text.Wrap
+      }
+
+      Txt {
+        visible: root.pending.length > 0
+        width: parent.width
+        text: root.pending.length + " pending · " + Fmt.bytes(root.pendingDone) + " of " + Fmt.bytes(root.pendingBytes)
+        color: Theme.dim
+      }
+
+      Txt {
+        visible: root.transfers.length === 0
+        text: "No transfers yet."
+        color: Theme.dim
+      }
+
       Repeater {
         model: rows
         delegate: Card {
@@ -422,30 +426,30 @@ Item {
           required property string key
           readonly property var modelData: rows.byId[key] || ({})
           readonly property bool incoming: modelData.dir !== "out"
-          readonly property real inner: width - 38
+          readonly property real inner: width - 32
           readonly property bool compact: inner < 460
           readonly property real statusWidth: compact ? 90 : 110
           readonly property real barWidth: compact ? 0 : Math.max(80, Math.min(260, inner - 28 - 110 - 48 - 120))
           readonly property real progress: modelData.size > 0 ? (modelData.done || 0) / modelData.size : (modelData.state === "done" ? 1 : 0)
           width: col.width
-          implicitHeight: nameCol.implicitHeight + 26 + (actions.visible ? actions.implicitHeight + 18 : 0)
+          implicitHeight: nameCol.implicitHeight + 32 + (actions.visible ? actions.implicitHeight + 12 : 0)
 
           Icon {
-            x: 19
-            y: 13
+            x: 16
+            y: 16
             name: row.incoming ? "tray-down" : "tray-up"
             size: 20
-            color: row.incoming ? Theme.ok : Theme.accent
+            color: Theme.dim
           }
           Column {
             id: nameCol
-            x: 19 + 28 + 16
+            x: 16 + 28 + 16
             width: row.compact ? row.inner - 28 - 16 - 16 - row.statusWidth : row.inner - 28 - 16 - row.barWidth - 16 - 16 - 110
-            y: 13
+            y: 16
             spacing: row.compact ? 3 : 0
             Txt { width: parent.width; text: Fmt.showControls(modelData.name); elide: Text.ElideMiddle }
             Txt { width: parent.width; text: Fmt.bytes(modelData.size); color: Theme.dim; font.pixelSize: 11 }
-            Txt { visible: !!modelData.error; width: parent.width; text: modelData.error || ""; color: Theme.warn; font.pixelSize: 11; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
+            Txt { visible: !!modelData.error; width: parent.width; text: modelData.error || ""; color: Theme.err; font.pixelSize: 11; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
             Bar {
               visible: row.compact
               width: parent.width
@@ -463,7 +467,7 @@ Item {
           }
           Txt {
             anchors.right: parent.right
-            anchors.rightMargin: 19
+            anchors.rightMargin: 16
             y: nameCol.y + nameCol.implicitHeight / 2 - height / 2
             width: row.statusWidth
             horizontalAlignment: Text.AlignRight
@@ -483,17 +487,17 @@ Item {
             visible: ["waiting", "queued", "active"].indexOf(modelData.state) >= 0
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            anchors.margins: 12
+            anchors.margins: 16
             spacing: 8
             OutlineButton {
               visible: modelData.state === "waiting"
               text: "Retry now"
-              fontSize: 11
+              quiet: true
               onClicked: root.view.call("transfer.retry", { id: modelData.id })
             }
             OutlineButton {
               text: "Cancel"
-              fontSize: 11
+              quiet: true
               onClicked: root.view.call("transfer.cancel", { id: modelData.id })
             }
           }

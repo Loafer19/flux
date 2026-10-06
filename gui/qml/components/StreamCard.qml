@@ -31,15 +31,15 @@ Card {
   readonly property bool failed: !idle && !!stream && !!stream.error
   readonly property bool live: !idle && !!stream && !!stream.active && !failed
 
-  implicitHeight: col.implicitHeight + 38
+  implicitHeight: col.implicitHeight + 32
 
   Column {
     id: col
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 19
-    spacing: 12
+    anchors.margins: 16
+    spacing: 8
 
     Row {
       spacing: 8

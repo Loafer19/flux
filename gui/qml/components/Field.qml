@@ -6,8 +6,9 @@ Rectangle {
   id: root
   property alias text: input.text
   property string placeholder: ""
-  property int padX: 12
-  property int padY: 10
+  // Same horizontal inset and height step as a default button.
+  property int padX: 14
+  property int padY: 7
   property alias input: input
   signal accepted()
   // Esc takes the focus from the field. The owner can also cancel an edit.

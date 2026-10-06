@@ -391,7 +391,7 @@ Item {
   Card {
     id: pane
     anchors.left: root.single ? parent.left : convoPane.right
-    anchors.leftMargin: root.single ? 0 : 18
+    anchors.leftMargin: root.single ? 0 : 12
     anchors.right: parent.right
     height: parent.height
     visible: !root.single || root.threadOpen
@@ -399,21 +399,28 @@ Item {
     OutlineButton {
       id: backButton
       visible: root.single
-      x: 19
+      x: 16
       anchors.verticalCenter: threadName.verticalCenter
       icon: "arrow-left"
-      padX: 8
-      padY: 4
+      quiet: true
       onClicked: {
         root.threadOpen = false
         root.composing = false
       }
     }
+    Icon {
+      id: threadIcon
+      name: "chat"
+      size: 14
+      color: Theme.dim
+      x: root.single ? backButton.x + backButton.width + 10 : 16
+      anchors.verticalCenter: threadName.verticalCenter
+    }
     Txt {
       id: threadName
-      x: root.single ? backButton.x + backButton.width + 10 : 19
-      y: 19
-      width: parent.width - x - 19
+      x: threadIcon.x + threadIcon.width + 8
+      y: 16
+      width: parent.width - x - 16
       text: root.composing ? "New message" : (root.selected ? (root.selected.name || root.selected.address || "") : "Messages")
       font.weight: Font.Bold
       elide: Text.ElideRight
@@ -424,9 +431,9 @@ Item {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: threadName.bottom
-      anchors.leftMargin: 19
-      anchors.rightMargin: 19
-      anchors.topMargin: 12
+      anchors.leftMargin: 16
+      anchors.rightMargin: 16
+      anchors.topMargin: 8
       placeholder: "Phone number"
       onAccepted: draft.input.forceActiveFocus()
       onEscaped: root.composing = false
@@ -438,9 +445,9 @@ Item {
       anchors.right: parent.right
       anchors.top: root.composing ? to.bottom : threadName.bottom
       anchors.bottom: sendErrorLine.visible ? sendErrorLine.top : inputRow.top
-      anchors.leftMargin: 19
-      anchors.rightMargin: 19
-      anchors.topMargin: 10
+      anchors.leftMargin: 16
+      anchors.rightMargin: 16
+      anchors.topMargin: 8
       anchors.bottomMargin: 10
       spacing: 10
       clip: true
@@ -506,9 +513,7 @@ Item {
           visible: !root.loading && root.online
           icon: "refresh"
           text: "Retry"
-          padX: 10
-          padY: 4
-          fontSize: 11
+          quiet: true
           onClicked: root.load(root.selected)
         }
       }
@@ -521,8 +526,8 @@ Item {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: inputRow.top
-      anchors.leftMargin: 19
-      anchors.rightMargin: 19
+      anchors.leftMargin: 16
+      anchors.rightMargin: 16
       anchors.bottomMargin: 8
       text: root.sendError
       color: Theme.err
@@ -535,7 +540,7 @@ Item {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: parent.bottom
-      anchors.margins: 19
+      anchors.margins: 16
       spacing: 10
       Field {
         id: draft
@@ -551,8 +556,6 @@ Item {
         anchors.verticalCenter: draft.verticalCenter
         icon: "send"
         text: "Send"
-        padX: 16
-        padY: 10
         active: root.online && !root.group && (root.composing ? to.text.trim() !== "" : !!root.selected && root.selectedDev === root.devId)
         onClicked: root.send()
       }

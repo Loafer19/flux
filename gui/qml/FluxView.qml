@@ -46,9 +46,12 @@ Item {
   readonly property bool compactHeader: width - sidebarSpace < 760
 
   property string tab: "overview"
-  onTabChanged: drawerOpen = false
+  onTabChanged: {
+    drawerOpen = false
+    if (tab !== "network") pairPane = false
+  }
   property string selectedId: ""
-  // Network → Pair is open. The sidebar button only opens that page.
+  // Pair is open. Pair new device, the rail plus button, and key p open it.
   property bool pairPane: false
   property string justPaired: ""
   property var prevPairStates: ({})
@@ -107,7 +110,8 @@ Item {
   // show. The text changes only when 1 of these fields changes, so a new
   // notification or message does not build the rows again.
   readonly property string pairedRowsText: JSON.stringify(paired.map(d => ({
-    id: d.id, name: d.name, type: d.type, online: !!d.online, paired: !!d.paired, battery: d.battery || null
+    id: d.id, name: d.name, type: d.type, online: !!d.online, paired: !!d.paired,
+    battery: d.battery || null, ip: d.ip || "", path: d.path || ""
   })))
   readonly property var pairedRows: JSON.parse(pairedRowsText)
   readonly property var dev: {
@@ -126,9 +130,14 @@ Item {
   }
   readonly property bool networkTab: tab === "network"
   readonly property bool computerTab: tab === "computer"
-  // Network and This computer are not a selected device.
+  // Pair and This computer are not a selected device.
   readonly property bool deskTab: networkTab || computerTab
   readonly property var selfDevice: backend ? (backend.selfDevice || {}) : {}
+  // The computer whose desktop this window is showing, or "".
+  readonly property string viewingId: {
+    var desk = backend && backend.state ? backend.state.peerDesktop : null
+    return desk && desk.from ? desk.from : ""
+  }
 
   focus: true
 
@@ -272,12 +281,19 @@ Item {
     return others.some(o => o.paired) ? "Same name as a paired device" : "Same name as another device"
   }
 
-  // Opens Network → Pair and asks fluxd to search this network again.
+  // Opens Pair and asks fluxd to search this network again.
   function openPair() {
     pairPane = true
     tab = "network"
     drawerOpen = false
     call("discover", {})
+  }
+
+  // Leaves Pair. A selected device opens on Overview. With no device,
+  // that tab has nothing to show, so the empty page stays.
+  function leavePair() {
+    pairPane = false
+    if (tab === "network") tab = "overview"
   }
 
   onAllDevicesChanged: {
@@ -338,6 +354,7 @@ Item {
       unpair(); event.accepted = true
     } else if (event.key === Qt.Key_Escape) {
       if (drawerOpen) drawerOpen = false
+      else if (networkTab) leavePair()
       else if (pairPane) pairPane = false
       event.accepted = true
     }
@@ -404,15 +421,6 @@ Item {
             tip: "This computer"
             selected: root.computerTab
             onClicked: root.tab = "computer"
-          }
-          RailButton {
-            icon: "link"
-            tip: "Network"
-            selected: root.networkTab
-            onClicked: {
-              root.pairPane = false
-              root.tab = "network"
-            }
           }
           Repeater {
             model: root.pairedRows
@@ -499,7 +507,7 @@ Item {
           }
         }
 
-        // This computer and Network sit above the devices.
+        // This computer sits above the devices.
         Column {
           width: parent.width
           spacing: 4
@@ -531,39 +539,6 @@ Item {
               cursorShape: Qt.PointingHandCursor
               onClicked: {
                 root.tab = "computer"
-                root.drawerOpen = false
-              }
-            }
-          }
-          Rectangle {
-            id: networkRow
-            width: parent.width
-            height: networkLabel.implicitHeight + 16
-            color: root.networkTab ? Theme.alpha(Theme.accent, 0.18) : (networkArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")
-            Icon {
-              id: networkIcon
-              x: 10
-              anchors.verticalCenter: parent.verticalCenter
-              name: "link"
-              size: 16
-              color: root.networkTab ? Theme.accent : Theme.dim
-            }
-            Txt {
-              id: networkLabel
-              anchors.left: networkIcon.right
-              anchors.leftMargin: 8
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Network"
-              color: root.networkTab ? Theme.accent : Theme.fg
-            }
-            MouseArea {
-              id: networkArea
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                root.pairPane = false
-                root.tab = "network"
                 root.drawerOpen = false
               }
             }
@@ -602,6 +577,7 @@ Item {
               required property var modelData
               width: side.width
               device: modelData
+              viewing: root.viewingId !== "" && modelData.id === root.viewingId
               selected: !root.deskTab && !!root.dev && root.dev.id === modelData.id
               onClicked: {
                 root.selectedId = modelData.id
@@ -801,8 +777,7 @@ Item {
         x: root.gutter
         anchors.verticalCenter: title.verticalCenter
         icon: "menu"
-        padX: 8
-        padY: 6
+        quiet: true
         onClicked: root.drawerOpen = true
       }
       Txt {
@@ -811,7 +786,7 @@ Item {
         width: Math.min(implicitWidth, (actions.visible ? actions.x - 14 : parent.width - root.gutter) - x)
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -0.5
-        text: root.computerTab ? "This computer" : (root.networkTab ? "Network" : (root.dev && root.currentTab ? root.currentTab.label : "Get started"))
+        text: root.computerTab ? "This computer" : (root.networkTab ? "Pair" : (root.dev && root.currentTab ? root.currentTab.label : "Get started"))
         font.pixelSize: root.narrowLayout ? 17 : 20
         font.weight: Font.Bold
         elide: Text.ElideRight
@@ -892,7 +867,7 @@ Item {
         x: root.gutter
         y: root.narrowLayout ? 16 : 24
         width: flick.width - 2 * root.gutter
-        spacing: 18
+        spacing: 12
         readonly property real fillHeight: flick.height - 48 - (offlineLine.visible ? offlineLine.height + spacing : 0)
 
         Txt {

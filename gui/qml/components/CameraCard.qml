@@ -43,7 +43,7 @@ Card {
   readonly property var cameras: chips(caps.cameras, [])
   readonly property var whiteBalances: chips(caps.whiteBalance, [])
 
-  implicitHeight: col.implicitHeight + 38
+  implicitHeight: col.implicitHeight + 32
 
   // A Format or Resolution change restarts the stream on the phone, because
   // the frame size changes. "Restarting…" shows until the stream is live
@@ -134,8 +134,8 @@ Card {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 19
-    spacing: 12
+    anchors.margins: 16
+    spacing: 8
     Row {
       spacing: 8
       Icon {

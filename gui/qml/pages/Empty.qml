@@ -12,7 +12,7 @@ Item {
   Column {
     id: col
     width: Math.min(parent.width, 640)
-    spacing: 14
+    spacing: 12
 
     FluxMark { size: 48 }
     Item { width: 1; height: 2 }
@@ -30,18 +30,18 @@ Item {
 
     Card {
       width: parent.width
-      implicitHeight: steps.implicitHeight + 38
+      implicitHeight: steps.implicitHeight + 32
       Column {
         id: steps
-        x: 19
-        y: 19
-        width: parent.width - 38
+        x: 16
+        y: 16
+        width: parent.width - 32
         spacing: 10
         Repeater {
           model: [
             "Install Flux for Android on the phone.",
             "Connect the phone to the same network as this computer.",
-            "Select + Pair new device. The list opens on Network → Pair.",
+            "Select + Pair new device.",
             "Make sure that the key on the phone is the same as the key in Flux."
           ]
           delegate: Row {

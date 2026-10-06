@@ -6,9 +6,9 @@ Rectangle {
   id: root
   property string message: ""
   width: Math.min(340, (parent ? parent.width : 372) - 32)
-  implicitHeight: col.implicitHeight + 24
+  implicitHeight: col.implicitHeight + 32
   color: Theme.bg2
-  border.width: 2
+  border.width: 1
   border.color: Theme.accent
   visible: message !== ""
   z: 10
@@ -23,8 +23,7 @@ Rectangle {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 14
-    anchors.topMargin: 12
+    anchors.margins: 16
     Txt { text: "flux"; color: Theme.accent; font.pixelSize: 12 }
     Txt {
       width: parent.width

@@ -75,7 +75,7 @@ Flux checks for a new release once a day. To install it, run `flux-cli update`.
 1. [Install Flux for Android](docs/android.md).
 2. Connect the phone and desktop to the same local network.
 3. Open the desktop window with `flux-cli open`.
-4. Select **+ Pair new device**. The list opens on **Network → Pair**.
+4. Select **+ Pair new device**.
 5. Select the phone.
 6. Compare the 16-character verification key on both screens, for example `5EE6 825F 974E D59A`.
 7. Accept the matching request on the phone.

@@ -11,7 +11,7 @@ Rectangle {
   property bool active: true
   signal clicked()
 
-  implicitHeight: col.implicitHeight + 28
+  implicitHeight: col.implicitHeight + 32
   color: Theme.bg2
   border.width: 1
   border.color: area.containsMouse && active ? Theme.accent : Theme.bg3
@@ -22,9 +22,9 @@ Rectangle {
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: parent.top
-    anchors.margins: 14
+    anchors.margins: 16
     spacing: 8
-    Icon { name: root.icon; color: Theme.accent; size: 20 }
+    Icon { name: root.icon; color: Theme.accent; size: 16 }
     Txt { width: parent.width; text: root.label; font.weight: Font.DemiBold; elide: Text.ElideRight }
   }
 

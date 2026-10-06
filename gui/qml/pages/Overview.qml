@@ -3,9 +3,9 @@ import QtQuick.Layouts
 import ".."
 import "../components"
 
-// Per-device overview: facts, quick actions, this peer's edge and access,
-// and phone streams. Global sharing and remote toggles live on
-// Network → This computer. One Browse (the tile) opens the peer's home.
+// Per-device overview. A desk peer is one column: seam, view, and the
+// switches that role can honor. A phone stays a grid.
+// Global switches live on This computer. One Browse opens the peer's home.
 Item {
   id: root
   property var view
@@ -16,6 +16,26 @@ Item {
   readonly property var settings: view && view.backend ? (view.backend.settings || ({})) : ({})
   readonly property string edgeSide: root.edgeSideFor(root.dev)
   readonly property var notifs: dev && dev.notifications ? dev.notifications.slice(0, 3) : []
+  // Agents on this computer. A blocked agent waits for a person. A done
+  // agent has finished. Working and idle agents stay off this page.
+  readonly property var herdr: view && view.backend && view.backend.state ? (view.backend.state.herdr || null) : null
+  readonly property var waitingAgents: {
+    var list = root.herdr && root.herdr.agents ? root.herdr.agents : []
+    var out = []
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i]
+      var status = String(item && item.status || "")
+      if (status === "blocked" || status === "done") out.push(item)
+    }
+    return out
+  }
+
+  function agentWaitText(agent) {
+    var name = (agent && agent.agent) ? agent.agent : "Agent"
+    var title = agent ? (agent.title || agent.project || "") : ""
+    var state = agent && agent.status === "blocked" ? "needs input" : "finished"
+    return title !== "" ? name + " · " + title + " · " + state : name + " · " + state
+  }
   // The phone camera as a webcam on this computer. Null when it is not used.
   readonly property var webcam: view && view.backend && view.backend.state ? (view.backend.state.webcam || null) : null
   // The phone microphone and the phone screen mirror. Null when not used.
@@ -60,7 +80,7 @@ Item {
 
   // True when this computer's global for the device-access key is on.
   // Agent control also needs herdr. Agent terminals also need herdr control.
-  // Agent globals are under Network → This computer → Agents.
+  // Agent globals are on This computer.
   function accessGlobalOn(key) {
     var settings = root.settings || ({})
     var globalKey = key === "clipboard" ? "autoClipboard" : key
@@ -105,8 +125,56 @@ Item {
     root.view.toast(side.charAt(0).toUpperCase() + side.slice(1) + " edge → " + device)
   }
 
+  function oppositeEdge(side) {
+    if (side === "left") return "right"
+    if (side === "right") return "left"
+    if (side === "top") return "bottom"
+    if (side === "bottom") return "top"
+    return ""
+  }
+
+  // True when the other computer named this one on the opposite edge.
+  function namesThisComputer(who) {
+    who = String(who || "")
+    if (!who || !root.view) return false
+    var self = root.view.selfDevice || ({})
+    if (who === String(self.id || "")) return true
+    return who.toLowerCase() === String(self.name || "").toLowerCase()
+  }
+
+  readonly property bool seamAnswers: {
+    if (!root.edgeSide || !root.dev || !root.dev.seamKnown) return false
+    return String(root.dev.edgeSide || "").toLowerCase() === root.oppositeEdge(root.edgeSide)
+        && root.namesThisComputer(root.dev.edgeDevice)
+  }
+
+  readonly property string seamNote: {
+    var name = (root.dev && root.dev.name) || "The other computer"
+    if (!root.edgeSide) return "Pick the edge that leaves this screen."
+    var opp = root.oppositeEdge(root.edgeSide)
+    if (!root.dev || !root.dev.seamKnown) return name + " has not reported an edge."
+    if (root.seamAnswers) return name + " answers on the " + opp + "."
+    var theirs = String(root.dev.edgeSide || "").toLowerCase()
+    if (!theirs || !root.namesThisComputer(root.dev.edgeDevice))
+      return name + " has not set the " + opp + " edge."
+    return name + " set " + theirs + ", not the " + opp + " edge."
+  }
+
+  // View stays off when that computer has said remote desktop is off.
+  // An older peer that has not reported a seam can still be asked.
+  readonly property bool viewAllowed: root.online && !(root.dev && root.dev.seamKnown && !root.dev.remoteDesktop)
+
+  readonly property string viewNote: {
+    if (!root.dev) return "View desktop"
+    var name = root.dev.name || "The other computer"
+    if (!root.online) return name + " is offline"
+    if (root.dev.seamKnown && !root.dev.remoteDesktop) return name + " has remote desktop off"
+    if (root.viewingPeer) return "View desktop · live"
+    return "View desktop"
+  }
+
   // The only Browse for this peer. Opens their shared home in Files.
-  // Home share is the global toggle on Network → This computer, with no button here.
+  // Home share is the global toggle on This computer, with no button here.
   function browsePeerHome() {
     if (!root.view || !root.dev) return
     if (!root.online) {
@@ -215,10 +283,239 @@ Item {
     return what.charAt(0).toUpperCase() + what.slice(1) + " is off"
   }
 
-  implicitHeight: grid.implicitHeight
+  // Certificate fingerprint. Closed until the user selects Show.
+  // The pair page shows the same value without this step.
+  component CertLine: Column {
+    id: line
+    property string value: ""
+    property bool open: false
+    width: parent ? parent.width : implicitWidth
+    spacing: 2
+    visible: value !== ""
+
+    function toggle() { line.open = !line.open }
+
+    Row {
+      spacing: 8
+      Txt {
+        text: "Certificate"
+        color: Theme.dim
+        font.pixelSize: 11
+      }
+      Txt {
+        text: line.open ? "Hide" : "Show"
+        color: Theme.accent
+        font.pixelSize: 11
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: line.toggle()
+        }
+      }
+    }
+    Txt {
+      objectName: "certificateValue"
+      visible: line.open
+      width: line.width
+      text: Fmt.hexGroups(line.value)
+      color: Theme.dim
+      font.pixelSize: 11
+      wrapMode: Text.Wrap
+    }
+  }
+
+  implicitHeight: root.peer ? peerCol.implicitHeight : grid.implicitHeight
+
+  // A desk is one column. The phone grid below stays hidden.
+  Column {
+    id: peerCol
+    visible: root.peer
+    width: parent.width
+    spacing: 18
+
+    Card {
+      width: parent.width
+      implicitHeight: peerHead.implicitHeight + 36
+      Column {
+        id: peerHead
+        x: 18
+        y: 18
+        width: parent.width - 36
+        spacing: 4
+        Txt {
+          width: parent.width
+          text: root.dev ? root.dev.name : ""
+          font.pixelSize: 22
+          font.weight: Font.Bold
+          elide: Text.ElideRight
+        }
+        Txt {
+          width: parent.width
+          text: {
+            var bits = []
+            if (root.dev) bits.push(Fmt.typeName(root.dev.type))
+            if (root.dev && root.dev.ip) bits.push(root.dev.ip)
+            bits.push(root.online ? "connected" : "offline")
+            return bits.join(" · ")
+          }
+          color: root.online ? Theme.ok : Theme.dim
+          elide: Text.ElideRight
+        }
+        CertLine {
+          objectName: "peerCertificate"
+          value: root.dev && root.dev.fingerprint ? root.dev.fingerprint : ""
+        }
+      }
+    }
+
+    Row {
+      width: parent.width
+      spacing: 10
+      Tile {
+        width: (parent.width - 10) / 2
+        icon: "upload"
+        label: "Files"
+        onClicked: root.view.go("files")
+      }
+      Tile {
+        objectName: "browseHomeTile"
+        width: (parent.width - 10) / 2
+        icon: "browse"
+        label: "Browse home"
+        active: root.online
+        onClicked: root.browsePeerHome()
+      }
+    }
+
+    Card {
+      objectName: "screenEdgeRow"
+      width: parent.width
+      implicitHeight: edgeCol.implicitHeight + 28
+      Column {
+        id: edgeCol
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 14
+        spacing: 8
+        Txt {
+          text: "Screen edge"
+          font.weight: Font.DemiBold
+        }
+        Flow {
+          width: parent.width
+          spacing: 6
+          Repeater {
+            model: ["", "left", "right", "top", "bottom"]
+            delegate: Chip {
+              required property var modelData
+              text: modelData === "" ? "Off" : (modelData.charAt(0).toUpperCase() + modelData.slice(1))
+              selected: root.edgeSide === modelData
+              onClicked: root.setEdgeSide(modelData)
+            }
+          }
+        }
+        Txt {
+          objectName: "seamNote"
+          width: parent.width
+          text: root.seamNote
+          color: root.seamAnswers ? Theme.ok : Theme.dim
+          font.pixelSize: 12
+          wrapMode: Text.Wrap
+        }
+      }
+    }
+
+    Card {
+      objectName: "viewDesktopRow"
+      width: parent.width
+      implicitHeight: viewDeskRow.implicitHeight + 24
+      RowLayout {
+        id: viewDeskRow
+        x: 16
+        y: 12
+        width: parent.width - 32
+        spacing: 10
+        Icon {
+          Layout.alignment: Qt.AlignVCenter
+          Layout.preferredWidth: 14
+          Layout.preferredHeight: 14
+          name: "screen-share"
+          size: 14
+          color: root.viewingPeer ? Theme.err : Theme.dim
+        }
+        Txt {
+          Layout.fillWidth: true
+          Layout.alignment: Qt.AlignVCenter
+          text: root.viewNote
+          font.weight: Font.DemiBold
+          wrapMode: Text.Wrap
+        }
+        OutlineButton {
+          visible: !root.viewingPeer
+          icon: "screen-share"
+          text: "View"
+          active: root.viewAllowed
+          onClicked: root.startPeerView()
+        }
+        OutlineButton {
+          visible: root.viewingPeer
+          icon: "stop"
+          text: "Stop"
+          onClicked: root.stopPeerView()
+        }
+      }
+    }
+
+    Card {
+      width: parent.width
+      implicitHeight: peerAccess.implicitHeight + 28
+      Column {
+        id: peerAccess
+        x: 14
+        y: 12
+        width: parent.width - 28
+        spacing: 8
+        Txt { text: "Device access"; font.weight: Font.DemiBold }
+        Repeater {
+          model: [
+            { key: "clipboard", label: "Clipboard sync" },
+            { key: "shareHome", label: "Shared folders" },
+            { key: "remoteInput", label: "Remote input" },
+            { key: "remoteDesktop", label: "Remote desktop" }
+          ]
+          delegate: Toggle {
+            required property var modelData
+            readonly property var row: modelData
+            readonly property var rules: root.dev && root.settings.deviceRules ? (root.settings.deviceRules[root.dev.id] || {}) : ({})
+            readonly property bool globalOn: root.accessGlobalOn(row.key)
+            width: peerAccess.width
+            text: row.label
+            active: !!root.dev && globalOn
+            checked: globalOn && rules[row.key] !== false
+            onToggled: function (value) {
+              root.view.call("device.settings.set", { device: root.dev.id, key: row.key, value: value })
+            }
+          }
+        }
+        Txt {
+          visible: root.accessGroupGated([
+            { key: "clipboard" }, { key: "shareHome" },
+            { key: "remoteInput" }, { key: "remoteDesktop" }
+          ])
+          width: parent.width
+          text: "Turn on under This computer"
+          color: Theme.dim
+          font.pixelSize: 11
+          wrapMode: Text.Wrap
+        }
+      }
+    }
+  }
 
   GridLayout {
     id: grid
+    visible: !root.peer
     width: parent.width
     columns: Math.max(1, Math.floor((width + 18) / (320 + 18)))
     columnSpacing: 18
@@ -301,22 +598,11 @@ Item {
           color: root.online ? Theme.ok : Theme.dim
           elide: Text.ElideRight
         }
-        // The fingerprint of the certificate of the device, as the pair mode
-        // and flux-cli unpair show it. The groups go to the next line as 1
-        // part, so that no group is cut.
-        Flow {
+        // The certificate fingerprint stays behind Show. It is not the pair key.
+        // Network → Pair still shows the certificate on the row.
+        CertLine {
           objectName: "fingerprint"
-          width: parent.width
-          visible: fingerprintText.text !== ""
-          topPadding: 2
-          spacing: 6
-          Txt { text: "certificate"; color: Theme.dim; font.pixelSize: 11 }
-          Txt {
-            id: fingerprintText
-            text: Fmt.hexGroups(root.dev ? root.dev.fingerprint : "")
-            color: Theme.dim
-            font.pixelSize: 11
-          }
+          value: root.dev && root.dev.fingerprint ? root.dev.fingerprint : ""
         }
       }
     }
@@ -353,7 +639,6 @@ Item {
         onClicked: root.view.go("files")
       }
       Tile {
-        objectName: "browseHomeTile"
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.columnSpan: ringTile.visible ? 2 : 1
@@ -365,90 +650,11 @@ Item {
       }
     }
 
-    // Desk peer: one row to show or stop the peer screen. Not a tall card.
-    Card {
-      objectName: "viewDesktopRow"
-      visible: root.peer
-      Layout.fillWidth: true
-      Layout.preferredWidth: 320
-      Layout.alignment: Qt.AlignTop
-      implicitHeight: viewDeskRow.implicitHeight + 24
-
-      RowLayout {
-        id: viewDeskRow
-        x: 16
-        y: 12
-        width: parent.width - 32
-        spacing: 10
-        Icon {
-          Layout.alignment: Qt.AlignVCenter
-          Layout.preferredWidth: 14
-          Layout.preferredHeight: 14
-          name: "screen-share"
-          size: 14
-          color: root.viewingPeer ? Theme.err : Theme.dim
-        }
-        Txt {
-          Layout.fillWidth: true
-          Layout.alignment: Qt.AlignVCenter
-          text: root.viewingPeer ? "View desktop · live" : "View desktop"
-          font.weight: Font.DemiBold
-          elide: Text.ElideRight
-        }
-        OutlineButton {
-          visible: !root.viewingPeer
-          icon: "screen-share"
-          text: "View"
-          active: root.online
-          onClicked: root.startPeerView()
-        }
-        OutlineButton {
-          visible: root.viewingPeer
-          icon: "stop"
-          text: "Stop"
-          onClicked: root.stopPeerView()
-        }
-      }
-    }
-
-    // Screen edge stays on this peer. Off / Left / Right / Top / Bottom.
-    Card {
-      objectName: "screenEdgeRow"
-      visible: root.peer
-      Layout.fillWidth: true
-      Layout.preferredWidth: 320
-      Layout.alignment: Qt.AlignTop
-      implicitHeight: edgeCol.implicitHeight + 28
-
-      Column {
-        id: edgeCol
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 14
-        spacing: 8
-        Txt {
-          text: "Screen edge"
-          font.weight: Font.DemiBold
-        }
-        Flow {
-          width: parent.width
-          spacing: 6
-          Repeater {
-            model: ["", "left", "right", "top", "bottom"]
-            delegate: Chip {
-              required property var modelData
-              text: modelData === "" ? "Off" : (modelData.charAt(0).toUpperCase() + modelData.slice(1))
-              selected: root.edgeSide === modelData
-              onClicked: root.setEdgeSide(modelData)
-            }
-          }
-        }
-      }
-    }
-
     // Latest notifications — phones only. Desk peers have no useful feed here.
+    // This card, the agent card, and the camera and mic cards sit above the
+    // device-access switches. Those switches do not need a person.
     Card {
+      objectName: "notifCard"
       visible: !root.peer
       Layout.fillWidth: true
       Layout.fillHeight: true
@@ -502,83 +708,37 @@ Item {
       }
     }
 
+    // Agents that wait for a person. A working agent stays off this card.
     Card {
+      objectName: "agentCard"
+      visible: !root.peer && root.waitingAgents.length > 0
       Layout.fillWidth: true
+      Layout.fillHeight: true
       Layout.preferredWidth: 320
-      implicitHeight: access.implicitHeight + 28
+      implicitHeight: agentCol.implicitHeight + 38
+
       Column {
-        id: access
-        x: 14; y: 12
-        width: parent.width - 28
+        id: agentCol
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 19
         spacing: 8
-        Txt { text: "Device access"; font.weight: Font.DemiBold }
+        SectionLabel { text: "AGENTS" }
         Repeater {
-          model: [
-            {
-              title: "Sharing",
-              rows: [
-                { key: "clipboard", label: "Clipboard sync" },
-                { key: "notifications", label: "Notifications" },
-                { key: "shareHome", label: "Shared folders" }
-              ]
-            },
-            {
-              title: "Remote",
-              rows: [
-                { key: "remoteInput", label: "Remote input" },
-                { key: "remoteDesktop", label: "Remote desktop" }
-              ]
-            },
-            {
-              title: "Agents",
-              rows: [
-                { key: "herdr", label: "Agent output" },
-                { key: "herdrControl", label: "Agent control" },
-                { key: "herdrTerminals", label: "Agent terminals" }
-              ]
-            }
-          ]
-          delegate: Column {
-            id: groupCol
+          model: root.waitingAgents.slice(0, 3)
+          delegate: Txt {
             required property var modelData
-            readonly property var group: modelData
-            readonly property bool gated: root.accessGroupGated(group.rows)
-            width: access.width
-            spacing: 1
-            Txt {
-              width: parent.width
-              text: groupCol.group.title
-              color: Theme.dim
-              font.pixelSize: 11
-              font.weight: Font.DemiBold
-            }
-            Repeater {
-              model: groupCol.group.rows
-              delegate: Toggle {
-                required property var modelData
-                readonly property var row: modelData
-                readonly property var settings: root.settings || ({})
-                readonly property var rules: root.dev && settings.deviceRules ? (settings.deviceRules[root.dev.id] || {}) : ({})
-                readonly property bool globalOn: root.accessGlobalOn(row.key)
-                width: access.width
-                text: row.label
-                active: !!root.dev
-                checked: rules[row.key] !== false
-                opacity: globalOn ? 1 : 0.4
-                onToggled: function (value) {
-                  root.view.call("device.settings.set", { device: root.dev.id, key: row.key, value: value })
-                }
-              }
-            }
-            Txt {
-              visible: groupCol.gated
-              width: parent.width
-              text: "Turn on under Network → This computer"
-              color: Theme.dim
-              font.pixelSize: 11
-              elide: Text.ElideRight
-            }
+            width: agentCol.width
+            text: root.agentWaitText(modelData)
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
           }
+        }
+        Txt {
+          visible: root.waitingAgents.length > 3
+          text: (root.waitingAgents.length - 3) + " more"
+          color: Theme.dim
         }
       }
     }
@@ -649,6 +809,89 @@ Item {
       title: root.screen ? (root.screen.fromName || "The phone") + " shows its screen in " + (root.screen.player || "a window") : ""
       detail: root.screen && root.screen.width ? root.screen.width + "×" + root.screen.height + " · close the window to stop" : ""
       onStop: root.view.call("screen.stop", {})
+    }
+
+    // The switches sit on their own row, under the cards that wait.
+    Card {
+      objectName: "phoneAccess"
+      Layout.fillWidth: true
+      Layout.preferredWidth: 320
+      Layout.columnSpan: grid.columns
+      implicitHeight: access.implicitHeight + 28
+      Column {
+        id: access
+        x: 14; y: 12
+        width: parent.width - 28
+        spacing: 8
+        Txt { text: "Device access"; font.weight: Font.DemiBold }
+        Repeater {
+          model: [
+            {
+              title: "Sharing",
+              rows: [
+                { key: "clipboard", label: "Clipboard sync" },
+                { key: "notifications", label: "Notifications" },
+                { key: "shareHome", label: "Shared folders" }
+              ]
+            },
+            {
+              title: "Remote",
+              rows: [
+                { key: "remoteInput", label: "Remote input" },
+                { key: "remoteDesktop", label: "Remote desktop" }
+              ]
+            },
+            {
+              title: "Agents",
+              rows: [
+                { key: "herdr", label: "Agent output" },
+                { key: "herdrControl", label: "Agent control" },
+                { key: "herdrTerminals", label: "Agent terminals" }
+              ]
+            }
+          ]
+          delegate: Column {
+            id: groupCol
+            required property var modelData
+            readonly property var group: modelData
+            readonly property bool gated: root.accessGroupGated(group.rows)
+            width: access.width
+            spacing: 1
+            Txt {
+              width: parent.width
+              text: groupCol.group.title
+              color: Theme.dim
+              font.pixelSize: 11
+              font.weight: Font.DemiBold
+            }
+            Repeater {
+              model: groupCol.group.rows
+              delegate: Toggle {
+                required property var modelData
+                readonly property var row: modelData
+                readonly property var settings: root.settings || ({})
+                readonly property var rules: root.dev && settings.deviceRules ? (settings.deviceRules[root.dev.id] || {}) : ({})
+                readonly property bool globalOn: root.accessGlobalOn(row.key)
+                width: access.width
+                text: row.label
+                active: !!root.dev && globalOn
+                checked: globalOn && rules[row.key] !== false
+                onToggled: function (value) {
+                  root.view.call("device.settings.set", { device: root.dev.id, key: row.key, value: value })
+                }
+              }
+            }
+            Txt {
+              visible: groupCol.gated
+              width: parent.width
+              text: "Turn on under This computer"
+              color: Theme.dim
+              font.pixelSize: 11
+              elide: Text.ElideRight
+            }
+          }
+        }
+      }
     }
   }
 }

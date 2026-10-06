@@ -7,7 +7,8 @@ They share clipboard text, clipboard images, and files.
 `flux-cli status` shows the other computer with the role `peer`.
 
 A phone and a Mac stay remotes.
-This page does not turn a computer into a phone: there is no Browse storage, ring, SMS, camera, or fingerprint approval between two desks.
+This page does not turn a computer into a phone: there is no ring, SMS, camera, or fingerprint approval between two desks.
+Overview can browse the other computer's home.
 
 ## Requirements
 
@@ -64,9 +65,9 @@ sudo ufw allow from 192.168.1.0/24 to any port 12070:12108 proto tcp comment 'fl
 
 1. On both computers, run `flux-cli status` and confirm `fluxd` is up.
 2. Open the window with `flux-cli open`.
-3. Select **+ Pair new device**.
-4. Select the other computer.
-5. Compare the 8-character key on both screens.
+3. Select **+ Pair new device**. The list opens on **Network → Pair**.
+4. Select the other computer. When it does not appear, share or paste an invite on that page.
+5. Compare the 16-character key on both screens, for example `5EE6 825F 974E D59A`.
 6. Accept the matching request.
 
 The other computer appears in the list after the TLS link is up.
@@ -83,10 +84,15 @@ flux-cli status
 Accept it on the other computer.
 `status` then shows that computer as `laptop` or `desktop`, role `peer`, and `paired`.
 
-Open **Network** in the window to see this computer and the paired devices.
-A peer row shows clipboard and files on, and Do Not Disturb between desks off.
-The computer named in `edge_device` shows that screen edge. The others stay unset.
-Select the row to open that device.
+Open **Network** to see each paired device.
+The window header shows the name of this computer and its TCP port.
+A row shows the device type, the address, and whether it is online.
+When the link is up, the row also shows LAN, Tailscale, or Relay for that socket.
+The address and the relay switch do not choose the word. An offline device has no path word.
+A row shows **Viewing** while this computer shows that desk.
+Select the row to open that device on Overview.
+Screen edge, view desktop, and home browse are on Overview.
+The switches for this computer are on **This computer**.
 
 Two computers with the same name need a device id:
 
@@ -110,7 +116,7 @@ When the other computer never appears in the list, share an invite instead of op
 3. Under **Pair with invite**, set the host (or leave empty when fluxd can auto-pick a private LAN address, then Tailscale), then **Create invite**.
 4. Copy the `flux1:…` code, or show the QR when the window draws one.
 5. On the other computer, open **Network**, paste the invite, and select **Join**.
-6. Compare the 8-character key on both screens and accept.
+6. Compare the 16-character key on both screens and accept.
 
 ### From the terminal
 
@@ -130,7 +136,7 @@ When the other computer never appears in the list, share an invite instead of op
    flux-cli pair join 'flux1:…@other-desk:12100'
    ```
 
-4. Compare the 8-character key on both screens and accept.
+4. Compare the 16-character key on both screens and accept.
 
 The invite carries the device ID, host, and port. It is not a secret.
 Pairing still needs the verification key.
@@ -155,9 +161,9 @@ Prefer LAN or Tailscale. Use a relay only when neither computer can dial the oth
 
 3. Create and join an invite as above, without `--host` (the invite points at the relay).
 
-4. Compare the 8-character key and accept.
+4. Compare the 16-character key and accept.
 
-`relay` defaults to off. The Network page has the same toggle and URL field.
+`relay` defaults to off. **Network → Pair** has the same toggle and URL field.
 The helper splices TCP only; Flux still runs its TLS handshake end to end.
 A full STUN/TURN mesh is out of scope; this is a small rendezvous scaffold you can self-host for NAT/cross-network pairing.
 
@@ -181,8 +187,9 @@ A computer does not open a `file:` address.
 ## Screen edge
 
 One edge of this screen can continue on the other computer.
-The pointer moves there. Clicks and the keyboard stay on the computer where they were pressed.
-`remote_input` stays off. This is not the phone touchpad.
+The pointer, clicks, and scroll move there through `flux.edge`.
+The keyboard stays on the computer where the keys are pressed. A key press ends the lease and brings the pointer back.
+`remote_input` stays off for this path. This is not the phone touchpad.
 Both computers must name the seam: this desk names the edge that leaves, the other desk names the opposite edge.
 
 On this computer (for example dragon), point the left edge at the other desk:
@@ -206,7 +213,12 @@ systemctl --user reload fluxd
 ```
 
 A daemon started by hand reloads on `SIGHUP`.
-On the Network page, tap the edge chip on a peer row to cycle left, right, top, bottom, or off.
+On Overview for that computer, choose Off, Left, Right, Top, or Bottom.
+When you set an edge, this computer asks the other computer to set the opposite edge.
+It does not change an edge that already names a third computer.
+It does not clear the other computer when you turn the edge off.
+A computer that ignores the ask keeps its own edge.
+The row says when the other computer has not set the opposite edge.
 
 Move the pointer through that edge. It appears on the other screen.
 Move it back inward on this computer to return.
@@ -218,7 +230,7 @@ The allow rule on both computers covers that path.
 Received files use `download_dir`.
 
 `flux-cli notify` can show a notification on the other computer.
-Browse storage stays off.
+Browse home is on Overview for that computer.
 `flux-cli ring` returns an error for a computer.
 
 
@@ -233,8 +245,10 @@ A paired desk can show the other desk screen when both sides allow it.
    flux-cli input on   # optional: let the viewer move the pointer and type
    ```
 
-2. On the computer that watches, with the peer online, either open **Network**,
-   select **View** on the peer row, or run:
+2. On the computer that watches, with the peer online, open **Overview** for
+   that computer and select **View**. When that computer has said that
+   remote desktop is off, **View** stays inactive. An older `fluxd` that
+   has not reported a seam can still be asked. Or run:
 
    ```sh
    flux-cli desktop view vivobook
@@ -246,14 +260,16 @@ A paired desk can show the other desk screen when both sides allow it.
    into `mpv` or `ffplay`. With `mpv`, move and click in the window to control
    the peer when that desk has `remote_input` on.
 
-3. Close the player window, tap **Stop** on the Network peer row, or run
+3. Close the player window, select **Stop** on that Overview row, or run
    `flux-cli desktop view-stop`.
+   Network shows **Viewing** on the row and opens Overview.
 
-The peer role still hides phone-only features (Browse, ring, SMS, approve).
+The peer role still hides phone-only features (ring, SMS, camera, fingerprint approval).
+Home browse of the other computer stays.
 Remote desktop and remote input between desks reuse the phone packets and
 the existing `remote_desktop` / `remote_input` switches. Screen-edge pointer
-share (`flux-cli edge`) stays separate: it moves the cursor without a video
-stream and does not need `remote_input`.
+share (`flux-cli edge`) stays separate: it moves the pointer, clicks, and
+scroll without a video stream and does not need `remote_input`.
 
 With `mpv`, the viewer window sends mouse and keys as `flux.mousepad.request`
 (same packets as the phone). The watched desk runs them only while

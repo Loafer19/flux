@@ -53,11 +53,15 @@ The role `remote` is a phone, a tablet, or a Mac.
 See [Connect two computers](desktop-peer.md) for the firewall allow and the pair.
 `send` and `clip` take a peer by the same `--device` name or id as a phone.
 
-Window pages: `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
-`network` shows this computer and each paired device.
-A peer row says that clipboard and files work, and that Do Not Disturb between desks is off.
-The computer named in `edge_device` shows that screen edge. The others stay unset.
-Set the seam with `flux-cli edge left other-desk`, clear it with `flux-cli edge off`, or tap the edge chip on the Network page.
+Window pages: `computer`, `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+`computer` holds the switches for this computer: clipboard, Do Not Disturb, home share, remote desktop, remote input, and agents.
+`network` shows each paired device.
+A row shows the device type, the address, and whether the device is online.
+When the link is up, the row also shows LAN, Tailscale, or Relay for that socket.
+The address and the relay switch do not choose the word. An offline device has no path word.
+A row shows **Viewing** while this computer shows that desk.
+Select the row to open Overview.
+Set the seam with `flux-cli edge left other-desk`, clear it with `flux-cli edge off`, or choose the edge on Overview for that computer.
 
 `flux-cli setup` returns 1 when a step fails, so a script can check it:
 
@@ -396,7 +400,7 @@ To take the access back, run `flux-cli desktop off` and `flux-cli input off`.
 `flux-cli input` without an argument shows whether remote input is on.
 
 `fluxd` saves the change in `config.toml` at once.
-The **Remote access** card on the **Overview** page of the Flux window has the same 2 switches.
+The **Remote access** card on the **This computer** page of the Flux window has the same 2 switches.
 See [remote desktop](remote-desktop.md) and [touchpad and keyboard](remote-input.md).
 
 ## Watch state changes

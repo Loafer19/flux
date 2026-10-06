@@ -34,7 +34,7 @@ const usage = `Usage: flux-cli [command] [--device NAME] [args]
 Commands:
   open [page]            Open the Flux window: the omarchy-shell plugin when it is
                          enabled, else flux-gui. Pages: overview, clipboard, files,
-                         notifications, messages, commands, network
+                         notifications, messages, commands, network, computer
   status [--json]        Show this computer and the known devices
   discover               Broadcast this computer on the network now
   pair DEVICE            Ask a device to pair, show the verification key, and
@@ -467,7 +467,7 @@ func pairInvite(args []string) error {
 	fmt.Println("On the other computer, with a path that reaches this host (LAN allow or Tailscale):")
 	fmt.Printf("  flux-cli pair join %q\n", inv.Invite)
 	fmt.Println()
-	fmt.Println("Compare the 8-character key on both sides, then accept.")
+	fmt.Println("Compare the 16-character key on both sides, then accept.")
 	fmt.Println("This invite is not a secret. It only skips mDNS/UDP discovery.")
 	return nil
 }

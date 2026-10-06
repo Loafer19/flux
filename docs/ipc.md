@@ -126,6 +126,7 @@ Each device in `devices` has these fields:
 | `pairState` | `none`, `paired`, `requested` for a request of this computer, `confirm` for a request of this computer that the device accepted, or `incoming` for a request of the device. |
 | `pairKey` | The verification key of an open pairing: 16 uppercase hex digits. The apps show it in 4 groups of 4. |
 | `ip`, `addresses`, `lastSeen` | The address of the last link, the [extra addresses](#extra-addresses), and the Unix time of the last packet. |
+| `path` | `lan`, `tailscale`, or `relay` for the live socket. An empty string when the device is offline. The address text does not set it. |
 | `battery`, `notifications`, `conversations` | The phone data. A device that is not paired has none. |
 | `outbox` | The text messages that `sms.send` sent through the device and that the device did not report yet. See [the outbox](#outbox). A device that is not paired has an empty list. |
 | `plugins` | The features that the device offers. `streamrequest` means that the device can start its camera and its microphone when this computer asks. |

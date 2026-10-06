@@ -129,8 +129,8 @@ int main(int argc, char *argv[])
     replace.setFlags(QCommandLineOption::HiddenFromHelp);
     parser.addOption(replace);
     parser.addPositionalArgument(QStringLiteral("page"),
-                                 QStringLiteral("The page to open: network, overview, clipboard, files, notifications, "
-                                                "messages, or commands. With --snapshot: the screens to render."),
+                                 QStringLiteral("The page to open: computer, network, overview, clipboard, files, "
+                                                "notifications, messages, or commands. With --snapshot: the screens to render."),
                                  QStringLiteral("[page]"));
     parser.process(app);
     const QString page = parser.positionalArguments().value(0);

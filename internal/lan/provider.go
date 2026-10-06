@@ -436,7 +436,7 @@ func (p *Provider) connect(ctx context.Context, addrs []string, target proto.Ide
 		// The port that answered is the listener port of the peer.
 		_, port, _ := net.SplitHostPort(addrs[i])
 		target.TCPPort, _ = strconv.Atoi(port)
-		if p.open(conn, target) || p.cfg.HasLink(target.DeviceID) {
+		if p.open(conn, target, "") || p.cfg.HasLink(target.DeviceID) {
 			// A link is up, so HasLink stops the next dials. After the link
 			// drops, the next trigger can connect at once.
 			p.forgetAttempt(target.DeviceID)
@@ -448,7 +448,7 @@ func (p *Provider) connect(ctx context.Context, addrs []string, target proto.Ide
 
 // open writes the plain identity on a new outgoing connection and runs the
 // TLS handshake as the server. It reports whether the link is up.
-func (p *Provider) open(conn net.Conn, udpID proto.Identity) bool {
+func (p *Provider) open(conn net.Conn, udpID proto.Identity, via string) bool {
 	setUserTimeout(conn)
 	line, _ := p.plainIdentity(udpID).Marshal()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
@@ -457,7 +457,7 @@ func (p *Provider) open(conn net.Conn, udpID proto.Identity) bool {
 		return false
 	}
 	tc := tls.Server(conn, serverConfig(p.cfg.Cert))
-	return p.finish(tc, udpID, true)
+	return p.finish(tc, udpID, true, via)
 }
 
 func (p *Provider) acceptLoop(ctx context.Context) {
@@ -477,7 +477,7 @@ func (p *Provider) acceptLoop(ctx context.Context) {
 		}
 		go func() {
 			defer p.endHandshake(host)
-			p.accept(conn)
+			p.accept(conn, "")
 		}()
 	}
 }
@@ -486,7 +486,7 @@ func (p *Provider) acceptLoop(ctx context.Context) {
 // connection, for example one returned by a relay REGISTER. Same path as
 // a peer that dialed this computer's TCP port.
 func (p *Provider) AcceptConn(conn net.Conn) {
-	p.accept(conn)
+	p.accept(conn, "relay")
 }
 
 // OpenConn runs the outgoing Flux handshake on an already-open TCP
@@ -496,7 +496,7 @@ func (p *Provider) OpenConn(conn net.Conn, target proto.Identity) bool {
 	if target.ProtocolVersion == 0 {
 		target.ProtocolVersion = proto.ProtocolVersion
 	}
-	return p.open(conn, target)
+	return p.open(conn, target, "relay")
 }
 
 // startHandshake reserves a place for 1 incoming connection from host. It
@@ -534,7 +534,7 @@ func remoteHost(conn net.Conn) string {
 // accept handles a TCP connection from a device that received our UDP
 // broadcast. The device sends its identity in plain text, and this side
 // acts as the TLS client.
-func (p *Provider) accept(conn net.Conn) {
+func (p *Provider) accept(conn net.Conn, via string) {
 	setUserTimeout(conn)
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	r := bufio.NewReaderSize(conn, 4096)
@@ -565,7 +565,7 @@ func (p *Provider) accept(conn net.Conn) {
 		return
 	}
 	tc := tls.Client(conn, clientConfig(p.cfg.Cert))
-	p.finish(tc, id, false)
+	p.finish(tc, id, false, via)
 }
 
 // maxAppText is the longest app name and app version that a link keeps.
@@ -574,7 +574,7 @@ const maxAppText = 32
 // finish runs the TLS handshake, checks the certificate, and exchanges the
 // identity again over TLS for protocol version 8. It reports whether it
 // passed a new link to OnLink.
-func (p *Provider) finish(tc *tls.Conn, plainID proto.Identity, outgoing bool) bool {
+func (p *Provider) finish(tc *tls.Conn, plainID proto.Identity, outgoing bool, via string) bool {
 	fail := func(format string, args ...any) {
 		p.logf("%s: "+format, append([]any{proto.CleanName(plainID.DeviceName)}, args...)...)
 		tc.Close()
@@ -631,7 +631,7 @@ func (p *Provider) finish(tc *tls.Conn, plainID proto.Identity, outgoing bool) b
 	id.DeviceName = proto.CleanName(id.DeviceName)
 	id.DeviceType = proto.CleanType(id.DeviceType)
 	id.App, id.AppVersion = proto.CleanText(id.App, maxAppText), proto.CleanText(id.AppVersion, maxAppText)
-	link := newLink(p, tc, reader, id, cert, outgoing)
+	link := newLink(p, tc, reader, id, cert, outgoing, via)
 	// The listener port of the peer: the port that this side dialed, or the
 	// port that the peer put in its plain identity.
 	link.PeerPort = plainID.TCPPort

@@ -128,7 +128,7 @@ Scope {
     return paths.filter(function (p) { return p.startsWith("/") })
   }
 
-  // Local module probe for Network → This computer. One word each.
+  // Local module probe for This computer. One word each.
   // v4l2loopback: lsmod (/proc/modules) and modinfo. The others are the
   // commands the desk already runs: wtype, wl-copy, wl-paste, pw-record.
   property string moduleProbeText: ""

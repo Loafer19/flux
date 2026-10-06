@@ -130,7 +130,7 @@ Window {
       view.selectedId = tablet
       view.tab = "commands"
     }],
-    ["21-pair-list", function () { view.tab = "overview"; view.pairMode = true }],
+    ["21-pair-list", function () { view.pairPane = true; view.tab = "network" }],
     ["22-pair-requested", function () {
       mock.updateDevice(oneplus, function (d) { d.pairState = "requested"; d.pairKey = "4F21A9C3E08B7D52"; return d })
     }],
@@ -216,8 +216,8 @@ Window {
     }, function () { replyFirst() }],
     ["31-empty", function () { mock.setState(function (s) { s.devices = [] }) }],
     ["32-not-running", function () { mock.connected = false }],
-    // Sidebar overflow at the 640 px minimum height: 6 paired devices, a pair
-    // request, and the list of discovered devices.
+    // Sidebar overflow at the 640 px minimum height: 6 paired devices and a
+    // pair request. Phones on this network are listed on Network → Pair.
     ["33-sidebar-640-top", function () {
       mock.connected = true
       mock.state = mock.fixTimes(mock.fixture.state)
@@ -234,7 +234,7 @@ Window {
       view.height = 640
       view.selectedId = pixel
       view.tab = "overview"
-      view.pairMode = true
+      view.pairPane = false
     }],
     ["34-sidebar-640-bottom", function () { view.sidebarFlick.contentY = view.sidebarFlick.contentHeight - view.sidebarFlick.height }],
     ["35-sidebar-640-select-last", function () { view.sidebarFlick.contentY = 0; view.selectedId = "a0000000000000000000000000000002"; view.tab = "files" }],
@@ -243,7 +243,7 @@ Window {
     ["37-drawer", function () {
       view.anchors.fill = win.contentItem
       mock.state = mock.fixTimes(mock.fixture.state)
-      view.pairMode = false
+      view.pairPane = false
       view.selectedId = pixel
       view.tab = "overview"
       view.drawerOpen = true
@@ -287,11 +287,9 @@ Window {
     // shows this screen, then Stop.
     ["46-remote-on", function () {
       mock.state = mock.fixTimes(mock.fixture.state)
-      view.tab = "network"
+      view.tab = "computer"
     }, function () {
-      var page = pageItem()
-      page.networkPane = "computer"
-      var card = findBy(page, "objectName", "remoteCard")
+      var card = findBy(pageItem(), "objectName", "remoteCard")
       card.set("remoteDesktop", true)
       card.set("remoteInput", true)
     }],
@@ -305,15 +303,16 @@ Window {
     }],
     // A device on the network with the name of a paired phone.
     ["49-pair-twin", function () {
-      view.tab = "overview"
       mock.setState(function (s) {
         s.devices.push({ id: "a0000000000000000000000000000005", name: "pixel  8", type: "phone", ip: "192.168.1.66", fingerprint: "E7A10C5F2B98D364", paired: false, online: true, pairState: "none", plugins: [], notifications: [], conversations: [] })
       })
-      view.pairMode = true
+      view.pairPane = true
+      view.tab = "network"
     }],
     // 2 pair requests: 1 card, and a line for the other request.
     ["50-pair-requests", function () {
-      view.pairMode = false
+      view.pairPane = false
+      view.tab = "overview"
       mock.setState(function (s) {
         s.devices = s.devices.filter(function (d) { return d.id !== "a0000000000000000000000000000005" })
         s.devices.push({ id: "c0ffee0000000000000000000000beef", name: "work-thinkpad", type: "laptop", ip: "192.168.1.70", paired: false, online: true, pairState: "incoming", pairKey: "9B03E7D16A2FC048", fingerprint: "71C0E5A93B2D8F46", plugins: [], notifications: [], conversations: [] })

@@ -176,6 +176,24 @@ func TestPeerDropsPhonePackets(t *testing.T) {
 	}
 }
 
+func TestDeviceViewPath(t *testing.T) {
+	dev := &Device{ID: "0123456789abcdef0123456789abcdef", Name: "desk", Type: "laptop", IP: "100.1.2.3", Paired: true}
+	if dev.view().Path != "" || dev.view().Online {
+		t.Fatal("an offline device reported a path")
+	}
+	dev.link = &lan.Link{Path: "nope"}
+	if dev.view().Path != "" {
+		t.Fatal("an unknown path was shown")
+	}
+	for _, path := range []string{"lan", "tailscale", "relay"} {
+		dev.link.Path = path
+		got := dev.view()
+		if !got.Online || got.Path != path || got.IP != "100.1.2.3" {
+			t.Fatalf("path %q view online %v path %q ip %q", path, got.Online, got.Path, got.IP)
+		}
+	}
+}
+
 type countingInput struct{ n int }
 
 func (c *countingInput) Move(float64, float64) error                      { c.n++; return nil }

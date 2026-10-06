@@ -1169,6 +1169,12 @@ func (d *Daemon) onPairedLink(dev *Device, l *lan.Link) {
 		_ = l.Send(state)
 	}
 	d.sendThemeTo(dev, l)
+	if peer {
+		d.sendSeam(l)
+		// An edge set while this computer was offline goes out on link-up.
+		// Other computers and phones are not asked.
+		d.askEdgeOnLink(dev, l)
+	}
 }
 
 // markDirty schedules a state event for all subscribers.

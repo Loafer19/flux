@@ -16,7 +16,7 @@ See [sync switches](android-setup.md#sync-switches) and [security](security.md).
 2. Connect the phone and desktop to the same local network.
 3. Open Flux on the phone.
 4. Run `flux-cli open` on the desktop.
-5. Select **+ Pair new device**.
+5. Select **+ Pair new device**. The list opens on **Network → Pair**.
 6. Select the phone.
 7. Compare the 16-character key on both screens, for example `5EE6 825F 974E D59A`.
 8. Accept the matching request on the phone.
@@ -435,7 +435,7 @@ See [herdr agents](herdr.md) for the replies, new agents, terminals, dictation, 
 ## Touchpad and keyboard
 
 The phone, the iPhone, or the Mac can be a touchpad and a keyboard for the computer.
-To allow it, turn on **Remote input** in the **Remote access** card of the Flux window, or run:
+To allow it, turn on **Remote input** in the **Remote access** card on the **This computer** page, or run:
 
 ```sh
 flux-cli input on
@@ -447,7 +447,7 @@ See [Touchpad and keyboard](remote-input.md) for the gestures, the keys, and the
 ## Remote desktop
 
 The phone, the iPhone, or the Mac can show the screen of the computer and control it.
-To allow it, turn on **Remote desktop** and **Remote input** in the **Remote access** card of the Flux window, or run:
+To allow it, turn on **Remote desktop** and **Remote input** in the **Remote access** card on the **This computer** page, or run:
 
 ```sh
 flux-cli desktop on

@@ -23,6 +23,8 @@ type Link struct {
 	Started  time.Time
 	// PeerPort is the TCP listener port of the peer, or 0 when unknown.
 	PeerPort int
+	// Path is how this socket is connected: "lan", "tailscale", or "relay".
+	Path string
 
 	provider *Provider
 	conn     *tls.Conn
@@ -51,10 +53,11 @@ var maxSendQueue int64 = 32 << 20
 
 var errSendQueueFull = errors.New("the peer does not read the packets")
 
-func newLink(p *Provider, conn *tls.Conn, reader *bufio.Reader, id proto.Identity, cert *x509.Certificate, outgoing bool) *Link {
+func newLink(p *Provider, conn *tls.Conn, reader *bufio.Reader, id proto.Identity, cert *x509.Certificate, outgoing bool, via string) *Link {
 	addr, _ := conn.RemoteAddr().(*net.TCPAddr)
 	l := &Link{
 		Identity: id, Cert: cert, Addr: addr, Outgoing: outgoing, Started: time.Now(),
+		Path:     socketPath(conn.LocalAddr(), via),
 		provider: p, conn: conn, reader: reader, done: make(chan struct{}),
 	}
 	l.maxLine.Store(maxUnpairedLine)

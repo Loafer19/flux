@@ -713,6 +713,15 @@ func (d *Daemon) setSetting(key string, value any) error {
 		// show cursor, restore follow_mouse, destroy overlay, leave peer.
 		d.resetEdgePointer()
 	}
+	if key == "edgeSide" || key == "edgeDevice" || key == "remoteDesktop" {
+		d.announceSeam()
+	}
+	// A remote-desktop change and a reload announce the seam. They do not
+	// ask the other computer to move its edge. Turning the edge off
+	// announces an empty seam and does not clear the other computer.
+	if key == "edgeSide" || key == "edgeDevice" {
+		d.askConfiguredEdge()
+	}
 	if key == "relay" || key == "relayURL" {
 		d.wakeRelay()
 	}
@@ -753,6 +762,9 @@ func (d *Daemon) Reload() error {
 		d.stopClipSend()
 	}
 	d.policiesChanged()
+	// A reload reports the seam. It does not ask the other computer to
+	// change its edge.
+	d.announceSeam()
 	return nil
 }
 

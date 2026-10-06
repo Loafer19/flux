@@ -58,7 +58,7 @@ The routes are the same for each of them.
 - UDP on port 12100, for the identity broadcasts of the devices.
 
 The default Omarchy firewall blocks inbound traffic to these ports and permits mDNS.
-The desktop opens each link itself, so Flux needs no new inbound desktop firewall rule for these routes.
+The desktop opens each link to a phone, an iPhone, or a Mac itself, so those routes need no new inbound rule on this computer.
 Without such a firewall, each host that reaches the ports can open a link and send a pair request.
 See [security](security.md#network-ports) and the [limits below](#limits-for-devices-that-are-not-paired).
 Wi-Fi client isolation can still block communication between devices.

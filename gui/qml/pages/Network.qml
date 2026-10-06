@@ -3,18 +3,18 @@ import QtQuick.Layouts
 import ".."
 import "../components"
 
-// This computer, Devices list, and Pair (Invite/Join) as a Network segment —
-// not a long scroll under Devices. Relay stays advanced/collapsed.
-// Devices | Pair | This computer. This computer holds the global toggles
-// (sharing, remote access, agents) and the modules status. Screen edge stays
-// on the peer in Overview. Browse is one tile there, not on these cards.
-// Self is only the This computer card, never a peer row like other desks.
+// Devices and Pair. This computer's switches live on their own page.
+// Pair lists this network, then the invite, the join field, and the relay.
+// The row shows the address fluxd connected with. A path word comes from
+// the live socket (lan, tailscale, relay). The address and the relay
+// switch do not choose it. An offline device has no path word.
+// Screen edge, view desktop, and home browse stay on Overview.
+// A live desk view is a badge on the row. Stop stays on Overview.
 Item {
   id: root
   property var view
   property bool fillHeight: false
 
-  readonly property var self: view && view.backend ? (view.backend.selfDevice || {}) : {}
   readonly property var paired: view && view.paired ? view.paired : []
   // Desks first, then phones and other remotes.
   readonly property var ordered: {
@@ -33,37 +33,8 @@ Item {
     if (!view || !view.backend || !view.backend.state) return null
     return view.backend.state.peerDesktop || null
   }
-  // Network segment: "devices" | "pair" | "computer"
+  // Network segment: "devices" | "pair"
   property string networkPane: "devices"
-  // Incoming remote desktop of this computer (state.desktop), and the phone
-  // webcam state. Module rows are a local probe, not the webcam error.
-  readonly property var desktop: view && view.backend && view.backend.state ? (view.backend.state.desktop || null) : null
-  readonly property var webcam: view && view.backend && view.backend.state ? (view.backend.state.webcam || null) : null
-  readonly property bool desktopShown: !!desktop && !desktop.error
-  readonly property bool desktopLive: desktopShown && !!desktop.active
-  // Modules this computer needs, probed on the machine (lsmod/modinfo and
-  // command -v). Not the webcam error string. Unknown only when that probe
-  // cannot run.
-  readonly property var moduleRows: {
-    var b = root.view && root.view.backend
-    var probe = b && b.moduleProbeText ? String(b.moduleProbeText) : ""
-    var want = ["v4l2loopback", "wtype", "wl-copy", "wl-paste", "pw-record"]
-    var got = ({})
-    var lines = probe.split("\n")
-    for (var i = 0; i < lines.length; i++) {
-      var parts = lines[i].trim().split(/\s+/)
-      if (parts.length >= 2) got[parts[0]] = parts[1]
-    }
-    var rows = []
-    var allowed = { loaded: true, missing: true, found: true, unknown: true }
-    for (var j = 0; j < want.length; j++) {
-      var name = want[j]
-      var status = got[name] || "unknown"
-      if (!allowed[status]) status = "unknown"
-      rows.push({ name: name, status: status })
-    }
-    return rows
-  }
   // Invite / join state for discovery-less first pairing.
   property string inviteCode: ""
   property string inviteHost: ""
@@ -82,30 +53,17 @@ Item {
 
   implicitHeight: col.implicitHeight
 
-  // Capability / feature chip. On = fg (neutral); green is reserved for
-  // the live "Online" indicator on the status line.
-  component Status: RowLayout {
-    property string icon: ""
-    property string label: ""
-    property bool on: false
-    spacing: 6
-    Icon {
-      Layout.alignment: Qt.AlignVCenter
-      Layout.preferredWidth: 14
-      Layout.preferredHeight: 14
-      name: icon
-      size: 14
-      color: on ? Theme.fg : Theme.dim
-    }
-    Txt {
-      Layout.alignment: Qt.AlignVCenter
-      text: label
-      color: on ? Theme.fg : Theme.dim
-      font.pixelSize: 12
+  Connections {
+    target: root.view
+    ignoreUnknownSignals: true
+    function onPairPaneChanged() {
+      if (!root.view) return
+      root.networkPane = root.view.pairPane ? "pair" : "devices"
     }
   }
+  Component.onCompleted: if (root.view && root.view.pairPane) root.networkPane = "pair"
 
-  // Segment chip for Devices | Pair | This computer.
+  // Segment chip for Devices | Pair.
   component PaneChip: Rectangle {
     id: chip
     property string key: ""
@@ -134,30 +92,6 @@ Item {
     }
   }
 
-  // A global toggle with one short hint. Not a paragraph.
-  component CompactToggle: Column {
-    id: ct
-    property string label: ""
-    property string hint: ""
-    property bool checked: false
-    signal toggled(bool on)
-    width: parent ? parent.width : implicitWidth
-    spacing: 1
-    Toggle {
-      text: ct.label
-      checked: ct.checked
-      onToggled: function (on) { ct.toggled(on) }
-    }
-    Txt {
-      x: 44
-      width: Math.max(0, ct.width - x)
-      text: ct.hint
-      color: Theme.dim
-      font.pixelSize: 11
-      elide: Text.ElideRight
-    }
-  }
-
   // Short type only — no "Peer ·" / "Remote ·" noise.
   function roleLine(d) {
     if (d.role === "peer") return Fmt.typeName(d.type || "desktop")
@@ -165,25 +99,12 @@ Item {
     return Fmt.typeName(d.type || "device")
   }
 
-  // Path chip heuristic from IP + settings.relay (no backend path API).
-  function pathLabel(d) {
-    if (!d) return ""
-    if (root.settings.relay) return "Relay"
-    var ip = String(d.ip || "")
-    if (ip.indexOf("100.") === 0) return "Tailscale"
-    if (ip.indexOf("192.168.") === 0 || ip.indexOf("10.") === 0) return "LAN"
-    var m = ip.match(/^172\.(\d+)\./)
-    if (m) {
-      var n = parseInt(m[1], 10)
-      if (n >= 16 && n <= 31) return "LAN"
-    }
+  // The word for a socket path from fluxd. An unknown value stays blank.
+  function pathWord(path) {
+    if (path === "lan") return "LAN"
+    if (path === "tailscale") return "Tailscale"
+    if (path === "relay") return "Relay"
     return ""
-  }
-
-  function setSetting(key, value, onText, offText) {
-    if (!root.view || !root.view.call) return
-    root.view.call("settings.set", { key: key, value: value })
-    if (onText) root.view.toast(value ? onText : offText)
   }
 
   function copyText(t) {
@@ -303,13 +224,6 @@ Item {
     return from === String(d.id || "") || name === String(d.name || "").toLowerCase()
   }
 
-  function stopPeerView() {
-    if (!root.view || !root.view.call) return
-    root.view.call("desktop.viewStop", {}, function () {
-      if (root.view) root.view.toast("Stopped peer desktop")
-    })
-  }
-
   // view.call does not invoke cb on error; these clear busy flags after a beat.
   Timer {
     id: inviteBusyTimer
@@ -366,68 +280,27 @@ Item {
     width: parent.width
     spacing: 18
 
-    // ── 1. THIS COMPUTER (never listed as a peer row) ──
-    SectionLabel { text: "THIS COMPUTER" }
-
-    Card {
-      width: parent.width
-      implicitHeight: selfCol.implicitHeight + 36
-      Column {
-        id: selfCol
-        x: 18
-        y: 18
-        width: parent.width - 36
-        spacing: 6
-        RowLayout {
-          spacing: 10
-          Icon {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 18
-            Layout.preferredHeight: 18
-            name: Fmt.kindIcon(root.self.type || "desktop")
-            size: 18
-            color: Theme.accent
-          }
-          Txt {
-            Layout.alignment: Qt.AlignVCenter
-            text: root.self.name || "This computer"
-            font.pixelSize: 18
-            font.weight: Font.Bold
-          }
-        }
-        Txt {
-          text: Fmt.typeName(root.self.type || "desktop") + (root.self.tcpPort ? " · TCP " + root.self.tcpPort : "")
-          color: Theme.dim
-        }
-        RowLayout {
-          spacing: 18
-          Status {
-            visible: !!root.settings.relay
-            icon: "wifi"
-            label: "Relay on"
-            on: true
-          }
-        }
-      }
-    }
-
     // ── Segment: Devices | Pair ──
     Row {
       spacing: 8
       PaneChip {
         key: "devices"
         label: "Devices"
-        onActivated: root.networkPane = "devices"
+        onActivated: {
+          root.networkPane = "devices"
+          if (root.view) root.view.pairPane = false
+        }
       }
       PaneChip {
         key: "pair"
         label: "Pair"
-        onActivated: root.networkPane = "pair"
-      }
-      PaneChip {
-        key: "computer"
-        label: "This computer"
-        onActivated: root.networkPane = "computer"
+        onActivated: {
+          root.networkPane = "pair"
+          if (root.view) {
+            root.view.pairPane = true
+            root.view.call("discover", {})
+          }
+        }
       }
     }
 
@@ -443,7 +316,7 @@ Item {
         visible: root.paired.length === 0
         width: parent.width
         wrapMode: Text.Wrap
-        text: "No paired devices yet. Open Pair to invite or join another computer, or use Pair new device in the sidebar for LAN phones."
+        text: "No paired devices yet. Open Pair to find a phone on this network, or to invite another computer."
         color: Theme.dim
       }
 
@@ -455,7 +328,13 @@ Item {
         MouseArea {
           anchors.fill: parent
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.networkPane = "pair"
+          onClicked: {
+            root.networkPane = "pair"
+            if (root.view) {
+              root.view.pairPane = true
+              root.view.call("discover", {})
+            }
+          }
         }
       }
 
@@ -466,7 +345,6 @@ Item {
           required property var modelData
           readonly property bool peer: modelData.role === "peer"
           readonly property bool viewing: root.viewingPeer(modelData)
-          readonly property string path: root.pathLabel(modelData)
           width: col.width
           implicitHeight: devCol.implicitHeight + 36
 
@@ -496,7 +374,7 @@ Item {
                 elide: Text.ElideRight
               }
             }
-            // Type · path · IP · Online/Offline
+            // Type · address · path · Online/Offline. The path is the live socket.
             RowLayout {
               width: parent.width
               spacing: 0
@@ -508,16 +386,17 @@ Item {
               }
               Txt {
                 Layout.alignment: Qt.AlignVCenter
-                visible: card.path !== "" && !!modelData.online
-                text: " · " + card.path
-                color: Theme.dim
-              }
-              Txt {
-                Layout.alignment: Qt.AlignVCenter
                 visible: !!modelData.ip
                 text: " · " + (modelData.ip || "")
                 color: Theme.dim
                 elide: Text.ElideRight
+              }
+              Txt {
+                objectName: "pathWord"
+                Layout.alignment: Qt.AlignVCenter
+                visible: !!modelData.online && root.pathWord(modelData.path) !== ""
+                text: " · " + root.pathWord(modelData.path)
+                color: Theme.dim
               }
               Txt {
                 Layout.alignment: Qt.AlignVCenter
@@ -529,37 +408,13 @@ Item {
                 text: modelData.online ? "Online" : "Offline"
                 color: modelData.online ? Theme.ok : Theme.dim
               }
-              Item { Layout.fillWidth: true }
-            }
-            // Desk peer: Stop only while viewing another desk's desktop (View is on Overview).
-            Column {
-              visible: card.peer && card.viewing
-              width: parent.width
-              spacing: 8
-              RowLayout {
-                width: parent.width
-                spacing: 8
-                Txt {
-                  Layout.fillWidth: true
-                  Layout.alignment: Qt.AlignVCenter
-                  text: {
-                    var pd = root.peerDesktop || ({})
-                    var bits = ["Viewing"]
-                    if (pd.monitor) bits.push(pd.monitor)
-                    if (pd.width && pd.height) bits.push(pd.width + "×" + pd.height)
-                    if (pd.player) bits.push(pd.player)
-                    return bits.join(" · ")
-                  }
-                  color: Theme.fg
-                  font.pixelSize: 12
-                  wrapMode: Text.Wrap
-                }
-                OutlineButton {
-                  text: "Stop"
-                  icon: "stop"
-                  onClicked: root.stopPeerView()
-                }
+              Txt {
+                Layout.alignment: Qt.AlignVCenter
+                visible: card.peer && card.viewing
+                text: " · Viewing"
+                color: Theme.ok
               }
+              Item { Layout.fillWidth: true }
             }
           }
 
@@ -583,6 +438,105 @@ Item {
       spacing: 18
 
       SectionLabel { text: "PAIR" }
+
+      SectionLabel { text: "THIS NETWORK" }
+
+      Txt {
+        visible: !root.view || !root.view.discoveredRows || root.view.discoveredRows.length === 0
+        width: parent.width
+        wrapMode: Text.Wrap
+        color: Theme.dim
+        text: "Searching this network. Open Flux on the phone. A computer that never appears can use the invite below."
+      }
+
+      Repeater {
+        model: root.view && root.view.discoveredRows ? root.view.discoveredRows : []
+        delegate: Card {
+          required property var modelData
+          readonly property bool waiting: modelData.pairState === "requested"
+          width: parent.width
+          implicitHeight: foundCol.implicitHeight + 28
+          Column {
+            id: foundCol
+            x: 16
+            y: 14
+            width: parent.width - 32
+            spacing: 4
+            RowLayout {
+              width: parent.width
+              spacing: 10
+              Icon {
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredWidth: 18
+                Layout.preferredHeight: 18
+                name: Fmt.kindIcon(modelData.type)
+                size: 18
+                color: Theme.fg
+              }
+              Txt {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                text: Fmt.showControls(modelData.name)
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+              }
+              OutlineButton {
+                objectName: "lanPair"
+                visible: !waiting
+                text: "Pair"
+                onClicked: root.view.call("pair.request", { device: modelData.id })
+              }
+              OutlineButton {
+                objectName: "lanCancel"
+                visible: waiting
+                text: "Cancel"
+                onClicked: root.view.call("pair.reject", { device: modelData.id, key: modelData.pairKey || "" })
+              }
+            }
+            Txt {
+              width: parent.width
+              visible: !!modelData.ip
+              text: modelData.ip
+              color: Theme.dim
+              font.pixelSize: 12
+              elide: Text.ElideRight
+            }
+            Txt {
+              width: parent.width
+              visible: !!modelData.fingerprint
+              text: "Certificate " + Fmt.hexGroups(modelData.fingerprint)
+              color: Theme.dim
+              font.pixelSize: 11
+              elide: Text.ElideRight
+            }
+            Txt {
+              width: parent.width
+              visible: modelData.twin !== ""
+              text: modelData.twin
+              color: Theme.warn
+              font.pixelSize: 12
+              wrapMode: Text.Wrap
+            }
+            Txt {
+              objectName: "lanKey"
+              width: parent.width
+              visible: waiting && Fmt.hexGroups(modelData.pairKey || "") !== ""
+              text: "Confirm " + Fmt.hexGroups(modelData.pairKey || "") + " on " + Fmt.showControls(modelData.name)
+              color: Theme.accent
+              font.pixelSize: 12
+              wrapMode: Text.Wrap
+            }
+          }
+        }
+      }
+
+      OutlineButton {
+        objectName: "searchAgain"
+        text: "Search again"
+        icon: "refresh"
+        onClicked: if (root.view) root.view.call("discover", {})
+      }
 
       Card {
         width: parent.width
@@ -726,250 +680,84 @@ Item {
           }
         }
       }
-    }
-
-    // ── This computer: global sharing, remote access, agents, modules ──
-    Column {
-      visible: root.networkPane === "computer"
-      width: parent.width
-      spacing: 18
+      // ── RELAY · OPTIONAL (collapsed when off) ──
+      SectionLabel { text: "RELAY · OPTIONAL" }
 
       Card {
         width: parent.width
-        implicitHeight: shareCol.implicitHeight + 32
+        implicitHeight: relayCol.implicitHeight + 36
         Column {
-          id: shareCol
-          x: 16
-          y: 14
-          width: parent.width - 32
-          spacing: 8
-          SectionLabel { text: "SHARING" }
-          CompactToggle {
-            objectName: "clipboardToggle"
-            label: "Clipboard"
-            hint: "Copy text between this computer and paired devices."
-            checked: root.settings.autoClipboard !== false
-            onToggled: function (on) { root.setSetting("autoClipboard", on, "Clipboard on", "Clipboard off") }
-          }
-          CompactToggle {
-            objectName: "dndToggle"
-            label: "DND sync"
-            hint: "Match Do Not Disturb with paired devices."
-            checked: root.settings.syncDnd !== false
-            onToggled: function (on) { root.setSetting("syncDnd", on, "DND sync on", "DND sync off") }
-          }
-          CompactToggle {
-            objectName: "homeShareToggle"
-            label: "Home share"
-            hint: "This computer shares its home with paired devices."
-            checked: root.settings.shareHome !== false
-            onToggled: function (on) { root.setSetting("shareHome", on, "Home share on", "Home share off") }
-          }
-        }
-      }
-
-      Card {
-        id: remoteCard
-        objectName: "remoteCard"
-        function set(key, on) {
-          if (root.view) root.view.call("settings.set", { key: key, value: on })
-        }
-        width: parent.width
-        implicitHeight: remoteCol.implicitHeight + 32
-        Column {
-          id: remoteCol
-          x: 16
-          y: 14
-          width: parent.width - 32
-          spacing: 8
-          SectionLabel { text: root.desktopLive ? "REMOTE ACCESS · LIVE" : "REMOTE ACCESS" }
-          CompactToggle {
-            objectName: "remoteDesktopToggle"
-            label: "Remote desktop"
-            hint: "A paired device can show this screen."
-            checked: !!root.settings.remoteDesktop
-            onToggled: function (on) { remoteCard.set("remoteDesktop", on) }
-          }
-          CompactToggle {
-            objectName: "remoteInputToggle"
-            label: "Remote input"
-            hint: "A paired device can move the pointer and type."
-            checked: !!root.settings.remoteInput
-            onToggled: function (on) { remoteCard.set("remoteInput", on) }
-          }
-          RowLayout {
-            visible: root.desktopShown
-            width: parent.width
-            spacing: 8
-            Txt {
-              Layout.fillWidth: true
-              Layout.alignment: Qt.AlignVCenter
-              readonly property var d: root.desktop || ({})
-              text: root.desktopLive
-                ? ((d.toName || "A device") + " shows " + (d.monitor || "this screen"))
-                : ((d.toName || "A device") + " is starting…")
-              font.pixelSize: 12
-              color: root.desktopLive ? Theme.fg : Theme.dim
-              elide: Text.ElideRight
-            }
-            OutlineButton {
-              icon: "stop"
-              text: "Stop"
-              onClicked: root.view.call("desktop.stop", {})
-            }
-          }
-        }
-      }
-
-      Card {
-        id: agentsCard
-        objectName: "agentsCard"
-        function set(key, on) {
-          if (root.view) root.view.call("settings.set", { key: key, value: on })
-        }
-        width: parent.width
-        implicitHeight: agentsCol.implicitHeight + 32
-        Column {
-          id: agentsCol
-          x: 16
-          y: 14
-          width: parent.width - 32
-          spacing: 8
-          SectionLabel { text: "AGENTS" }
-          CompactToggle {
-            objectName: "herdrToggle"
-            label: "Agent output"
-            hint: "Show herdr agents of this computer on paired devices."
-            checked: root.settings.herdr !== false
-            onToggled: function (on) { agentsCard.set("herdr", on) }
-          }
-          CompactToggle {
-            objectName: "herdrControlToggle"
-            label: "Agent control"
-            hint: "Paired devices can send prompts and control agents."
-            checked: !!root.settings.herdrControl
-            onToggled: function (on) { agentsCard.set("herdrControl", on) }
-          }
-          CompactToggle {
-            objectName: "herdrTerminalsToggle"
-            label: "Agent terminals"
-            hint: "Paired devices can open and type in herdr terminals."
-            checked: !!root.settings.herdrTerminals
-            onToggled: function (on) { agentsCard.set("herdrTerminals", on) }
-          }
-        }
-      }
-
-      Card {
-        objectName: "modulesCard"
-        width: parent.width
-        implicitHeight: modCol.implicitHeight + 28
-        Column {
-          id: modCol
-          x: 16
-          y: 12
-          width: parent.width - 32
-          spacing: 2
-          SectionLabel { text: "MODULES" }
-          Repeater {
-            model: root.moduleRows
-            delegate: RowLayout {
-              required property var modelData
-              width: modCol.width
-              spacing: 10
-              Txt {
-                text: modelData.name
-                font.weight: Font.DemiBold
-                font.pixelSize: 13
-              }
-              Item { Layout.fillWidth: true }
-              Txt {
-                text: modelData.status
-                font.pixelSize: 12
-                color: (modelData.status === "loaded" || modelData.status === "found") ? Theme.ok
-                     : (modelData.status === "missing" ? Theme.err : Theme.dim)
-              }
-            }
-          }
-        }
-      }
-
-    }
-
-    // ── RELAY · OPTIONAL (collapsed when off) ──
-    SectionLabel { text: "RELAY · OPTIONAL" }
-
-    Card {
-      width: parent.width
-      implicitHeight: relayCol.implicitHeight + 36
-      Column {
-        id: relayCol
-        x: 18
-        y: 18
-        width: parent.width - 36
-        spacing: 10
-
-        // Collapsed summary: toggle + expand affordance
-        RowLayout {
-          width: parent.width
-          spacing: 12
-          Toggle {
-            id: relayToggle
-            text: "Use relay host"
-            checked: !!root.settings.relay
-            onToggled: function (checked) {
-              if (checked && !String(root.settings.relayURL || "").trim()) {
-                root.relayUserExpanded = true
-                if (root.view) root.view.toast("Save a relay host:port first, then turn relay on")
-                return
-              }
-              if (root.view) root.view.call("settings.set", { key: "relay", value: checked })
-              if (checked) root.relayUserExpanded = true
-            }
-          }
-          Item { Layout.fillWidth: true }
-          OutlineButton {
-            visible: !root.relayExpanded
-            text: "Configure"
-            icon: "chevron"
-            onClicked: root.relayUserExpanded = true
-          }
-          OutlineButton {
-            visible: root.relayExpanded && !root.settings.relay
-            text: "Hide"
-            onClicked: root.relayUserExpanded = false
-          }
-        }
-
-        Column {
-          visible: root.relayExpanded
-          width: parent.width
+          id: relayCol
+          x: 18
+          y: 18
+          width: parent.width - 36
           spacing: 10
-          Txt {
-            width: parent.width
-            text: "Both sides need the same host:port. Leave off when peers can reach each other."
-            color: Theme.dim
-            font.pixelSize: 12
-            wrapMode: Text.Wrap
-          }
+
+          // Collapsed summary: toggle + expand affordance
           RowLayout {
             width: parent.width
-            spacing: 8
-            Field {
-              id: relayURLField
-              Layout.fillWidth: true
-              placeholder: "e.g. 100.64.0.1:17777"
-              text: root.settings.relayURL || ""
-              onAccepted: root.saveRelayURL()
+            spacing: 12
+            Toggle {
+              id: relayToggle
+              text: "Use relay host"
+              checked: !!root.settings.relay
+              onToggled: function (checked) {
+                if (checked && !String(root.settings.relayURL || "").trim()) {
+                  root.relayUserExpanded = true
+                  if (root.view) root.view.toast("Save a relay host:port first, then turn relay on")
+                  return
+                }
+                if (root.view) root.view.call("settings.set", { key: "relay", value: checked })
+                if (checked) root.relayUserExpanded = true
+              }
+            }
+            Item { Layout.fillWidth: true }
+            OutlineButton {
+              visible: !root.relayExpanded
+              text: "Configure"
+              icon: "chevron"
+              onClicked: root.relayUserExpanded = true
             }
             OutlineButton {
-              text: "Save"
-              icon: "check"
-              onClicked: root.saveRelayURL()
+              visible: root.relayExpanded && !root.settings.relay
+              text: "Hide"
+              onClicked: root.relayUserExpanded = false
+            }
+          }
+
+          Column {
+            visible: root.relayExpanded
+            width: parent.width
+            spacing: 10
+            Txt {
+              width: parent.width
+              text: "Both sides need the same host:port. Leave off when peers can reach each other."
+              color: Theme.dim
+              font.pixelSize: 12
+              wrapMode: Text.Wrap
+            }
+            RowLayout {
+              width: parent.width
+              spacing: 8
+              Field {
+                id: relayURLField
+                Layout.fillWidth: true
+                placeholder: "e.g. 100.64.0.1:17777"
+                text: root.settings.relayURL || ""
+                onAccepted: root.saveRelayURL()
+              }
+              OutlineButton {
+                text: "Save"
+                icon: "check"
+                onClicked: root.saveRelayURL()
+              }
             }
           }
         }
       }
+
     }
+
+
   }
 }

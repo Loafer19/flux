@@ -477,6 +477,47 @@ Item {
       var oneplus = view.discoveredRows.find(function (d) { return d.name === "OnePlus 12" })
       compare(oneplus.twin, "")
     }
+
+    function test_pairPageListsThisNetwork() {
+      var view = createTemporaryObject(viewComponent, top)
+      tryVerify(function () { return view.allDevices.length > 0 })
+      verify(!findBy(view, "text", "OnePlus 12"))
+      view.openPair()
+      compare(view.tab, "network")
+      verify(view.pairPane)
+      tryVerify(function () { return !!page(view) && page(view).networkPane === "pair" })
+      compare(requestsOf("discover").length, 1)
+      verify(!!findVisibleBy(page(view), "text", "OnePlus 12"))
+      verify(!!findVisibleBy(page(view), "text", "Certificate D02B 6E4F 19A7 C385"))
+      var pairBtn = findVisibleBy(page(view), "objectName", "lanPair")
+      verify(!!pairBtn)
+      pairBtn.clicked()
+      var asked = requestsOf("pair.request")
+      compare(asked.length, 1)
+      compare(asked[0].params.device, "e4a1c8f2b9d3470a8c5e6f1d2b9a7c30")
+
+      mock.updateDevice("e4a1c8f2b9d3470a8c5e6f1d2b9a7c30", function (d) {
+        d.pairState = "requested"
+        d.pairKey = "4F21A9C3E08B7D52"
+        return d
+      })
+      var key = null
+      tryVerify(function () { key = findVisibleBy(page(view), "objectName", "lanKey"); return !!key })
+      compare(key.text, "Confirm 4F21 A9C3 E08B 7D52 on OnePlus 12")
+      var cancel = findVisibleBy(page(view), "objectName", "lanCancel")
+      verify(!!cancel)
+      cancel.clicked()
+      var rejected = requestsOf("pair.reject")
+      compare(rejected.length, 1)
+      compare(rejected[0].params.device, "e4a1c8f2b9d3470a8c5e6f1d2b9a7c30")
+      compare(rejected[0].params.key, "4F21A9C3E08B7D52")
+
+      findVisibleBy(page(view), "objectName", "searchAgain").clicked()
+      compare(requestsOf("discover").length, 2)
+
+      view.pairPane = false
+      tryCompare(page(view), "networkPane", "devices")
+    }
   }
 
   TestCase {
@@ -714,9 +755,49 @@ Item {
       var line = null
       tryVerify(function () { line = findBy(page(view), "objectName", "fingerprint"); return !!line })
       verify(line.visible)
-      verify(!!findBy(line, "text", "5EE6 825F 974E D59A"))
+      verify(!findVisibleBy(line, "text", "5EE6 825F 974E D59A"))
+      line.toggle()
+      verify(!!findVisibleBy(line, "text", "5EE6 825F 974E D59A"))
       mock.updateDevice(top.pixel, function (d) { d.fingerprint = ""; return d })
       verify(!line.visible)
+    }
+
+    function test_phoneAttentionSitsAboveToggles() {
+      var view = createTemporaryObject(viewComponent, top)
+      view.selectedId = top.pixel
+      view.tab = "overview"
+      var notes = null
+      var access = null
+      var camera = null
+      var mic = null
+      var screen = null
+      var agents = null
+      tryVerify(function () {
+        var pageItem = page(view)
+        notes = findBy(pageItem, "objectName", "notifCard")
+        access = findBy(pageItem, "objectName", "phoneAccess")
+        camera = findBy(pageItem, "objectName", "cameraCard")
+        mic = findBy(pageItem, "objectName", "micCard")
+        screen = findBy(pageItem, "objectName", "screenCard")
+        agents = findBy(pageItem, "objectName", "agentCard")
+        return !!notes && !!access && !!camera && !!mic && !!screen && !!agents && access.y > notes.y
+      })
+      verify(camera.visible && camera.y < access.y)
+      verify(mic.visible && mic.y < access.y)
+      verify(screen.visible && screen.y < access.y)
+      verify(!agents.visible)
+      mock.setState(function (s) {
+        s.herdr = { agents: [
+          { pane: "w1:p1", agent: "claude", status: "working", title: "Busy" },
+          { pane: "w1:p2", agent: "claude", status: "blocked", title: "Pick a color" },
+          { pane: "w1:p3", agent: "codex", status: "done", title: "Notes" }
+        ] }
+      })
+      tryVerify(function () { return agents.visible && agents.y < access.y })
+      verify(!!findVisibleBy(agents, "text", "claude · Pick a color · needs input"))
+      verify(!!findVisibleBy(agents, "text", "codex · Notes · finished"))
+      verify(!findBy(agents, "text", "claude · Busy · needs input"))
+      verify(!findBy(agents, "text", "claude · Busy · finished"))
     }
   }
 
@@ -889,6 +970,188 @@ Item {
       tryVerify(function () { return start.active }, 4000)
       start.clicked()
       compare(requestsOf("webcam.start").length, 2)
+    }
+  }
+
+  // This computer, the peer column, and the Network viewing badge.
+  TestCase {
+    name: "Desk"
+    when: mock.ready
+
+    function init() {
+      mock.state = mock.fixTimes(mock.fixture.state)
+      mock.requests = []
+      mock.failures = {}
+    }
+
+    function addPeer(extra) {
+      mock.setState(function (s) {
+        var peer = {
+          id: "0123456789abcdef0123456789abcdef",
+          name: "work-thinkpad",
+          type: "laptop",
+          ip: "192.168.1.70",
+          paired: true,
+          online: true,
+          pairState: "paired",
+          role: "peer",
+          fingerprint: "71C0E5A93B2D8F46",
+          plugins: ["clipboard", "share", "battery"],
+          notifications: [],
+          conversations: []
+        }
+        if (extra) {
+          var keys = Object.keys(extra)
+          for (var i = 0; i < keys.length; i++) peer[keys[i]] = extra[keys[i]]
+        }
+        s.devices.push(peer)
+        s.self.tcpPort = 12100
+      })
+    }
+
+    function test_computerPageHoldsTheSwitches() {
+      addPeer()
+      var view = createTemporaryObject(viewComponent, top)
+      view.tab = "computer"
+      var card = null
+      tryVerify(function () { card = findBy(page(view), "objectName", "remoteCard"); return !!card })
+      compare(view.currentTab, null)
+      verify(view.computerTab)
+      verify(!!findBy(view, "text", "omarchy-framework · TCP 12100"))
+      verify(!!findBy(page(view), "text", "Phones follow this computer. Two desks do not change each other's Do Not Disturb."))
+      var mods = findBy(page(view), "objectName", "modulesCard")
+      verify(!!findBy(mods, "text", "Unknown"))
+      card.set("remoteDesktop", true)
+      compare(mock.settings.remoteDesktop, true)
+      compare(requestsOf("settings.set").length, 1)
+    }
+
+    function test_phoneOverviewHasNoSeam() {
+      var view = createTemporaryObject(viewComponent, top)
+      view.selectedId = top.pixel
+      view.tab = "overview"
+      tryVerify(function () { return !!page(view) && page(view).peer === false })
+      verify(!findVisibleBy(page(view), "objectName", "seamNote"))
+      verify(!findVisibleBy(page(view), "objectName", "viewDesktopRow"))
+    }
+
+    function test_peerSeamAndView() {
+      addPeer()
+      var view = createTemporaryObject(viewComponent, top)
+      view.selectedId = "0123456789abcdef0123456789abcdef"
+      view.tab = "overview"
+      var note = null
+      tryVerify(function () { note = findVisibleBy(page(view), "objectName", "seamNote"); return !!note })
+      compare(note.text, "Pick the edge that leaves this screen.")
+      verify(!!findVisibleBy(page(view), "text", "Files"))
+      verify(!!findVisibleBy(page(view), "objectName", "browseHomeTile"))
+      verify(!findVisibleBy(page(view), "objectName", "cameraCard"))
+
+      mock.setState(function (s) {
+        s.settings.edgeSide = "left"
+        s.settings.edgeDevice = "work-thinkpad"
+      })
+      tryCompare(note, "text", "work-thinkpad has not reported an edge.")
+
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.seamKnown = true
+        d.edgeSide = ""
+        d.edgeDevice = ""
+        d.remoteDesktop = false
+        return d
+      })
+      tryCompare(note, "text", "work-thinkpad has not set the right edge.")
+      var viewBtn = findVisibleBy(page(view), "text", "View")
+      verify(!!viewBtn)
+      verify(!viewBtn.active)
+
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.edgeSide = "right"
+        d.edgeDevice = "someone-else"
+        return d
+      })
+      tryCompare(note, "text", "work-thinkpad has not set the right edge.")
+
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.edgeSide = "right"
+        d.edgeDevice = "omarchy-framework"
+        return d
+      })
+      tryCompare(note, "text", "work-thinkpad answers on the right.")
+      verify(!viewBtn.active)
+
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.edgeDevice = "9c1f2e3d4b5a69788796a5b4c3d2e1f0"
+        d.remoteDesktop = true
+        return d
+      })
+      tryCompare(note, "text", "work-thinkpad answers on the right.")
+      tryVerify(function () { return viewBtn.active })
+
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.edgeSide = "top"
+        return d
+      })
+      tryCompare(note, "text", "work-thinkpad set top, not the right edge.")
+
+      var clip = findVisibleBy(page(view), "text", "Clipboard sync")
+      var desk = findVisibleBy(page(view), "text", "Remote desktop")
+      verify(clip.active && clip.checked)
+      verify(!desk.active && !desk.checked)
+      verify(!!findVisibleBy(page(view), "text", "Turn on under This computer"))
+    }
+
+    function test_networkShowsViewing() {
+      addPeer()
+      mock.setState(function (s) {
+        s.peerDesktop = { from: "0123456789abcdef0123456789abcdef", fromName: "work-thinkpad" }
+      })
+      var view = createTemporaryObject(viewComponent, top)
+      view.tab = "network"
+      tryVerify(function () { return !!page(view) && page(view).networkPane === "devices" })
+      verify(!findBy(page(view), "objectName", "remoteCard"))
+      var badge = null
+      tryVerify(function () { badge = findVisibleBy(page(view), "text", " · Viewing"); return !!badge })
+      verify(!findVisibleBy(page(view), "text", "Stop"))
+    }
+
+    function test_networkShowsSocketPath() {
+      addPeer()
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.ip = "100.1.2.3"
+        d.path = ""
+        d.online = true
+        return d
+      })
+      mock.setState(function (s) { s.settings.relay = true })
+      var view = createTemporaryObject(viewComponent, top)
+      view.tab = "network"
+      tryVerify(function () { return !!page(view) && !!findVisibleBy(page(view), "text", " · 100.1.2.3") })
+      verify(!findVisibleBy(page(view), "text", " · LAN"))
+      verify(!findVisibleBy(page(view), "text", " · Tailscale"))
+      verify(!findVisibleBy(page(view), "text", " · Relay"))
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.path = "tailscale"
+        return d
+      })
+      tryVerify(function () {
+        var word = findVisibleBy(page(view), "objectName", "pathWord")
+        return !!word && word.text === " · Tailscale"
+      })
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.path = "relay"
+        return d
+      })
+      tryVerify(function () {
+        var word = findVisibleBy(page(view), "objectName", "pathWord")
+        return !!word && word.text === " · Relay"
+      })
+      mock.updateDevice("0123456789abcdef0123456789abcdef", function (d) {
+        d.online = false
+        d.path = "relay"
+        return d
+      })
+      tryVerify(function () { return !findVisibleBy(page(view), "text", " · Relay") })
     }
   }
 }

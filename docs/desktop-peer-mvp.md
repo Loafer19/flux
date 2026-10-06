@@ -1,13 +1,18 @@
-# Desktop peer MVP
+# Desktop peer
 
 [Documentation index](README.md)
 
-This note is the design for two or more Omarchy computers that each run `fluxd` and pair with each other.
-Clipboard text, clipboard images, and file share should work with no phone and no Mac in the path.
-The reachability rule below is accepted: each desk accepts inbound TCP 12070–12108 from the other.
+This note is the role decision for two or more Omarchy computers that each run `fluxd` and pair with each other.
+Clipboard text, clipboard images, and file share work with no phone and no Mac in the path.
+Each desk accepts inbound TCP 12070–12108 from the other.
+The setup steps are in [Connect two computers](desktop-peer.md).
 
-The work lives on the fork branch `docs/desktop-peer-mvp`.
-Nothing here is an upstream pull request.
+The code is on `master` of this fork.
+It is not a separate branch, and this note is not an upstream pull request.
+
+The first cut reused pairing, clipboard, and file share.
+Later cuts added `flux.edge` (pointer, clicks, and scroll), a discovery-less invite, an optional TCP relay, desk-to-desk remote desktop, and home browse.
+Where this note and [Connect two computers](desktop-peer.md) disagree, the setup page matches the window.
 
 ## Decision
 
@@ -15,9 +20,8 @@ A desktop peer is another `fluxd`.
 The phone app and the Mac app stay remotes: they open `flux.tunnel`, and this computer dials them.
 A peer does not advertise `flux.tunnel` as outgoing, and this computer must not treat it as a phone.
 
-No new packet type for the MVP.
-Pairing, clipboard, and share already run between two daemons in `internal/e2e/e2e_test.go` (`TestTwoDaemons`) on loopback.
-The MVP makes that path a real device role on a LAN or Tailscale link, and keeps phone-only features off that role.
+Pairing, clipboard, and share run between two daemons in `internal/e2e/e2e_test.go` (`TestTwoDaemons`) on loopback.
+The role makes that path a real device on a LAN or Tailscale link, and keeps phone-only features off that role.
 
 ## What already happens
 
@@ -57,7 +61,8 @@ mDNS alone does not put a row in the window.
 Both daemons dial.
 `lan.Preferred` keeps the socket opened by the device with the larger id when the two handshakes overlap, so the links do not kill each other.
 
-Pairing is `kdeconnect.pair` with an 8-character key from `proto.VerificationKey`, a 30 second timer, and a 30 minute clock skew check (`internal/core/pairing.go`).
+Pairing is `kdeconnect.pair` with a 16-character key from `proto.VerificationKey`, a 30 second timer, and a 30 minute clock skew check (`internal/core/pairing.go`).
+The key is the first 8 bytes of a SHA-256, as uppercase hex, in 4 groups of 4.
 The certificate is pinned in `devices.json` on accept.
 The next link must present that certificate.
 Unpair deletes the pin.
@@ -78,19 +83,20 @@ A peer does not, so the sender listens on a port from 12070 to 12099 and the rec
 `TestTwoDaemons` already sends a file this way on loopback, keeps the transfer history, reconnects after a restart, and reaches the other daemon through an extra address when the last IP is dead.
 
 `Device.plugins` builds the feature list the window reads (`internal/core/device.go`).
-Browse storage is `sftp`, and `sharesStorage` is false for device types `desktop` and `laptop`.
-Ring is `findmyphone`, which `fluxd` does not accept, and `ring` already returns an error for a computer.
+A peer offers clipboard, share, battery, desktop, and home browse.
+Ring is `findmyphone`, which `fluxd` does not accept, and `ring` returns an error for a computer.
 Messages need `kdeconnect.sms.messages`, which `fluxd` does not send.
 
-The window still shows Phone commands and Notifications for every selected device (`gui/qml/FluxView.qml`).
-The pair notification still says "the phone" (`internal/core/pairing.go`).
-`onPairedLink` sends battery, the command list, clipboard connect, a notification request, Do Not Disturb, remote-input state, and herdr to any peer that accepts those types.
-Another `fluxd` accepts herdr, Do Not Disturb, and remote-input state, because those types are in the shared identity.
-That is the behavior the MVP must narrow.
+Phone commands are hidden while a peer is selected (`gui/qml/FluxView.qml`).
+The pair notification names the other computer when the incoming device is a peer.
+`peerIgnores` drops approve, herdr, shortcuts, a notification request, Do Not Disturb, telephony, SMS, webcam, mic, the phone screen, and run-command from a peer.
+Clipboard, share, ping, battery, and a desktop notification stay.
+`flux.desktop` and `kdeconnect.mousepad.request` stay, and the remote-desktop and remote-input switches gate them.
+Home browse uses `kdeconnect.sftp.request`.
 
 ## Peer role
 
-Add `role` on the device view:
+The device view has `role`:
 
 | Role | Rule |
 | --- | --- |
@@ -124,22 +130,26 @@ Reuse, both directions, only after pair:
 Leave these on the wire identity so a phone still works.
 For a `peer`, do not send them on connect, and drop them if one arrives:
 
-- `kdeconnect.mousepad.request` and `flux.input` (pointer and remote desktop)
 - `flux.approve` (fingerprint and sudo)
 - `flux.herdr` and `flux.shortcuts`
-- `kdeconnect.sftp` and `kdeconnect.sftp.request` (phone storage and Browse PC toward this peer)
 - `kdeconnect.notification.request` (there is no phone notification stream on a desk)
-- `flux.dnd`, `kdeconnect.telephony`, SMS, webcam, mic, screen, and `flux.desktop`
+- `flux.dnd`, `kdeconnect.telephony`, SMS, webcam, mic, the phone screen, and run-command
 
-`kdeconnect.notification` from `flux-cli notify` already displays on the other daemon in `TestTwoDaemons`.
+`kdeconnect.notification` from `flux-cli notify` displays on the other daemon.
 Keep that.
 It is a desktop notification, not a phone inbox.
 
-No new packet, port, or capability string in this MVP.
+`flux.edge` carries the screen-edge pointer, clicks, and scroll.
+It does not use `remote_input`.
+The keyboard stays on the computer where the keys are pressed and ends the lease.
+`flux.desktop` and `kdeconnect.mousepad.request` are the desk remote-desktop path.
+Mouse and keys from that viewer run only while `remote_input` is on.
+Home browse uses the existing SFTP request.
+The first cut added none of these.
 
 ## Pairing
 
-Same 8-character key and the same Accept and Reject actions.
+Same 16-character key and the same Accept and Reject actions.
 The desktop notification names the other computer, not "the phone", when the incoming device is a peer.
 The window pair card stays the one in `gui/qml/components/PairCard.qml`.
 Reconnect uses the pinned certificate and `lastIp` / `lastPort`, as a phone does today.
@@ -187,13 +197,15 @@ Putting `flux.tunnel` on `fluxd` would still need a listener on the receiving de
 
 ## Window and CLI
 
-`plugins` for a peer are `clipboard`, `share`, and `battery` when the peer sends battery.
-They are not `sftp`, `sms`, `findmyphone`, `notifications`, `runcommand`, or `connectivity`.
-Browse storage stays inactive.
+`plugins` for a peer are `clipboard`, `share`, `battery` when the peer sends battery, `desktop`, and `browse`.
+They are not `sms`, `findmyphone`, `notifications`, `runcommand`, or `connectivity`.
+Home browse is on Overview.
 Ring stays hidden.
 The Phone commands tab is hidden while a peer is selected.
 Overview, Clipboard, and Files stay.
 Notifications stay, because `notify` between daemons already works.
+Screen edge and view desktop are on Overview.
+Network shows the device row, and Stop while a desk view is live.
 
 The device row keeps the existing desktop or laptop icon (`Fmt.kindIcon`).
 An empty device type still falls back to `phone` for an old packet.
@@ -206,12 +218,13 @@ They keep working for a peer with no new subcommand.
 ## Security
 
 Share, clipboard, and `notify` run only after pair, as they do now.
-Remote input stays off for a peer even when `remote_input` is true on this computer.
+Screen-edge clicks use `flux.edge` and do not need `remote_input`.
+Desk remote desktop sends `kdeconnect.mousepad.request` only when `remote_input` is on.
 `flux.approve` from a peer is ignored.
 Enrollment and the root helper do not gain a peer path.
 `herdr_control` does not apply to a peer.
-Browse PC is not offered to a peer in this MVP.
-The SFTP server inside a tunnel stays a phone and Mac feature.
+Home browse of a paired computer is on.
+Ring, SMS, camera, and fingerprint approval are not.
 
 ## Compatibility
 
@@ -224,31 +237,31 @@ Existing `devices.json` entries gain no required field.
 
 ## Tests
 
-Extend `TestTwoDaemons`:
+`TestTwoDaemons` covers two daemons on loopback:
 
 - Each side reports the other as `role: peer`.
-- Plugins are clipboard, share, and battery only.
-- `sftp` is absent, and a browse call does not open storage.
-- `ring` still fails.
+- Plugins include clipboard, share, and battery. Desktop and browse are peer plugins too.
+- `ring` fails for a computer.
 - Clipboard text still arrives.
 - A clipboard image arrives when both sides accept `flux.clipboard.image`.
 - A file still lands in the download directory and the transfer history.
-- A `flux.approve` packet and a mousepad packet from the peer do not change local state.
+- A `flux.approve` packet from a peer does not change local state.
+- A mousepad packet from a peer runs only while remote input is on.
 
-Add a unit test for the role rule: fluxd peer, Mac-shaped remote (laptop plus outgoing `flux.tunnel`), phone, and a desktop that does not accept `flux.tunnel`.
+The role rule has a unit test: fluxd peer, Mac-shaped remote (laptop plus outgoing `flux.tunnel`), phone, and a desktop that does not accept `flux.tunnel`.
 
 `make build test vet` is the check.
 `make snapshot` runs if the QML tabs or the pair copy change.
 
-## Phase 2 files
+## First cut
 
-Change these in the MVP implementation.
+These files landed the role. Later cuts added the edge, the invite, the relay, desk remote desktop, and home browse on top. The handler row does not drop SFTP or remote desktop.
 
 | Path | Change |
 | --- | --- |
 | `internal/core/device.go` | `role`, peer plugin list |
 | `internal/core/daemon.go` | `onPairedLink` skips herdr, input, DND, and notification request for a peer |
-| `internal/core/handlers.go` | Drop input, approve, herdr, shortcuts, sftp, and phone streams from a peer |
+| `internal/core/handlers.go` | Drop approve, herdr, shortcuts, and phone streams from a peer |
 | `internal/core/pairing.go` | Pair notification names the computer |
 | `internal/core/api.go` | `role` on the state JSON |
 | `cmd/flux/main.go` | `status` prints the role |
@@ -264,7 +277,7 @@ Leave Android, the Mac app, `internal/approve`, and the firewall package files a
 
 ## Later
 
-Phase 3 is the setup page [Connect two computers](desktop-peer.md).
+The setup page is [Connect two computers](desktop-peer.md).
 Discovery-less first pairing is on that page: `flux-cli pair invite` / `pair join` dial a host from an invite when mDNS and UDP do not cross the path.
 The invite carries the device ID, so Flux does not invent pair-by-arbitrary-IP.
 A paired peer stays on the dial schedule from the merged issue 49: `TestPeerDialBackoff` covers the fast and slow intervals.
@@ -272,6 +285,8 @@ Two mDNS reports for one id stay one device: `TestMDNSReportsStayOneDevice`.
 An IPv6 mDNS answer is dropped before it becomes a row.
 The Android list can still show one computer twice. That is issue 7, and this phase does not change the phone app.
 
-The pointer crosses one screen edge through `flux.edge`, configured with `edge_side` and `edge_device` (`flux-cli edge`, Network chip, or IPC).
-Clicks and the keyboard stay on the computer where they were pressed, and `remote_input` stays the phone touchpad.
-Still separate: drag across that edge, focus follow, and a real phone storage server.
+The pointer crosses one screen edge through `flux.edge`, configured with `edge_side` and `edge_device` (`flux-cli edge`, the Overview chips, or IPC).
+Clicks and scroll cross with the pointer.
+The keyboard stays on the computer where the keys are pressed and ends the lease.
+`remote_input` stays the phone touchpad and the desk viewer, not the edge.
+Still separate: drag across that edge, and focus follow.

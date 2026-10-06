@@ -5,7 +5,7 @@ import "Flux"
 // The Flux window as an omarchy-shell panel. Summon it with:
 //   omarchy-shell shell summon flux '{"page":"files"}'
 // The payload is optional. "page" selects a screen: overview, clipboard,
-// files, notifications, messages, or commands.
+// files, notifications, messages, commands, network, or computer.
 Item {
   id: root
 

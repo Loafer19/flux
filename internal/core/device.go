@@ -76,6 +76,14 @@ type Device struct {
 	// paired, and fluxd refuses every link of the device.
 	badTrust bool
 
+	// seamSide and seamDevice are the edge the peer last reported.
+	// seamDesktop is that computer's remote desktop switch. seamKnown is
+	// false until a seam packet arrives.
+	seamSide    string
+	seamDevice  string
+	seamDesktop bool
+	seamKnown   bool
+
 	// seenIP and seenPort are the address that discovery last reported for
 	// a paired device, at seenAt. fluxd dials it, but only a link that
 	// passes the pin check changes IP and Port.
@@ -351,9 +359,35 @@ type DeviceView struct {
 	// name apart.
 	Fingerprint string `json:"fingerprint"`
 
+	// Path is how the live socket is connected: "lan", "tailscale", or
+	// "relay". It is empty when the device has no link. The address and
+	// the relay switch do not set it.
+	Path string `json:"path"`
+
+	// EdgeSide and EdgeDevice are the seam the peer reported. RemoteDesktop
+	// is that computer's remote desktop switch. SeamKnown is false until
+	// the peer reports them.
+	EdgeSide      string `json:"edgeSide"`
+	EdgeDevice    string `json:"edgeDevice"`
+	RemoteDesktop bool   `json:"remoteDesktop"`
+	SeamKnown     bool   `json:"seamKnown"`
+
 	// Outbox lists the text messages that fluxd sent through the device
 	// and that the device has not reported yet, the oldest first.
 	Outbox []OutboxMessage `json:"outbox"`
+}
+
+// socketPath is the path of the live link, or "" when the device is offline.
+func (dev *Device) socketPath() string {
+	if dev == nil || dev.link == nil {
+		return ""
+	}
+	switch dev.link.Path {
+	case "lan", "tailscale", "relay":
+		return dev.link.Path
+	default:
+		return ""
+	}
 }
 
 func (dev *Device) view() DeviceView {
@@ -370,7 +404,12 @@ func (dev *Device) view() DeviceView {
 		Battery: dev.battery,
 		Plugins: dev.plugins(), Notifications: dev.notifications,
 		App: dev.App, AppVersion: dev.AppVersion, OldApp: dev.oldApp,
-		Fingerprint: proto.Fingerprint(dev.Cert),
+		Fingerprint:   proto.Fingerprint(dev.Cert),
+		Path:          dev.socketPath(),
+		EdgeSide:      dev.seamSide,
+		EdgeDevice:    dev.seamDevice,
+		RemoteDesktop: dev.seamDesktop,
+		SeamKnown:     dev.seamKnown,
 	}
 	if v.Type == "" {
 		v.Type = "phone"

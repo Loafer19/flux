@@ -41,7 +41,7 @@ Item {
           model: [
             "Install Flux for Android on the phone.",
             "Connect the phone to the same network as this computer.",
-            "Press + Pair new device, then select the phone.",
+            "Select + Pair new device. The list opens on Network → Pair.",
             "Make sure that the key on the phone is the same as the key in Flux."
           ]
           delegate: Row {
@@ -58,7 +58,7 @@ Item {
 
     AccentButton {
       text: "+ Pair new device"
-      onClicked: if (!root.view.pairMode) root.view.startPair()
+      onClicked: root.view.openPair()
     }
 
     Item { width: 1; height: 4 }
@@ -71,7 +71,7 @@ Item {
     }
     Txt {
       width: parent.width
-      text: "To pair another computer when it never appears here, open Network and share or paste a flux1 invite."
+      text: "A computer that never appears in the list can share or paste a flux1 invite on that same page."
       color: Theme.dim
       wrapMode: Text.Wrap
     }

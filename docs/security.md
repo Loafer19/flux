@@ -42,7 +42,7 @@ After the pairing, `fluxd` pins the certificate of the device.
 It refuses each link that does not show that certificate.
 Each device in `flux-cli status --json` has a `fingerprint`: 16 hex digits from the public key of its certificate.
 `flux-cli status` shows the device ID and the fingerprint under each device.
-The device card on the **Overview** page of the Flux window shows the fingerprint under **certificate**.
+Overview keeps the certificate fingerprint behind Show. Network → Pair shows it on the row.
 `flux-cli pair` and `flux-cli accept` print the device ID and the key.
 `flux-cli unpair` prints the device ID and the fingerprint.
 See [pairing security](features.md#pairing-security) and [pairing and trust](architecture.md#pairing-and-trust).
@@ -77,7 +77,7 @@ To change a setting, edit `~/.config/flux/config.toml`, then reload `fluxd`:
 systemctl --user reload fluxd
 ```
 
-The **Remote access** card of the Flux window turns remote input and the remote desktop on and off.
+The **Remote access** card on the **This computer** page turns remote input and the remote desktop on and off.
 A script can call the IPC method `settings.set`. See [IPC](ipc.md).
 See [configuration](configuration.md#settings) for each setting.
 

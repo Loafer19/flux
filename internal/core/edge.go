@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"flux/internal/config"
 	"flux/internal/desktop"
 	"flux/internal/lan"
 	"flux/internal/proto"
@@ -349,6 +350,201 @@ func (d *Daemon) edgeAim() (side string, dev *Device, link *lan.Link) {
 	return side, found, found.link
 }
 
+// sendSeam tells one peer this computer's edge and remote desktop switch.
+func (d *Daemon) sendSeam(link *lan.Link) {
+	if link == nil {
+		return
+	}
+	d.mu.Lock()
+	side, device, desktop := "", "", false
+	if d.cfg != nil {
+		side = strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide))
+		device = strings.TrimSpace(d.cfg.EdgeDevice)
+		desktop = d.cfg.RemoteDesktop
+	}
+	d.mu.Unlock()
+	_ = link.Send(proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "seam", "side": side, "device": device, "remoteDesktop": desktop,
+	}))
+}
+
+// announceSeam sends the seam to every paired computer that is online.
+func (d *Daemon) announceSeam() {
+	d.mu.Lock()
+	var links []*lan.Link
+	for _, dev := range d.devices {
+		if dev.Paired && dev.link != nil && dev.peer() {
+			links = append(links, dev.link)
+		}
+	}
+	d.mu.Unlock()
+	for _, link := range links {
+		d.sendSeam(link)
+	}
+}
+
+// oppositeEdge is the edge on the other computer that meets side.
+func oppositeEdge(side string) string {
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "left":
+		return "right"
+	case "right":
+		return "left"
+	case "top":
+		return "bottom"
+	case "bottom":
+		return "top"
+	default:
+		return ""
+	}
+}
+
+// namesDevice reports whether who is the id or the name of dev.
+func namesDevice(dev *Device, who string) bool {
+	who = strings.TrimSpace(who)
+	if dev == nil || who == "" {
+		return false
+	}
+	return dev.ID == who || strings.EqualFold(dev.Name, who)
+}
+
+// sendEdgeAsk asks one computer to set side and aim it at this computer.
+func (d *Daemon) sendEdgeAsk(link *lan.Link, side string) {
+	if link == nil || !desktop.ValidEdge(side) {
+		return
+	}
+	_ = link.Send(proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "ask", "side": side, "device": d.selfID,
+	}))
+}
+
+// edgeAskFor returns the opposite edge to ask of dev, or "".
+// A phone, an empty edge, a computer that this edge does not name, and an
+// edge name that matches more than one computer get "".
+func (d *Daemon) edgeAskFor(dev *Device) string {
+	if dev == nil || !dev.peer() {
+		return ""
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.cfg == nil {
+		return ""
+	}
+	side := oppositeEdge(d.cfg.EdgeSide)
+	name := strings.TrimSpace(d.cfg.EdgeDevice)
+	if side == "" || name == "" || !namesDevice(dev, name) {
+		return ""
+	}
+	matches := 0
+	for _, item := range d.devices {
+		if namesDevice(item, name) {
+			matches++
+		}
+	}
+	if matches != 1 {
+		return ""
+	}
+	return side
+}
+
+// askConfiguredEdge asks the computer named by the edge to set the opposite
+// edge. It sends nothing when the edge is off, when that computer is
+// offline, or when the name matches more than one device. It does not ask
+// a phone. The other computer does not get an ask when this edge turns off.
+func (d *Daemon) askConfiguredEdge() {
+	side, _, link := d.edgeAim()
+	d.sendEdgeAsk(link, oppositeEdge(side))
+}
+
+// askEdgeOnLink asks dev, on the link that just came up, to set the
+// opposite edge. Other computers and phones get no ask.
+func (d *Daemon) askEdgeOnLink(dev *Device, link *lan.Link) {
+	d.sendEdgeAsk(link, d.edgeAskFor(dev))
+}
+
+// takeSeam stores a seam report from another fluxd. A phone is ignored.
+// A side that is not an edge is ignored, and the previous report stays.
+func (d *Daemon) takeSeam(dev *Device, side, device string, remoteDesktop bool) {
+	if dev == nil || !dev.peer() {
+		return
+	}
+	side = strings.ToLower(strings.TrimSpace(side))
+	if side != "" && !desktop.ValidEdge(side) {
+		return
+	}
+	d.mu.Lock()
+	dev.seamSide = side
+	dev.seamDevice = strings.TrimSpace(device)
+	dev.seamDesktop = remoteDesktop
+	dev.seamKnown = true
+	d.mu.Unlock()
+	d.markDirty()
+}
+
+// takeEdgeAsk applies an ask from another fluxd. side is the edge this
+// computer should set, aimed back at the sender. A phone is ignored. A side
+// that is not an edge is ignored, and an empty side does not clear the
+// edge. An ask that names a third computer is ignored. An edge that already
+// names a third computer stays. An edge that already has this side and
+// already names the sender stays, and a stored name is not rewritten to an
+// id. The reply is a seam. This computer does not ask back.
+func (d *Daemon) takeEdgeAsk(dev *Device, side, device string) {
+	if dev == nil || !dev.peer() {
+		return
+	}
+	side = strings.ToLower(strings.TrimSpace(side))
+	if !desktop.ValidEdge(side) {
+		return
+	}
+	device = strings.TrimSpace(device)
+	if device != "" && !namesDevice(dev, device) {
+		return
+	}
+	d.applyPeerEdge(dev, side)
+}
+
+// applyPeerEdge saves an edge that a peer asked for. It does not ask back.
+func (d *Daemon) applyPeerEdge(dev *Device, side string) {
+	cfgSaves.Lock()
+	d.mu.Lock()
+	if d.cfg == nil || dev == nil {
+		d.mu.Unlock()
+		cfgSaves.Unlock()
+		return
+	}
+	curSide := strings.ToLower(strings.TrimSpace(d.cfg.EdgeSide))
+	curDev := strings.TrimSpace(d.cfg.EdgeDevice)
+	namesSender := namesDevice(dev, curDev)
+	if curDev != "" && !namesSender {
+		d.mu.Unlock()
+		cfgSaves.Unlock()
+		return
+	}
+	if curSide == side && namesSender {
+		d.mu.Unlock()
+		cfgSaves.Unlock()
+		return
+	}
+	beforeSide, beforeDev := d.cfg.EdgeSide, d.cfg.EdgeDevice
+	d.cfg.EdgeSide = side
+	d.cfg.EdgeDevice = dev.ID
+	cfg := d.configCopyLocked()
+	d.mu.Unlock()
+	err := config.Save(&cfg)
+	cfgSaves.Unlock()
+	if err != nil {
+		d.mu.Lock()
+		d.cfg.EdgeSide = beforeSide
+		d.cfg.EdgeDevice = beforeDev
+		d.mu.Unlock()
+		d.logf("screen edge: config.toml did not keep the edge: %v", err)
+		return
+	}
+	d.resetEdgePointer()
+	d.announceSeam()
+	d.markDirty()
+}
+
 func (d *Daemon) sendEdge(link *lan.Link, op string, dx, dy float64) {
 	if link == nil {
 		return
@@ -374,21 +570,33 @@ func (d *Daemon) sendEdgeScroll(link *lan.Link, dx, dy float64) {
 	}))
 }
 
-// handleEdge applies a pointer seam from another fluxd. The peer must be
-// the computer named by edge_device. Keyboard packets stay ignored; mouse
-// buttons and scrolls are applied when the sender forwards them.
+// handleEdge applies a pointer seam from another fluxd. A seam packet
+// reports that computer's edge and remote desktop switch. An ask packet
+// asks this computer to set the opposite edge. Pointer packets apply only
+// when the peer is the computer named by edge_device.
 func (d *Daemon) handleEdge(dev *Device, p *proto.Packet) {
-	if d.input == nil || !d.edgeFrom(dev) {
-		return
-	}
 	var body struct {
-		Op      string  `json:"op"`
-		DX      float64 `json:"dx"`
-		DY      float64 `json:"dy"`
-		Button  uint32  `json:"button"`
-		Pressed bool    `json:"pressed"`
+		Op            string  `json:"op"`
+		DX            float64 `json:"dx"`
+		DY            float64 `json:"dy"`
+		Button        uint32  `json:"button"`
+		Pressed       bool    `json:"pressed"`
+		Side          string  `json:"side"`
+		Device        string  `json:"device"`
+		RemoteDesktop bool    `json:"remoteDesktop"`
 	}
 	if p.Decode(&body) != nil {
+		return
+	}
+	if body.Op == "seam" {
+		d.takeSeam(dev, body.Side, body.Device, body.RemoteDesktop)
+		return
+	}
+	if body.Op == "ask" {
+		d.takeEdgeAsk(dev, body.Side, body.Device)
+		return
+	}
+	if d.input == nil || !d.edgeFrom(dev) {
 		return
 	}
 	switch body.Op {

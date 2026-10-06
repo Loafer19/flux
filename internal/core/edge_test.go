@@ -1,8 +1,10 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -305,5 +307,298 @@ func TestEdgeScrollForward(t *testing.T) {
 	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{"op": "scroll", "dx": 0, "dy": 3}))
 	if rec.n != before {
 		t.Fatal("scroll after leave still applied")
+	}
+}
+
+func TestSeamAnnounce(t *testing.T) {
+	d, _ := clipDaemon(t, true)
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "other-desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	phone := &Device{ID: "fedcba9876543210fedcba9876543210", Name: "phone", Type: "phone", Paired: true}
+	d.devices[peer.ID] = peer
+	d.devices[phone.ID] = phone
+
+	d.handleEdge(phone, proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "seam", "side": "right", "device": "dragon", "remoteDesktop": true,
+	}))
+	if phone.seamKnown || peer.seamKnown {
+		t.Fatal("a phone seam was stored")
+	}
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "seam", "side": "right", "device": "dragon", "remoteDesktop": false,
+	}))
+	if !peer.seamKnown || peer.seamSide != "right" || peer.seamDevice != "dragon" || peer.seamDesktop {
+		t.Fatalf("seam %+v known %v desktop %v", peer.seamSide, peer.seamKnown, peer.seamDesktop)
+	}
+	view := peer.view()
+	if view.EdgeSide != "right" || view.EdgeDevice != "dragon" || !view.SeamKnown || view.RemoteDesktop {
+		t.Fatalf("view seam %+v", view)
+	}
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "seam", "side": "up", "device": "other", "remoteDesktop": true,
+	}))
+	if peer.seamSide != "right" || peer.seamDevice != "dragon" || peer.seamDesktop {
+		t.Fatal("a bad side replaced the seam")
+	}
+
+	d.handleEdge(peer, proto.New(proto.TypeFluxEdge, map[string]any{
+		"op": "seam", "side": "", "device": "", "remoteDesktop": true,
+	}))
+	if !peer.seamKnown || peer.seamSide != "" || !peer.seamDesktop {
+		t.Fatal("clearing the edge did not stay a report")
+	}
+}
+
+func TestEdgeAskApply(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	d, _ := clipDaemon(t, true)
+	d.selfID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	in, out := fluxIdentity()
+	peer := &Device{
+		ID: "0123456789abcdef0123456789abcdef", Name: "Other-Desk", Type: "laptop",
+		Paired: true, Incoming: in, Outgoing: out,
+	}
+	phone := &Device{ID: "fedcba9876543210fedcba9876543210", Name: "phone", Type: "phone", Paired: true}
+	third := &Device{
+		ID: "cccccccceeeeeeeeffffffff0000000001", Name: "third", Type: "desktop",
+		Paired: true, Incoming: append([]string{}, in...), Outgoing: append([]string{}, out...),
+	}
+	same := &Device{
+		ID: "ddddddddaaaaaaaaaaaaaaaaaaaaaa01", Name: "Other-Desk", Type: "laptop",
+		Paired: true, Incoming: append([]string{}, in...), Outgoing: append([]string{}, out...),
+	}
+	d.devices[peer.ID] = peer
+	d.devices[phone.ID] = phone
+	d.devices[third.ID] = third
+
+	ask := func(dev *Device, side, device string) {
+		t.Helper()
+		d.handleEdge(dev, proto.New(proto.TypeFluxEdge, map[string]any{
+			"op": "ask", "side": side, "device": device,
+		}))
+	}
+	if d.edgeAskFor(phone) != "" || d.edgeAskFor(third) != "" {
+		t.Fatal("a phone or another computer was asked")
+	}
+
+	ask(phone, "right", phone.ID)
+	ask(peer, "up", peer.ID)
+	ask(peer, "", peer.ID)
+	if d.cfg.EdgeSide != "" || d.cfg.EdgeDevice != "" {
+		t.Fatalf("ignored ask stored %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+
+	d.cfg.EdgeSide = "left"
+	d.cfg.EdgeDevice = "third"
+	ask(peer, "", peer.ID)
+	ask(peer, "up", peer.ID)
+	ask(peer, "right", peer.ID)
+	if d.cfg.EdgeSide != "left" || d.cfg.EdgeDevice != "third" {
+		t.Fatalf("an edge aimed at a third computer changed to %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+
+	d.cfg.EdgeSide = ""
+	d.cfg.EdgeDevice = ""
+	ask(peer, "right", "third")
+	if d.cfg.EdgeSide != "" || d.cfg.EdgeDevice != "" {
+		t.Fatal("an ask that names a third computer was stored")
+	}
+
+	ask(peer, "right", peer.ID)
+	if d.cfg.EdgeSide != "right" || d.cfg.EdgeDevice != peer.ID {
+		t.Fatalf("empty edge became %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+
+	d.cfg.EdgeSide = "right"
+	d.cfg.EdgeDevice = "other-desk"
+	ask(peer, "right", peer.Name)
+	if d.cfg.EdgeSide != "right" || d.cfg.EdgeDevice != "other-desk" {
+		t.Fatalf("a matching name was rewritten to %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+
+	ask(peer, "left", peer.Name)
+	if d.cfg.EdgeSide != "left" || d.cfg.EdgeDevice != peer.ID {
+		t.Fatalf("a new side became %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+
+	if err := d.setSetting("edgeSide", "top"); err != nil {
+		t.Fatal(err)
+	}
+	if d.cfg.EdgeSide != "top" || d.cfg.EdgeDevice != peer.ID {
+		t.Fatalf("side change %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+	if got := d.edgeAskFor(peer); got != "bottom" {
+		t.Fatalf("ask side %q", got)
+	}
+	if d.edgeAskFor(phone) != "" || d.edgeAskFor(third) != "" {
+		t.Fatal("asked a computer that the edge does not name")
+	}
+	d.devices[same.ID] = same
+	if d.edgeAskFor(peer) != "bottom" {
+		t.Fatal("a second computer hid the id")
+	}
+	d.cfg.EdgeDevice = "Other-Desk"
+	if d.edgeAskFor(peer) != "" || d.edgeAskFor(same) != "" {
+		t.Fatal("two computers with one name were asked")
+	}
+	d.askConfiguredEdge()
+	if d.cfg.EdgeSide != "top" || d.cfg.EdgeDevice != "Other-Desk" {
+		t.Fatal("two computers with the same name changed this edge")
+	}
+	if err := d.setSetting("edgeSide", ""); err != nil {
+		t.Fatal(err)
+	}
+	if d.cfg.EdgeSide != "" || d.cfg.EdgeDevice != "" {
+		t.Fatalf("edge off left %q %q", d.cfg.EdgeSide, d.cfg.EdgeDevice)
+	}
+	if d.edgeAskFor(peer) != "" {
+		t.Fatal("edge off still asks")
+	}
+}
+
+func TestEdgeAskOverLink(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	onA, onB, idA, idB := linkPair(t, ctx)
+	a, _ := clipDaemon(t, true)
+	b, _ := clipDaemon(t, true)
+	a.selfID, b.selfID = idA, idB
+	a.cfg.Name = "alpha"
+	b.cfg.Name = "beta"
+	in, out := fluxIdentity()
+	devB := &Device{ID: idB, Name: "beta", Type: "desktop", Paired: true, link: onA, Incoming: in, Outgoing: out}
+	devA := &Device{ID: idA, Name: "alpha", Type: "laptop", Paired: true, link: onB, Incoming: append([]string{}, in...), Outgoing: append([]string{}, out...)}
+	a.devices[idB] = devB
+	b.devices[idA] = devA
+
+	var mu sync.Mutex
+	var asksA, asksB []string
+	record := func(dst *[]string, p *proto.Packet) {
+		if p.Fields()["op"] != "ask" {
+			return
+		}
+		mu.Lock()
+		*dst = append(*dst, p.Fields()["side"].(string)+" "+p.Fields()["device"].(string))
+		mu.Unlock()
+	}
+	go onA.Receive(func(p *proto.Packet) {
+		record(&asksA, p)
+		a.handlePacket(devB, onA, p)
+	})
+	go onB.Receive(func(p *proto.Packet) {
+		record(&asksB, p)
+		b.handlePacket(devA, onB, p)
+	})
+
+	if err := a.setSetting("edgeSide", "left"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	mu.Lock()
+	n := len(asksB)
+	mu.Unlock()
+	if n != 0 || b.cfg.EdgeSide != "" {
+		t.Fatalf("a side with no computer sent %d asks and left %q", n, b.cfg.EdgeSide)
+	}
+
+	if err := a.setSetting("edgeDevice", "beta"); err != nil {
+		t.Fatal(err)
+	}
+	waitEdge := func() {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			b.mu.Lock()
+			side, device := b.cfg.EdgeSide, b.cfg.EdgeDevice
+			b.mu.Unlock()
+			if side == "right" && device == idA {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("other edge %q %q", b.cfg.EdgeSide, b.cfg.EdgeDevice)
+	}
+	waitEdge()
+	time.Sleep(200 * time.Millisecond)
+	mu.Lock()
+	gotA, gotB := append([]string{}, asksA...), append([]string{}, asksB...)
+	mu.Unlock()
+	if len(gotA) != 0 {
+		t.Fatalf("the other computer asked back: %v", gotA)
+	}
+	if len(gotB) != 1 || gotB[0] != "right "+idA {
+		t.Fatalf("asks %v", gotB)
+	}
+	if a.cfg.EdgeSide != "left" || a.cfg.EdgeDevice != "beta" {
+		t.Fatalf("this edge changed to %q %q", a.cfg.EdgeSide, a.cfg.EdgeDevice)
+	}
+
+	if err := a.setSetting("edgeDevice", "beta"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		mu.Lock()
+		n = len(asksB)
+		mu.Unlock()
+		if n >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	waitEdge()
+	mu.Lock()
+	if len(asksA) != 0 || len(asksB) != 2 {
+		t.Fatalf("second write echoed %v or sent %v", asksA, asksB)
+	}
+	mu.Unlock()
+
+	a.onPairedLink(devB, onA)
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		mu.Lock()
+		n = len(asksB)
+		echo := len(asksA)
+		mu.Unlock()
+		if n >= 3 || echo != 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	waitEdge()
+	mu.Lock()
+	if len(asksA) != 0 || len(asksB) != 3 {
+		t.Fatalf("link-up echoed %v or sent %v", asksA, asksB)
+	}
+	mu.Unlock()
+
+	if err := a.setSetting("remoteDesktop", true); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	mu.Lock()
+	if len(asksA) != 0 || len(asksB) != 3 {
+		t.Fatalf("remote desktop asked %v or sent %v", asksA, asksB)
+	}
+	mu.Unlock()
+
+	if err := a.setSetting("edgeSide", ""); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	b.mu.Lock()
+	side, device := b.cfg.EdgeSide, b.cfg.EdgeDevice
+	b.mu.Unlock()
+	if side != "right" || device != idA {
+		t.Fatalf("turning the edge off cleared the other computer: %q %q", side, device)
+	}
+	if a.cfg.EdgeSide != "" || a.cfg.EdgeDevice != "" {
+		t.Fatalf("this edge stayed %q %q", a.cfg.EdgeSide, a.cfg.EdgeDevice)
 	}
 }

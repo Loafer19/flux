@@ -123,6 +123,9 @@ func TestHandshake(t *testing.T) {
 	if onDesk.DeviceID() != phone.id || onPhone.DeviceID() != desk.id {
 		t.Fatalf("wrong peers: %s and %s", onDesk.DeviceID(), onPhone.DeviceID())
 	}
+	if onDesk.Path != "lan" || onPhone.Path != "lan" {
+		t.Fatalf("loopback paths %q %q", onDesk.Path, onPhone.Path)
+	}
 	if onDesk.Identity.DeviceName != "phone" || onDesk.Identity.TCPPort != 0 {
 		t.Errorf("identity after TLS: %+v", onDesk.Identity)
 	}

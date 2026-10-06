@@ -4,8 +4,9 @@ Connect your Omarchy desktop to an Android phone, an iPhone, or a Mac over your 
 Share files, clipboard text, and clipboard images, read phone notifications, control media, and use your phone as a camera or microphone.
 
 Flux includes a CLI, a background daemon, a native Qt window, an Omarchy shell plugin, a native Android app, a native iOS app, and a native macOS app.
-`fluxd` listens on 1 TCP port from 12100 to 12108 and on UDP port 12100, and it also opens the connections to the devices itself.
-So Flux works with the default Omarchy firewall, which blocks inbound traffic, and needs no new inbound rule.
+`fluxd` listens on 1 TCP port from 12100 to 12108 and on UDP port 12100, and it also opens the connections to phones, iPhones, and Macs.
+Those devices need no new inbound rule on this computer.
+Two Omarchy computers both listen, so each firewall must allow TCP 12070–12108 from the other. See [Connect two computers](docs/desktop-peer.md).
 See [security](docs/security.md) for what a paired device can do and which settings limit it.
 
 
@@ -74,10 +75,11 @@ Flux checks for a new release once a day. To install it, run `flux-cli update`.
 1. [Install Flux for Android](docs/android.md).
 2. Connect the phone and desktop to the same local network.
 3. Open the desktop window with `flux-cli open`.
-4. Select **+ Pair new device**.
-5. Compare the 16-character verification key on both screens, for example `5EE6 825F 974E D59A`.
-6. Accept the matching request on the phone.
-7. Select **Confirm** in the Flux window or in the notification on the desktop. The desktop pins the phone only after this step.
+4. Select **+ Pair new device**. The list opens on **Network → Pair**.
+5. Select the phone.
+6. Compare the 16-character verification key on both screens, for example `5EE6 825F 974E D59A`.
+7. Accept the matching request on the phone.
+8. Select **Confirm** in the Flux window or in the notification on the desktop. The desktop pins the phone only after this step.
 
 Each step waits at most 30 seconds.
 Compare all 16 characters.

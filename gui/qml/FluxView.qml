@@ -48,7 +48,8 @@ Item {
   property string tab: "overview"
   onTabChanged: drawerOpen = false
   property string selectedId: ""
-  property bool pairMode: false
+  // Network → Pair is open. The sidebar button only opens that page.
+  property bool pairPane: false
   property string justPaired: ""
   property var prevPairStates: ({})
   // The device that the unpair confirm dialog acts on. Null when it is closed.
@@ -76,7 +77,7 @@ Item {
   readonly property var incomingRows: JSON.parse(incomingText)
   readonly property string discoveredText: JSON.stringify(discovered.map(d => ({
     id: d.id, name: d.name, type: d.type, ip: d.ip || "", fingerprint: d.fingerprint || "",
-    pairState: d.pairState, twin: twinText(d)
+    pairState: d.pairState, pairKey: d.pairKey || "", twin: twinText(d)
   })))
   readonly property var discoveredRows: JSON.parse(discoveredText)
   // The pair requests that showed, by device ID: since is the time in ms at
@@ -118,12 +119,15 @@ Item {
   readonly property string devName: dev ? (dev.name || "device") : "device"
   readonly property var visibleTabs: tabs.filter(t => tabAllowed(t.key))
   readonly property var currentTab: {
-    if (tab === "network") return null
+    if (tab === "network" || tab === "computer") return null
     for (var i = 0; i < visibleTabs.length; i++)
       if (visibleTabs[i].key === tab) return visibleTabs[i]
     return visibleTabs.length > 0 ? visibleTabs[0] : null
   }
   readonly property bool networkTab: tab === "network"
+  readonly property bool computerTab: tab === "computer"
+  // Network and This computer are not a selected device.
+  readonly property bool deskTab: networkTab || computerTab
   readonly property var selfDevice: backend ? (backend.selfDevice || {}) : {}
 
   focus: true
@@ -144,8 +148,8 @@ Item {
   }
 
   function showPage(key) {
-    if (key === "network") {
-      root.tab = "network"
+    if (key === "network" || key === "computer") {
+      root.tab = key
       return true
     }
     for (var i = 0; i < tabs.length; i++) {
@@ -268,10 +272,12 @@ Item {
     return others.some(o => o.paired) ? "Same name as a paired device" : "Same name as another device"
   }
 
-  function startPair() {
-    if (!wideLayout) drawerOpen = true
-    pairMode = !pairMode
-    if (pairMode) call("discover", {})
+  // Opens Network → Pair and asks fluxd to search this network again.
+  function openPair() {
+    pairPane = true
+    tab = "network"
+    drawerOpen = false
+    call("discover", {})
   }
 
   onAllDevicesChanged: {
@@ -282,7 +288,8 @@ Item {
       if (before !== undefined && before !== "paired" && d.pairState === "paired") {
         justPaired = d.name
         selectedId = d.id
-        pairMode = false
+        if (pairPane) tab = "overview"
+        pairPane = false
         pairedTimer.restart()
       }
       next[d.id] = d.pairState
@@ -326,12 +333,12 @@ Item {
     } else if (event.text === "s") {
       sendClipboard(); event.accepted = true
     } else if (event.text === "p") {
-      startPair(); event.accepted = true
+      openPair(); event.accepted = true
     } else if (event.text === "u") {
       unpair(); event.accepted = true
     } else if (event.key === Qt.Key_Escape) {
       if (drawerOpen) drawerOpen = false
-      else if (pairMode) pairMode = false
+      else if (pairPane) pairPane = false
       event.accepted = true
     }
   }
@@ -393,10 +400,19 @@ Item {
           }
           Item { width: 1; height: 4 }
           RailButton {
+            icon: "monitor"
+            tip: "This computer"
+            selected: root.computerTab
+            onClicked: root.tab = "computer"
+          }
+          RailButton {
             icon: "link"
             tip: "Network"
             selected: root.networkTab
-            onClicked: root.tab = "network"
+            onClicked: {
+              root.pairPane = false
+              root.tab = "network"
+            }
           }
           Repeater {
             model: root.pairedRows
@@ -404,11 +420,12 @@ Item {
               required property var modelData
               icon: Fmt.kindIcon(modelData.type)
               tip: modelData.name + (modelData.online ? " · connected" : " · offline")
-              selected: !root.networkTab && !!root.dev && root.dev.id === modelData.id
+              selected: !root.deskTab && !!root.dev && root.dev.id === modelData.id
               dot: modelData.online ? Theme.ok : "transparent"
               onClicked: {
                 root.selectedId = modelData.id
-                if (root.networkTab) root.tab = "overview"
+                root.pairPane = false
+                if (root.deskTab) root.tab = "overview"
               }
             }
           }
@@ -417,8 +434,8 @@ Item {
             tip: root.incoming.length > 0 ? "A device asks to pair" : "Pair new device"
             dot: root.incoming.length > 0 ? Theme.warn : "transparent"
             onClicked: {
-              root.drawerOpen = true
-              if (root.incoming.length === 0 && !root.pairMode) root.startPair()
+              if (root.incoming.length > 0) root.drawerOpen = true
+              else root.openPair()
             }
           }
           Rectangle {
@@ -426,11 +443,11 @@ Item {
             width: 32
             height: 1
             color: Theme.bg3
-            // Device feature tabs only when a device page is active — not on Network.
-            visible: !!root.dev && !root.networkTab
+            // Device feature tabs only when a device page is active.
+            visible: !!root.dev && !root.deskTab
           }
           Repeater {
-            model: (root.dev && !root.networkTab) ? root.visibleTabs : []
+            model: (root.dev && !root.deskTab) ? root.visibleTabs : []
             delegate: RailButton {
               required property var modelData
               icon: modelData.icon
@@ -482,36 +499,73 @@ Item {
           }
         }
 
-        // Network sits above the devices. The rows below are one device each.
-        Rectangle {
-          id: networkRow
+        // This computer and Network sit above the devices.
+        Column {
           width: parent.width
-          height: networkLabel.implicitHeight + 16
-          color: root.networkTab ? Theme.alpha(Theme.accent, 0.18) : (networkArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")
-          Icon {
-            id: networkIcon
-            x: 10
-            anchors.verticalCenter: parent.verticalCenter
-            name: "link"
-            size: 16
-            color: root.networkTab ? Theme.accent : Theme.dim
+          spacing: 4
+          Rectangle {
+            id: computerRow
+            width: parent.width
+            height: computerLabel.implicitHeight + 16
+            color: root.computerTab ? Theme.alpha(Theme.accent, 0.18) : (computerArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")
+            Icon {
+              id: computerIcon
+              x: 10
+              anchors.verticalCenter: parent.verticalCenter
+              name: "monitor"
+              size: 16
+              color: root.computerTab ? Theme.accent : Theme.dim
+            }
+            Txt {
+              id: computerLabel
+              anchors.left: computerIcon.right
+              anchors.leftMargin: 8
+              anchors.verticalCenter: parent.verticalCenter
+              text: "This computer"
+              color: root.computerTab ? Theme.accent : Theme.fg
+            }
+            MouseArea {
+              id: computerArea
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                root.tab = "computer"
+                root.drawerOpen = false
+              }
+            }
           }
-          Txt {
-            id: networkLabel
-            anchors.left: networkIcon.right
-            anchors.leftMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Network"
-            color: root.networkTab ? Theme.accent : Theme.fg
-          }
-          MouseArea {
-            id: networkArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-              root.tab = "network"
-              root.drawerOpen = false
+          Rectangle {
+            id: networkRow
+            width: parent.width
+            height: networkLabel.implicitHeight + 16
+            color: root.networkTab ? Theme.alpha(Theme.accent, 0.18) : (networkArea.containsMouse ? Theme.alpha(Theme.fg, 0.05) : "transparent")
+            Icon {
+              id: networkIcon
+              x: 10
+              anchors.verticalCenter: parent.verticalCenter
+              name: "link"
+              size: 16
+              color: root.networkTab ? Theme.accent : Theme.dim
+            }
+            Txt {
+              id: networkLabel
+              anchors.left: networkIcon.right
+              anchors.leftMargin: 8
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Network"
+              color: root.networkTab ? Theme.accent : Theme.fg
+            }
+            MouseArea {
+              id: networkArea
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                root.pairPane = false
+                root.tab = "network"
+                root.drawerOpen = false
+              }
             }
           }
         }
@@ -548,10 +602,11 @@ Item {
               required property var modelData
               width: side.width
               device: modelData
-              selected: !root.networkTab && !!root.dev && root.dev.id === modelData.id
+              selected: !root.deskTab && !!root.dev && root.dev.id === modelData.id
               onClicked: {
                 root.selectedId = modelData.id
-                if (root.networkTab) root.tab = "overview"
+                root.pairPane = false
+                if (root.deskTab) root.tab = "overview"
                 root.drawerOpen = false
               }
               onSelectedChanged: if (selected) Qt.callLater(root.revealInSidebar, this)
@@ -599,106 +654,17 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                if (root.requested) root.call("pair.reject", { device: root.requested.id, key: root.requested.pairKey })
-                else root.startPair()
-              }
+              onClicked: root.openPair()
             }
           }
 
-          // Devices on the network that are not paired. Each row shows the
-          // address and the certificate fingerprint of the device, and marks
-          // a name that another device also has.
-          Repeater {
-            model: root.pairMode ? root.discoveredRows : []
-            delegate: DashedRect {
-              required property var modelData
-              width: side.width
-              height: Math.max(42, candInfo.implicitHeight + 18)
-              color: candArea.containsMouse ? Theme.accent : (modelData.twin !== "" ? Theme.warn : Theme.edge)
-              Rectangle {
-                x: 9
-                y: 9
-                width: 24
-                height: 24
-                color: Theme.bg3
-                Icon { anchors.centerIn: parent; name: Fmt.kindIcon(modelData.type); color: Theme.dim; size: 15 }
-              }
-              Column {
-                id: candInfo
-                x: 43
-                y: 9
-                width: parent.width - 43 - 56
-                Txt {
-                  id: candName
-                  width: parent.width
-                  text: Fmt.showControls(modelData.name)
-                  elide: Text.ElideRight
-                  font.weight: Font.DemiBold
-                }
-                Txt {
-                  width: parent.width
-                  visible: text !== ""
-                  text: modelData.ip
-                  color: Theme.dim
-                  font.pixelSize: 11
-                  elide: Text.ElideRight
-                }
-                Txt {
-                  width: parent.width
-                  visible: text !== ""
-                  text: Fmt.hexGroups(modelData.fingerprint)
-                  color: Theme.dim
-                  font.pixelSize: 11
-                  elide: Text.ElideRight
-                }
-                Txt {
-                  width: parent.width
-                  visible: text !== ""
-                  topPadding: 2
-                  text: modelData.twin
-                  color: Theme.warn
-                  font.pixelSize: 11
-                  wrapMode: Text.Wrap
-                }
-              }
-              Txt {
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                y: candInfo.y + (candName.height - height) / 2
-                text: modelData.pairState === "requested" ? "waiting" : "pair"
-                color: Theme.accent
-                font.pixelSize: 11
-              }
-              MouseArea {
-                id: candArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.call("pair.request", { device: modelData.id })
-              }
-            }
-          }
-
-          Txt {
-            visible: root.pairMode && root.discovered.length === 0 && !root.requested
-            width: parent.width
-            topPadding: 2
-            leftPadding: 4
-            rightPadding: 4
-            text: "Searching the LAN. For another computer over Tailscale, open Network → Pair."
-            color: Theme.dim
-            font.pixelSize: 11
-            wrapMode: Text.Wrap
-          }
         }
 
-        // Device feature tabs only off Network. On Network the rail is Network
-        // chrome + devices / Pair — no Overview / Files lingering.
+        // Device feature tabs only on a device page.
         Column {
           width: parent.width
           spacing: 2
-          visible: !!root.dev && !root.networkTab
+          visible: !!root.dev && !root.deskTab
           Repeater {
             model: root.visibleTabs
             delegate: Rectangle {
@@ -845,7 +811,7 @@ Item {
         width: Math.min(implicitWidth, (actions.visible ? actions.x - 14 : parent.width - root.gutter) - x)
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -0.5
-        text: root.networkTab ? "Network" : (root.dev && root.currentTab ? root.currentTab.label : "Get started")
+        text: root.computerTab ? "This computer" : (root.networkTab ? "Network" : (root.dev && root.currentTab ? root.currentTab.label : "Get started"))
         font.pixelSize: root.narrowLayout ? 17 : 20
         font.weight: Font.Bold
         elide: Text.ElideRight
@@ -857,9 +823,10 @@ Item {
         anchors.right: actions.left
         anchors.rightMargin: 14
         anchors.verticalCenter: title.verticalCenter
-        // Network keeps device context on the This computer card, not in the header.
-        visible: !root.compactHeader && !root.networkTab && !!root.dev
-        text: root.dev ? root.devName + " · " + (root.dev.ip || "—") : ""
+        visible: !root.compactHeader && (root.deskTab || !!root.dev)
+        text: root.deskTab
+              ? ((root.selfDevice.name || "This computer") + (root.selfDevice.tcpPort ? (" · TCP " + root.selfDevice.tcpPort) : ""))
+              : (root.dev ? root.devName + " · " + (root.dev.ip || "—") : "")
         color: Theme.dim
         font.pixelSize: 12
         elide: Text.ElideRight
@@ -870,7 +837,7 @@ Item {
         anchors.rightMargin: root.gutter
         anchors.verticalCenter: title.verticalCenter
         spacing: 8
-        visible: !!root.dev && !root.networkTab
+        visible: !!root.dev && !root.deskTab
         OutlineButton {
           visible: root.has("findmyphone")
           icon: "bell-ring"
@@ -931,7 +898,7 @@ Item {
         Txt {
           id: offlineLine
           width: parent.width
-          visible: !!root.dev && !root.dev.online && !root.networkTab
+          visible: !!root.dev && !root.dev.online && !root.deskTab
           text: root.dev ? root.devName + " is offline. Last seen " + Fmt.lastSeen(root.dev.lastSeen) + "." : ""
           color: Theme.dim
           wrapMode: Text.Wrap
@@ -941,7 +908,7 @@ Item {
           id: page
           width: parent.width
           height: item ? (item.fillHeight ? body.fillHeight : item.implicitHeight) : 0
-          readonly property string url: root.networkTab ? "pages/Network.qml" : (root.dev && root.currentTab ? "pages/" + root.currentTab.page + ".qml" : "pages/Empty.qml")
+          readonly property string url: root.computerTab ? "pages/Computer.qml" : (root.networkTab ? "pages/Network.qml" : (root.dev && root.currentTab ? "pages/" + root.currentTab.page + ".qml" : "pages/Empty.qml"))
           // A host can set tab when it creates the view. The url then
           // changes before the view is complete, so load only the last url.
           property bool complete: false

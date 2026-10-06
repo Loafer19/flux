@@ -275,6 +275,9 @@ See [workflow controls](workflows.md) for the outbox, saved snippets, notificati
 `flux-cli url` opens an `http` or `https` address. On a computer, any other address is rejected.
 When the clipboard holds an image, the command sends the image and returns when the transfer ends.
 See [clipboard images](features.md#clipboard-images).
+`flux-cli clipboard clear` removes unpinned clipboard history. Add `--all` to also remove saved snippets.
+`flux-cli clipboard delete ID` deletes a history entry or saved snippet.
+`flux-cli clipboard limit [N]` shows or sets the number of clipboard history entries to keep (1 to 500, default 50).
 `flux-cli notifications clear` dismisses the phone notifications on the phone and on the desktop. Ongoing notifications stay.
 
 To send an SMS, set the recipient and message first:

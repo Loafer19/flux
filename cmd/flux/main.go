@@ -60,6 +60,7 @@ Commands:
   send PATH...           Queue files or folders. Folders use ZIP archives
   transfers [retry ID|cancel ID]  Show or control the outbox
   clip [TEXT]            Send the clipboard, or TEXT
+  clipboard [clear [--all]|delete ID|limit [N]]  Manage clipboard history and limit
   snippets [search TEXT|save ID [DURATION]|remove ID|copy ID]  Manage saved clipboard entries
   url URL                Open an http or https address on the device
   sms NUMBER TEXT...     Send a text message through the phone
@@ -154,6 +155,8 @@ func main() {
 		err = transferCommand(args)
 	case "clip":
 		err = call("clipboard.send", map[string]any{"device": device, "text": strings.Join(args, " ")})
+	case "clipboard":
+		err = clipboardCommand(args)
 	case "snippets":
 		err = snippetCommand(args)
 	case "url":

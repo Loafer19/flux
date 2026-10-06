@@ -168,6 +168,7 @@ func (d *Daemon) Snapshot() json.RawMessage {
 		"commands":  commands,
 		"settings": map[string]any{
 			"autoClipboard":     d.cfg.AutoClipboard,
+			"clipboardLimit":    d.cfg.ClipLimit(),
 			"notifications":     d.cfg.Notifications,
 			"shareHome":         d.cfg.ShareHome,
 			"pauseMediaOnCall":  d.cfg.PauseMediaOnCall,
@@ -242,6 +243,7 @@ type params struct {
 	Host      string          `json:"host"`
 	Port      int             `json:"port"`
 	Invite    string          `json:"invite"`
+	All       bool            `json:"all"`
 	Expires   int64           `json:"expires"`
 }
 
@@ -311,6 +313,10 @@ func (d *Daemon) Call(ctx context.Context, method string, raw json.RawMessage) (
 			return nil, apiErr("bad_params", "text is empty")
 		}
 		return ok, d.clip.Set(p.Text)
+	case "clipboard.delete":
+		return ok, d.deleteClip(p.ID)
+	case "clipboard.clear":
+		return ok, d.clearClips(p.All)
 	case "clipboard.pin":
 		return d.pinClip(p.ID, p.Expires)
 	case "clipboard.unpin":
@@ -638,6 +644,35 @@ func (d *Daemon) setSetting(key string, value any) error {
 			d.cfg.Relay = false
 		}
 		d.cfg.RelayURL = url
+	case key == "clipboardLimit":
+		var limit int
+		switch v := value.(type) {
+		case float64:
+			limit = int(v)
+		case int:
+			limit = v
+		case int64:
+			limit = int(v)
+		case json.Number:
+			n, err := v.Int64()
+			if err != nil {
+				d.mu.Unlock()
+				cfgSaves.Unlock()
+				return apiErr("bad_setting", "clipboardLimit must be a number")
+			}
+			limit = int(n)
+		default:
+			d.mu.Unlock()
+			cfgSaves.Unlock()
+			return apiErr("bad_setting", "clipboardLimit must be a number")
+		}
+		if limit < 1 || limit > config.MaxClipboardLimit {
+			d.mu.Unlock()
+			cfgSaves.Unlock()
+			return apiErr("bad_params", "clipboardLimit must be between 1 and %d", config.MaxClipboardLimit)
+		}
+		d.cfg.ClipboardLimit = limit
+		d.trimClipboardLocked()
 	default:
 		d.mu.Unlock()
 		cfgSaves.Unlock()

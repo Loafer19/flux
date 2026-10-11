@@ -1005,9 +1005,11 @@ private fun ChatDock(
 ) {
     val clip = rememberPhoneClip()
     Column(
-        Modifier.fillMaxWidth().dockFrame(shape).padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.fillMaxWidth().dockFrame(shape).padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Chat has no navigation bar, so the dots show that a swipe leads to Control and Computers.
+        SwipeDots(Modifier.fillMaxWidth())
         if (reply != null) {
             Row(Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Sym(R.drawable.ic_reply, tint = Tn.blue, size = 18.dp)

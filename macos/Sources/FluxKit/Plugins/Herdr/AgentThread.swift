@@ -157,6 +157,11 @@ struct ThreadPattern: @unchecked Sendable {
 
     func contains(_ s: String) -> Bool { first(s) != nil }
 
+    /// The ranges of group 1 of each match in the text.
+    func all(_ s: String) -> [Range<String.Index>] {
+        re.matches(in: s, range: NSRange(s.startIndex..., in: s)).compactMap { Range($0.range(at: 1), in: s) }
+    }
+
     /// The text with each match replaced by `with`.
     func replace(_ s: String, with: String) -> String {
         re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: NSRegularExpression.escapedTemplate(for: with))
@@ -176,12 +181,30 @@ private let wordEnd = #"(?![A-Za-z0-9_])"#
 /// A time: 12s, 2m 5s, 1h 2m, or 2:14.
 private let time = #"[0-9]+h(?: [0-9]+m)?(?: [0-9]+s)?|[0-9]+m(?: [0-9]+s)?|[0-9]+s"#
 
-/// The bullet of a message or a tool call: ● and ⏺ of Claude Code, • of Codex.
-private let bulletLine = ThreadPattern("^([●⏺•])\(sp)+(.*)$")
-/// A prompt of the user: > in Claude Code, › in Codex.
-private let promptLine = ThreadPattern("^[>›](?:\(sp)+(.*))?$")
+/// The bullet of a message or a tool call: ● and ⏺ of Claude Code, • of Codex. ※ marks a recap of Claude Code.
+private let bulletLine = ThreadPattern("^([●⏺•※])\(sp)+(.*)$")
+/// A prompt of the user: > and ❯ in Claude Code, › in Codex.
+private let promptLine = ThreadPattern("^[>›❯](?:\(sp)+(.*))?$")
 /// A tool call of Claude Code, for example Bash(npm test) or an MCP tool.
 private let toolCall = ThreadPattern(#"^([A-Za-z][A-Za-z0-9_.-]*|[A-Za-z0-9_.-]+ - [A-Za-z0-9_.-]+ \(MCP\))\((.*)\)"# + "\(sp)*$")
+/// The first line of a tool call of Claude Code whose arguments take more than 1 line.
+private let toolStart = ThreadPattern(#"^([A-Za-z][A-Za-z0-9_.-]*|[A-Za-z0-9_.-]+ - [A-Za-z0-9_.-]+ \(MCP\))\((.*)$"#)
+/// The tools of Claude Code. A first line with one of these names starts a tool call also before its result shows.
+private let claudeTools: Set<String> = [
+    "Agent", "Bash", "Edit", "Fetch", "Glob", "Grep", "LS", "MultiEdit", "NotebookEdit", "Read", "Search", "Skill", "Task",
+    "TodoWrite", "Update", "WebFetch", "WebSearch", "Workflow", "Write",
+]
+/// A line of Claude Code that sums up the tool calls of a step, for example
+/// "Read 2 files, listed 1 directory, ran 3 shell commands". Its first part
+/// names a count, and it does not end like a sentence.
+private let summaryLine = ThreadPattern(
+    "^(Read|Reading|Searched|Searching|Listed|Listing|Ran|Running|Wrote|Writing|Made|Making|Edited|Editing|Updated|Updating|Created|Creating|"
+        + "Fetched|Fetching|Recalled|Recalling|Called|Calling|Loaded|Loading|Found|Finding|Viewed|Viewing|Used|Using)( for)? [0-9]+ "
+        + #"[^\n]*[^.!?:… \t\n\x0B\f\r]$"#)
+/// The hint at the end of a line that the desktop can open, for example "(ctrl+o to expand)".
+private let expandHint = ThreadPattern("\(sp)*" + #"\((?:ctrl|shift)\+[A-Za-z0-9_]+ to [a-z ]+\)"# + "\(sp)*$")
+/// The time at the end of a tool call that runs, for example " · 11s".
+private let runTime = ThreadPattern("\(sp)+·\(sp)+[0-9][0-9hms :.]*$")
 /// A tool call of Codex, for example "Ran npm test" or "Edited src/a.ts (+3 -1)".
 private let codexTool = ThreadPattern(
     "^(Ran|Running|Edited|Added|Deleted|Explored|Exploring|Read|Searched|Listed|Called|Calling|Waited|Updated Plan)\(wordEnd)\(sp)*(.*)$")
@@ -205,17 +228,33 @@ private let workLine = ThreadPattern(
     "^\(sp)*\(nsp){1,2}\(sp)+(.+?)\(sp)*" + #"\(([^()]*"# + "\(wordStart)to interrupt\(wordEnd)" + #"[^()]*)\)"# + "\(sp)*$")
 /// A time in a working line or a finished line, for example 12s, 2m 5s, or 2:14.
 private let timeText = ThreadPattern("\(wordStart)(\(time)|[0-9]+:[0-9]{2}(?::[0-9]{2})?)\(wordEnd)")
-/// The line after a finished turn, for example "✻ Worked for 6m 12s" or "─ Worked for 1m 03s ───".
-private let doneLine = ThreadPattern("^[^A-Za-z0-9_]*[A-Z][a-z]+ for (\(time))\(wordEnd)[ \t\n\u{0B}\u{0C}\r─━]*$")
+/// The working line of Claude Code 2.1, for example "✶ Orbiting… (1m 17s ·
+/// ↓ 5.7k tokens)". The hint to interrupt is in the footer now, so the
+/// spinner mark and the ellipsis tell the line.
+private let spinnerLine = ThreadPattern("^[·✢✳✶✻✽*]\(sp)+(\(nsp)[^()]*?)…\(sp)*" + #"(?:\(([^()]*)\))?"# + "\(sp)*$")
+/// The line after a finished turn, for example "✻ Worked for 6m 12s", "─
+/// Worked for 1m 03s ───", or "✻ Crunched for 1m 12s · done Thursday 4:15 PM".
+private let doneLine = ThreadPattern(
+    "^[^\\p{L}\\p{N}_]*\\p{Lu}\\p{Ll}+ for (\(time))\(wordEnd)(?:\(sp)+·\(sp)+[^·]+)?[ \t\n\u{0B}\u{0C}\r─━]*$")
 /// A line with only rule characters.
 private let ruleOnly = ThreadPattern(#"^[ \t\n\x0B\f\r─━═╌┄╍┈┉\-_]+$"#)
+/// A rule with a title, for example the rule above the input of Claude Code with the name of the session.
+private let titledRule = ThreadPattern("^[─━═]{8,}.*$")
+/// A row of the logo of Claude Code at the start of a session, for example " ▐▛███▜▌   Claude Code v2.1.293".
+private let logoLine = ThreadPattern("^\(sp)*[▐▛▜▌▝▘▗▖▙▟█▀▄]")
+/// The most rows of the logo of Claude Code.
+private let logoRows = 4
+/// A hint at the right edge above the input, for example "new task? /clear to save 671.7k tokens".
+private let hintIndent = 30
+/// The choices of a notice of Claude Code above the input, for example "1: Learn more   2: Knew this already   0: Dismiss".
+private let noticeChoices = ThreadPattern("^(?:[0-9]: \(nsp).*?\(sp){2,})+[0-9]: \(nsp).*$")
 /// The first numbered choice of a dialog.
 private let firstChoiceLine = ThreadPattern("^\(sp)*([❯›>]\(sp)*)?1[.)]\(sp)+.+$")
 
 /// The hints under the input of an agent.
 private let footerWords = [
     "for shortcuts", "shift+tab", "context left", "accept edits", "bypass permissions", "plan mode", "auto-accept",
-    "% context", "esc to cancel", "to cycle", "ctrl+", "press enter",
+    "% context", "esc to cancel", "to cycle", "ctrl+", "press enter", "auto mode", "for agents", "to manage", "esc to interrupt",
 ]
 
 /// How far from the end the working line can be, in lines that are not empty.
@@ -259,10 +298,33 @@ private func isBox(_ t: String) -> Bool {
     t.hasPrefix("╭") || t.hasPrefix("╰") || (t.hasPrefix("│") && t.hasSuffix("│") && t.count > 1)
 }
 
-/// A hint line under the input. It is indented by 2 spaces at most, so that a result line does not count.
+/// A hint line under the input. It is indented by 2 spaces at most, so that
+/// a result line does not count. A working line is not a hint, also when it
+/// tells how to interrupt.
 private func isFooter(_ line: String) -> Bool {
     let lower = line.lowercased()
-    return line.indent <= 2 && footerWords.contains { lower.contains($0) }
+    return line.indent <= 2 && footerWords.contains { lower.contains($0) } && !workLine.matches(line) && !spinnerLine.matches(line)
+}
+
+/// The text of a summary line without its hint and the ellipsis of a step that runs.
+private func summaryText(_ line: String) -> String {
+    var t = expandHint.replace(line.trimmed, with: "")
+    if t.hasSuffix("…") { t.removeLast() }
+    return t.trimmedEnd
+}
+
+/// True when `line` is a summary of tool calls of Claude Code, see `summaryLine`.
+private func isSummary(_ line: String) -> Bool {
+    line.indent == 2 && summaryLine.matches(summaryText(line))
+}
+
+/// True when `line`, at the left edge right under the first line of a
+/// block, continues that line. A bullet, a prompt, a rule, a box, and the
+/// lines of the status of the agent start something else.
+private func continuesHead(_ line: String) -> Bool {
+    let t = line.trimmed
+    return !promptLine.matches(t) && !ruleOnly.matches(t) && !titledRule.matches(t) && !isBox(t) &&
+        !doneLine.matches(t) && !workLine.matches(t) && !spinnerLine.matches(t)
 }
 
 // MARK: Dialog
@@ -367,7 +429,7 @@ extension AgentThread {
         while w >= 0 && seen < workScanLines {
             let t = lines[w]
             if !t.isBlank {
-                if let m = workLine.whole(t) {
+                if let m = workLine.whole(t) ?? spinnerLine.whole(t) {
                     var s = m[1].trimmed
                     if s.hasSuffix("…") { s.removeLast() }
                     if s.hasSuffix("...") { s.removeLast(3) }
@@ -390,13 +452,15 @@ extension AgentThread {
     }
 
     /// Removes the input box of the agent and the hints under it from the
-    /// end of `lines`, until `end`. It returns the new end.
+    /// end of `lines`, until `end`. It returns the new end. Claude Code puts
+    /// the name of the session in the rule above the input, and hints at
+    /// the right edge above that rule.
     static func stripInput(_ lines: [String], end: Int) -> Int {
         var i = end
         var input = false
         while i > 0 {
             let t = lines[i - 1].trimmed
-            if t.isEmpty || ruleOnly.matches(t) {
+            if t.isEmpty || ruleOnly.matches(t) || input && titledRule.matches(t) {
                 i -= 1
             } else if isBox(t) {
                 i -= 1
@@ -405,6 +469,11 @@ extension AgentThread {
                 i -= 1
                 input = true
             } else if !input && isFooter(lines[i - 1]) {
+                i -= 1
+            } else if input && lines[i - 1].indent >= hintIndent {
+                i -= 1
+            } else if input && (lines[i - 1].hasPrefix("✦ ") || noticeChoices.matches(t)) {
+                // A notice of Claude Code above the input, for example "✦ Heads up · …", and its choices.
                 i -= 1
             } else {
                 return i
@@ -422,8 +491,16 @@ extension AgentThread {
             if rawFrom >= 0 { blocks.append(.raw(from: rawFrom, to: rawTo)) }
             rawFrom = -1
         }
+        // Claude Code blinks the bullet of a tool call that runs, so the first line of the call can have
+        // 2 blanks in place of its bullet. The result mark under it tells it.
+        func blinkHead(_ j: Int) -> Bool {
+            j > 0 && j + 1 < end && lines[j - 1].isBlank && lines[j].indent == 2 && !lines[j].isBlank &&
+                lines[j + 1].indent == 2 && trimStart(lines[j + 1]).hasPrefix("⎿")
+        }
         // The end of a block that starts at `from`: the lines under it that are indented. A blank line
-        // belongs to the block only when an indented line follows it.
+        // belongs to the block only when an indented line follows it. A summary of tool calls after a
+        // blank line starts its own block. A line at the left edge right under the first line of the
+        // block continues it, when it is not a line of its own kind.
         func blockEnd(_ from: Int) -> Int {
             var j = from + 1
             var last = from + 1
@@ -433,7 +510,9 @@ extension AgentThread {
                     j += 1
                     continue
                 }
-                if l.indent < 2 || bulletLine.matches(l) { break }
+                if j > last && (isSummary(l) || blinkHead(j)) { break }
+                if bulletLine.matches(l) { break }
+                if l.indent < 2 && (j != from + 1 || !continuesHead(l)) { break }
                 j += 1
                 last = j
             }
@@ -446,7 +525,32 @@ extension AgentThread {
                 i += 1
                 continue
             }
-            let bullet = bulletLine.whole(line)
+            // The logo of Claude Code and the line after an earlier turn do not show.
+            if logoLine.contains(line) {
+                var k = i
+                while k < end && k - i < logoRows && logoLine.contains(lines[k]) { k += 1 }
+                if (i..<k).contains(where: { lines[$0].contains("Claude Code") }) {
+                    flushRaw()
+                    i = k
+                    continue
+                }
+            }
+            if doneLine.matches(line.trimmedEnd) {
+                flushRaw()
+                i += 1
+                continue
+            }
+            if isSummary(line) {
+                flushRaw()
+                // A result can follow the summary, for example the note of a message that went to another session.
+                var k = i + 1
+                while k < end && !lines[k].isBlank && lines[k].indent >= 2 && !isSummary(lines[k]) { k += 1 }
+                let text = summaryText(line)
+                blocks.append(.tool(ThreadTool(text.before(" "), text.after(" ", or: ""), resultLines(Array(lines[(i + 1)..<k])))))
+                i = k
+                continue
+            }
+            let bullet = bulletLine.whole(line) ?? (blinkHead(i) ? bulletLine.whole("●" + line.dropFirst()) : nil)
             let prompt = bullet == nil ? promptLine.whole(line) : nil
             if bullet == nil && prompt == nil {
                 if rawFrom < 0 { rawFrom = i }
@@ -458,7 +562,9 @@ extension AgentThread {
             let to = blockEnd(i)
             let body = Array(lines[(i + 1)..<to])
             if let prompt {
-                let text = ([prompt[1]] + dedent(body)).joined(separator: "\n").trimmed
+                // The notes of Claude Code under a prompt, for example "⎿  1 skill available", are not part of it.
+                let own = Array(body.prefix(while: { !trimStart($0).hasPrefix("⎿") }))
+                let text = expandHint.replace(([prompt[1]] + dedent(own)).joined(separator: "\n").trimmed, with: "")
                 if !text.isEmpty { blocks.append(.prompt(text)) }
             } else if let bullet {
                 blocks.append(bulletBlock(bullet[1], bullet[2].trimmedEnd, body))
@@ -517,6 +623,7 @@ extension AgentThread {
 
     /// A block that starts with a bullet: a tool call or a message.
     static func bulletBlock(_ bullet: String, _ head: String, _ body: [String]) -> ThreadBlock {
+        if bullet != "•", let tool = claudeTool(head, body) { return .tool(tool) }
         if bullet != "•", let call = toolCall.whole(head) {
             let name = call[1]
             let args = call[2]
@@ -544,6 +651,38 @@ extension AgentThread {
             return .tool(ThreadTool(name, args, resultLines(body), failed: false, change: change))
         }
         return .message(([head] + dedent(body)).joined(separator: "\n").trimmed)
+    }
+
+    /// A tool call of Claude Code 2.1 that the plain `toolCall` does not
+    /// match, or nil:
+    /// - A shell command that runs shows its description and then the
+    ///   command as the result, for example "Run the tests · 11s" and
+    ///   "⎿  $ npm test".
+    /// - The arguments of a long call take more than 1 line, and the closing
+    ///   parenthesis is on the last of them or cut.
+    static func claudeTool(_ head: String, _ body: [String]) -> ThreadTool? {
+        guard let first = body.firstIndex(where: { !$0.isBlank }) else { return nil }
+        if let mark = resultMark.first(body[first]), mark.groups[2] == "⎿", body[first][mark.range.upperBound...].hasPrefix("$ ") {
+            let result = resultLines(body).filter { !expandHint.matches($0) && $0.trimmed != "(ctrl+b to run in background)" }
+            return ThreadTool("Bash", runTime.replace(head, with: "").trimmed, result)
+        }
+        if toolCall.matches(head) { return nil }
+        guard let start = toolStart.whole(head) else { return nil }
+        let name = start[1]
+        let resultAt = body.firstIndex { resultMark.first($0)?.groups[2] == "⎿" }
+        if resultAt == nil && !claudeTools.contains(name) { return nil }
+        let argLines = body[..<(resultAt ?? body.count)].map(\.trimmed).filter { !$0.isEmpty }
+        var args = ([start[2].trimmed] + argLines).joined(separator: " ")
+        if args.hasSuffix(")") { args.removeLast() }
+        args = args.trimmed
+        let result = resultAt.map { resultLines(Array(body[$0...])) } ?? []
+        let failed = result.first.map { trimStart($0).hasPrefix("Error") } ?? false
+        var change: FileChange?
+        if editTools.contains(name) && !args.isBlank {
+            let (a, r) = editCounts(result)
+            change = FileChange(args.before(", ").trimmed, a, r)
+        }
+        return ThreadTool(name, args, result, failed: failed, change: change)
     }
 
     /// Turns each run of 2 or more file edits into 1 `ThreadBlock.changes`. The same file shows once, with the sum of its counts.
@@ -599,8 +738,8 @@ private let ocNumbered = ThreadPattern("^\(sp)*[0-9]+\(sp)")
 private let ocOptions = ThreadPattern("\(sp)+\\[[^\\]]*\\]\(sp)*$")
 /// The scroll bar at the right edge of a dialog of opencode.
 private let ocScrollBar = ThreadPattern("\(sp)+[█▀▄▌▐░▒▓]\(sp)*$")
-/// The line of opencode that tells how long the model thought.
-private let ocThought = ThreadPattern("^\\+\(sp)+Thought:\(sp)+\(nsp)+$")
+/// The line of opencode that tells how long the model thought, for example "+ Thought: 8.3s" or "+ Thought: Planning the commit · 1.8s".
+private let ocThought = ThreadPattern("^\\+\(sp)+Thought:\(sp).*$")
 /// The first choice of a question of opencode.
 private let ocChoiceStart = ThreadPattern("^1[.)]\(sp)+.+$")
 /// The first line of a permission dialog of opencode.
@@ -609,6 +748,16 @@ private let ocAsk = "△ Permission required"
 private let ocQuestionHint = ["↑↓ select", "enter submit"]
 /// The first line of a question of opencode that the user answered.
 private let ocQuestions = "# Questions"
+/// The hints of opencode at the end of the output of a tool, for example "Click to expand".
+private let ocHints: Set<String> = ["Click to expand", "Click to collapse"]
+/// The count of the lines of a deleted file, for example "-93 lines".
+private let ocLineCount = ThreadPattern("-([0-9]+) lines?")
+/// A number of a line in a split diff of opencode and its mark: a blank, + or -. Group 1 is the number.
+private let splitMark = ThreadPattern("(?<=^| )([0-9]+) [ +-](?= |$)")
+/// A side of a row of a split diff: the number of the line, its mark, and its text.
+private let splitSide = ThreadPattern("^\(sp)*([0-9]+)(?: ([ +-])(?: (.*))?)?\(sp)*$")
+/// The least column of the numbers of the right side of a split diff.
+private let splitMinCol = 16
 
 /// The text without whitespace at the start, as Kotlin's trimStart.
 private func trimStart(_ s: String) -> String {
@@ -698,17 +847,25 @@ extension AgentThread {
         func flushMessage() {
             while message.last?.isEmpty == true { message.removeLast() }
             // The lines keep their indent under the first line, for example the lines of code in a message.
-            if !message.isEmpty { blocks.append(.message(dedent(message).joined(separator: "\n"))) }
+            // A line with 1 more blank than the first line is a new line of the text, not an indent.
+            let text = dedent(message).map { $0.hasPrefix(" ") && !$0.hasPrefix("  ") ? String($0.dropFirst()) : $0 }
+            if !text.isEmpty { blocks.append(.message(text.joined(separator: "\n"))) }
             message = []
         }
         var i = 0
         while i < end {
             let line = lines[i]
-            if ocPanel(line) != nil {
+            if let panel = ocPanel(line) {
                 flushMessage()
                 var j = i
                 while j < end && ocPanel(lines[j]) != nil { j += 1 }
-                blocks.append(contentsOf: opencodePanel(lines[i..<j].compactMap(ocPanel)))
+                // A panel starts with a blank row. A panel at the start of the output without one lost
+                // its first rows to the limit of the read, so it shows as terminal lines.
+                if i == 0 && !panel.isBlank {
+                    blocks.append(.raw(from: i, to: j))
+                } else {
+                    blocks.append(contentsOf: opencodePanel(lines[i..<j].compactMap(ocPanel)))
+                }
                 i = j
                 continue
             }
@@ -722,6 +879,9 @@ extension AgentThread {
                 blocks.append(.tool(opencodeTool(t, [])))
             } else if ocThought.matches(t) {
                 // The time that the model thought, for example "+ Thought: 37.7s", is not a message.
+            } else if titledRule.matches(t) || ruleOnly.matches(t) {
+                // The rule where opencode compacted the session, for example "─── Compaction ───".
+                flushMessage()
             } else if t.hasPrefix("···") {
                 flushMessage()
                 blocks.append(.raw(from: i, to: i + 1))
@@ -760,6 +920,14 @@ extension AgentThread {
             flush()
             return out
         }
+        // A tool shows its output in a panel with a title, for example "# Todos" or "# Created a.ts".
+        if let title = rows.first, title.hasPrefix("# ") {
+            let at = content.firstIndex { $0.trimmed == title } ?? 0
+            let rest = Array(content[(at + 1)...])
+            // "# Running in /tmp/x" names the folder of the shell command under it.
+            if rest.contains(where: isOcMarker) { return opencodePanel(rest) }
+            return [.tool(opencodeTitled(String(title.dropFirst(2)).trimmed, rest))]
+        }
         var k = 0
         var prompt: [String] = []
         while k < content.count && !isOcMarker(content[k]) {
@@ -772,8 +940,15 @@ extension AgentThread {
         let text = trimmedPrompt.joined(separator: "\n")
         if !text.isEmpty { out.append(.prompt(text)) }
         while k < content.count {
-            let head = content[k].trimmed
+            var head = content[k].trimmed
             k += 1
+            // A long command wraps to more rows, until the first blank row.
+            if ocShell.matches(head) {
+                while k < content.count && !content[k].isBlank && !isOcMarker(content[k]) {
+                    head = TermText.joinWrapped(head, content[k].trimmed)
+                    k += 1
+                }
+            }
             var body: [String] = []
             while k < content.count && !isOcMarker(content[k]) {
                 body.append(content[k])
@@ -784,18 +959,139 @@ extension AgentThread {
         return out
     }
 
+    /// A tool call of opencode from the title of its panel and the `body`
+    /// lines under it:
+    /// - "Created a.ts" and "Wrote a.ts" write a file, "Deleted a.ts"
+    ///   deletes one, and "Edited a.ts" edits one. They count the changed lines.
+    /// - "Todos" lists the tasks of the agent. Its arguments tell how many are done.
+    /// - Another title is the name of the tool.
+    static func opencodeTitled(_ title: String, _ body: [String]) -> ThreadTool {
+        let verb = title.before(" ")
+        let path = title.after(" ", or: "")
+        let lines = dedent(body.filter { !ocHints.contains($0.trimmed) })
+        if verb == "Todos" {
+            let tasks = lines.filter { !$0.isBlank }
+            let done = tasks.filter { $0.hasPrefix("[✓]") || $0.hasPrefix("[x]") }.count
+            return ThreadTool("Todos", tasks.isEmpty ? "" : "\(done) of \(tasks.count) done", tasks)
+        }
+        let name: String
+        switch verb {
+        case "Created", "Wrote", "Written": name = "Write"
+        case "Deleted", "Removed": name = "Delete"
+        case "Edited", "Modified", "Patched", "Updated": name = "Edit"
+        default: return ThreadTool(title, "", lines)
+        }
+        if path.isEmpty { return ThreadTool(title, "", lines) }
+        let result = unifySplitDiff(lines) ?? lines
+        let (added, minus) = diffCounts(result)
+        var removed = minus
+        if name == "Delete" && removed == 0 { removed = ocLineCount.first(lines.joined(separator: "\n")).flatMap { Int($0.groups[1]) } ?? 0 }
+        return ThreadTool(name, path, result, change: FileChange(path, added, removed))
+    }
+
+    /// The counts of added and removed lines in the lines of a diff of opencode.
+    static func diffCounts(_ lines: [String]) -> (Int, Int) {
+        let added = lines.filter { ocDiffLine.first($0)?.groups[1] == "+" || $0.hasPrefix("+ ") || $0 == "+" }.count
+        let removed = lines.filter { ocDiffLine.first($0)?.groups[1] == "-" || $0.hasPrefix("- ") || $0 == "-" }.count
+        return (added, removed)
+    }
+
+    /// Turns a split diff of opencode into a unified diff, or returns nil
+    /// when `lines` are not a split diff. opencode shows the old lines at
+    /// the left and the new lines at the right in a wide terminal, and each
+    /// side wraps its long lines. On a phone, 1 column reads better: context
+    /// lines start with 2 blanks, removed lines with "- ", and added lines
+    /// with "+ ". The removed lines of a change come before its added lines.
+    public static func unifySplitDiff(_ lines: [String]) -> [String]? {
+        // The numbers are aligned at their right end, so the column after the numbers of the right side is the same in each row.
+        var ends: [Int: Int] = [:]
+        var leftRows = 0
+        for l in lines {
+            for g in splitMark.all(l) {
+                let start = l.distance(from: l.startIndex, to: g.lowerBound)
+                if start < splitMinCol { leftRows += 1 } else { ends[start + l[g].count, default: 0] += 1 }
+            }
+        }
+        guard let best = ends.max(by: { $0.value < $1.value || $0.value == $1.value && $0.key > $1.key }) else { return nil }
+        let right = best.key
+        if best.value < 2 || best.value * 2 < leftRows { return nil }
+        let digits = lines.map { l -> Int in
+            let c = Array(l)
+            guard c.count > right else { return 0 }
+            return c[..<right].reversed().prefix(while: { $0.isASCII && $0.isNumber }).count
+        }.max() ?? 0
+        let split = right - digits
+        var out: [String] = []
+        var removed: [String] = []
+        var added: [String] = []
+        // The line that a wrapped row continues on each side.
+        enum Target { case out(Int), removed(Int), added(Int) }
+        var lastLeft: Target?
+        var lastRight: Target?
+        func flush() {
+            out += removed.map { "- " + $0 }
+            out += added.map { "+ " + $0 }
+            removed = []
+            added = []
+        }
+        func extend(_ target: Target?, _ text: String) {
+            guard let target, !text.isBlank else { return }
+            switch target {
+            case let .out(i): out[i] = TermText.joinWrapped(out[i], text.trimmed)
+            case let .removed(i): removed[i] = TermText.joinWrapped(removed[i], text.trimmed)
+            case let .added(i): added[i] = TermText.joinWrapped(added[i], text.trimmed)
+            }
+        }
+        for l in lines {
+            let c = Array(l)
+            let leftText = String(c.prefix(split))
+            let rightText = c.count > split ? String(c[split...]) : ""
+            let left = splitSide.whole(leftText)
+            let rightSide = splitSide.whole(rightText)
+            if left == nil && rightSide == nil {
+                // A wrapped row: each side continues its last line.
+                extend(lastLeft, leftText)
+                extend(lastRight, rightText)
+                continue
+            }
+            let lm = left?[2]
+            let rm = rightSide?[2]
+            if lm != "-" && rm != "+" {
+                // A context line shows once.
+                flush()
+                out.append("  " + (left ?? rightSide!)[3].trimmedEnd)
+                lastLeft = .out(out.count - 1)
+                lastRight = nil
+                continue
+            }
+            lastLeft = nil
+            lastRight = nil
+            if lm == "-", let left {
+                removed.append(left[3].trimmedEnd)
+                lastLeft = .removed(removed.count - 1)
+            }
+            if rm == "+", let rightSide {
+                added.append(rightSide[3].trimmedEnd)
+                lastRight = .added(added.count - 1)
+            }
+        }
+        flush()
+        return out
+    }
+
     /// A tool call of opencode from its `head` line and the `body` lines under it.
     static func opencodeTool(_ head: String, _ body: [String]) -> ThreadTool {
-        let result = dedent(body)
-        if let m = ocShell.whole(head) { return ThreadTool("Bash", m[1], result) }
-        guard let m = ocTool.whole(head) else { return ThreadTool(head, "", result) }
+        let lines = dedent(body.filter { !ocHints.contains($0.trimmed) })
+        if let m = ocShell.whole(head) { return ThreadTool("Bash", m[1], lines) }
+        guard let m = ocTool.whole(head) else { return ThreadTool(head, "", lines) }
         let name = m[2]
         let args = ocOptions.replace(m[3], with: "").trimmed
+        let result = (m[1] == "←" ? unifySplitDiff(lines) : nil) ?? lines
         let failed = result.first.map { trimStart($0).hasPrefix("Error") } ?? false
         var change: FileChange?
         if m[1] == "←" && !args.isEmpty {
-            var added = result.filter { ocDiffLine.first($0)?.groups[1] == "+" }.count
-            let removed = result.filter { ocDiffLine.first($0)?.groups[1] == "-" }.count
+            let (plus, removed) = diffCounts(result)
+            var added = plus
             // A new file shows its lines with numbers and no mark.
             if added == 0 && removed == 0 && name == "Write" { added = result.filter { ocNumbered.contains($0) }.count }
             change = FileChange(args, added, removed)
@@ -839,6 +1135,101 @@ extension AgentThread {
             return AgentAsk(question, Array(([String(title.dropFirst(2))] + body).prefix(n)))
         }
         return AgentAsk(question, Array(([title] + body).prefix(n)))
+    }
+}
+
+// MARK: Message parts
+
+/// A part of a message: text, or a table that the agent drew with box characters.
+public struct MessagePart: Sendable, Hashable {
+    public var text: String
+    public var table: Bool
+
+    public init(_ text: String, table: Bool) {
+        self.text = text
+        self.table = table
+    }
+}
+
+/// The first character of a row of a table that Claude Code draws.
+private let tableEdges = Set("┌├└│╭╰┏┣┗┃╔╠╚║")
+/// The characters after the first one that make a row of a table.
+private let tableInner = Set("│┃║┐┤┘┬┼┴╮╯┓┫┛╗╣╝")
+/// The bars between the cells of a row of a table.
+private let tableBars = Set("│┃║")
+/// The mark of a changed line in the result of an edit: + or -, after the number of the line when it has one.
+private let changeMarkLine = ThreadPattern("^\(sp)*(?:[0-9]+ ([+-])|([+-])(?: |$))")
+
+extension AgentThread {
+    /// True when `line` is a row of a table: it starts with an edge and has another box character after it.
+    static func isTableRow(_ line: String) -> Bool {
+        let t = trimStart(line)
+        guard let first = t.first, t.count > 1, tableEdges.contains(first) else { return false }
+        return t.dropFirst().contains { tableInner.contains($0) }
+    }
+
+    /// Splits the text of a message into text and tables. A table keeps its
+    /// rows as they are, because its columns line up only in a mono font.
+    public static func messageParts(_ text: String) -> [MessagePart] {
+        var out: [MessagePart] = []
+        var run: [String] = []
+        var table = false
+        func flush() {
+            var t = run.joined(separator: "\n")
+            if !table {
+                while t.hasPrefix("\n") { t.removeFirst() }
+                while t.hasSuffix("\n") { t.removeLast() }
+            }
+            if !t.isBlank { out.append(MessagePart(t, table: table)) }
+            run = []
+        }
+        for l in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let row = isTableRow(l)
+            if row != table {
+                flush()
+                table = row
+            }
+            run.append(l)
+        }
+        flush()
+        return out
+    }
+
+    /// The cells of a table that the agent drew with box characters, row by
+    /// row, or nil when `text` is not such a table or its rows have
+    /// different counts of cells. A rule separates 2 rows. The rows between
+    /// 2 rules are 1 row whose cells wrapped, so their parts join. The first
+    /// row is the header when a rule follows it.
+    public static func parseTable(_ text: String) -> [[String]]? {
+        var rows: [[String]] = []
+        var parts: [[String]]?
+        func flush() {
+            if let parts { rows.append(parts.map { $0.joined(separator: " ") }) }
+            parts = nil
+        }
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let l = String(raw).trimmed
+            guard let first = l.first else { continue }
+            if !tableBars.contains(first) {
+                flush()
+                continue
+            }
+            let cells = l.split(omittingEmptySubsequences: false, whereSeparator: { tableBars.contains($0) }).dropFirst().dropLast().map { String($0).trimmed }
+            if cells.isEmpty { return nil }
+            var p = parts ?? Array(repeating: [], count: cells.count)
+            if p.count != cells.count { return nil }
+            for (i, c) in cells.enumerated() where !c.isEmpty { p[i].append(c) }
+            parts = p
+        }
+        flush()
+        guard let width = rows.first?.count, rows.allSatisfy({ $0.count == width }) else { return nil }
+        return rows
+    }
+
+    /// The mark of a changed line in the result of an edit, "+" or "-", or nil for another line.
+    public static func changeMark(_ line: String) -> Character? {
+        guard let m = changeMarkLine.first(line) else { return nil }
+        return (m.groups[1].isEmpty ? m.groups[2] : m.groups[1]).first
     }
 }
 

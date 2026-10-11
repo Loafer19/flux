@@ -1,5 +1,6 @@
 import FluxKit
 import SwiftUI
+import UIKit
 
 // The parts of the agent thread: the agent screen and the chat use
 // them. They follow the agent thread design of the Android app, see the
@@ -188,13 +189,29 @@ struct AskText: View {
 private let codeToken = try! NSRegularExpression(
     pattern: #"`[^`\n]+`|(?<![A-Za-z0-9_/.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]*[A-Za-z0-9_]|(?<![A-Za-z0-9_/.-])[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:sql|rb|ts|tsx|js|jsx|mjs|py|go|rs|kt|kts|swift|java|c|h|cpp|md|json|toml|yaml|yml|sh|css|scss|html|txt|lock|xml|qml)(?![A-Za-z0-9_])"#)
 
-/// A message of the agent: body text, with paths and code in mono on a tile.
+/// A message of the agent: body text, with paths and code in mono on a
+/// tile. A table that the agent drew with box characters shows as a grid,
+/// see `ThreadTable`.
 struct ThreadMessage: View {
     let text: String
     @Environment(\.tn) private var tn
 
     var body: some View {
-        Text(styled)
+        let parts = AgentThread.messageParts(text)
+        if parts.count <= 1 && parts.first?.table != true {
+            message(parts.first?.text ?? text)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    if part.table { ThreadTable(text: part.text) } else { message(part.text) }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func message(_ text: String) -> some View {
+        Text(styled(text))
             .font(.subheadline)
             .foregroundStyle(tn.text)
             .lineSpacing(4)
@@ -204,7 +221,7 @@ struct ThreadMessage: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var styled: AttributedString {
+    private func styled(_ text: String) -> AttributedString {
         var out = AttributedString()
         var at = text.startIndex
         let ns = NSRange(text.startIndex..., in: text)
@@ -221,6 +238,85 @@ struct ThreadMessage: View {
         }
         out += AttributedString(String(text[at...]))
         return out
+    }
+}
+
+/// The narrowest and the widest column of a table of a message. A longer cell wraps.
+private let tableColumns: ClosedRange<CGFloat> = 36...240
+
+/// The padding at the sides of a cell of a table of a message.
+private let tableCellPad: CGFloat = 10
+
+/// A table of a message as a grid of cells, with the header row in bold on
+/// a tile. Each column is as wide as its widest cell, in the range of
+/// `tableColumns`, and a table wider than the thread scrolls to the side. A
+/// table that does not parse shows its rows in mono.
+struct ThreadTable: View {
+    let text: String
+    @Environment(\.tn) private var tn
+    // The widths come from the fonts, so a new text size or Bold Text measures them again.
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.legibilityWeight) private var weight
+
+    var body: some View {
+        let shape = tileShape(12)
+        ScrollView(.horizontal, showsIndicators: false) {
+            if let rows = AgentThread.parseTable(text), let count = rows.first?.count, count > 0 {
+                grid(rows, widths: widths(rows, count))
+            } else {
+                Text(text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(tn.text)
+                    .lineSpacing(3)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+        }
+        // The thread scrolls from the bottom, and a nested scroll view takes that anchor. A table starts at its left side.
+        .defaultScrollAnchor(.topLeading)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(shape.fill(tn.offTile))
+        .overlay(shape.strokeBorder(tn.line))
+        .clipShape(shape)
+    }
+
+    /// The rows of cells, with a line between 2 rows and between 2 columns.
+    private func grid(_ rows: [[String]], widths: [CGFloat]) -> some View {
+        let full = widths.reduce(0, +) + CGFloat(widths.count - 1)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
+                if r > 0 { Rectangle().fill(tn.line).frame(width: full, height: 1) }
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { c, cell in
+                        if c > 0 { Rectangle().fill(tn.line).frame(width: 1) }
+                        Text(cell)
+                            .font(r == 0 ? .footnote.weight(.semibold) : .footnote)
+                            .foregroundStyle(tn.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, tableCellPad)
+                            .padding(.vertical, 7)
+                            .frame(width: widths[c], alignment: .leading)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .background(r == 0 ? tn.tile : Color.clear)
+            }
+        }
+    }
+
+    /// The width of each column: its widest cell in the font of the table, with the padding of a cell.
+    private func widths(_ rows: [[String]], _ count: Int) -> [CGFloat] {
+        _ = typeSize
+        let body = UIFont.preferredFont(forTextStyle: .footnote)
+        let head = UIFont.systemFont(ofSize: body.pointSize, weight: weight == .bold ? .bold : .semibold)
+        return (0..<count).map { c in
+            let widest = rows.enumerated().map { r, row in
+                c < row.count ? (row[c] as NSString).size(withAttributes: [.font: r == 0 ? head : body]).width : 0
+            }.max() ?? 0
+            return min(max(ceil(widest) + 2 * tableCellPad + 1, tableColumns.lowerBound), tableColumns.upperBound)
+        }
     }
 }
 
@@ -263,7 +359,7 @@ struct ThreadToolView: View {
                 }
                 .frame(minHeight: 44)
                 if open && !tool.result.isEmpty {
-                    Text(tool.result.joined(separator: "\n"))
+                    Text(resultText)
                         .font(.caption.monospaced())
                         .foregroundStyle(tn.sub)
                         .lineSpacing(3)
@@ -285,7 +381,26 @@ struct ThreadToolView: View {
         .accessibilityValue(running ? "Runs" : tool.failed ? "Failed" : "Done")
         .accessibilityHint(open ? "Hides the result" : "Shows the result")
     }
+
+    /// The result lines. The added and removed lines of an edit have the colors of a diff.
+    private var resultText: AttributedString {
+        let edit = tool.change != nil || editNames.contains(tool.name)
+        var out = AttributedString()
+        for (i, line) in tool.result.enumerated() {
+            var part = AttributedString((i > 0 ? "\n" : "") + line)
+            switch edit ? AgentThread.changeMark(line) : nil {
+            case "+"?: part.foregroundColor = tn.green
+            case "-"?: part.foregroundColor = tn.red
+            default: part.foregroundColor = tn.sub
+            }
+            out += part
+        }
+        return out
+    }
 }
+
+/// The names of the tools that change a file, for the colors of their result.
+private let editNames: Set<String> = ["Edit", "Update", "Write", "MultiEdit", "Delete", "Edited", "Added", "Deleted"]
 
 /// The summary of a run of file edits: the files with their counts. A tap
 /// opens the changes when `review` is set.
@@ -418,6 +533,60 @@ struct ThreadRaw: View {
                 .onAppear { width = g.size.width }
                 .onChange(of: g.size.width) { _, w in width = w }
         })
+        .background(shape.fill(tn.offTile))
+        .overlay(shape.strokeBorder(tn.line))
+    }
+}
+
+/// The most lines of a first raw block that show without a fold, see `ThreadEarlier`.
+let earlierFoldLines = 6
+
+/// The output at the start of the thread whose block started before the
+/// oldest line of the read, as a card that opens and closes with a tap.
+struct ThreadEarlier: View {
+    let lines: [TermLine]
+    let open: Bool
+    let toggle: () -> Void
+    @State private var width: CGFloat = 0
+    @Environment(\.tn) private var tn
+
+    var body: some View {
+        let shape = tileShape(12)
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: toggle) {
+                HStack(spacing: 10) {
+                    Text("Earlier output")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(tn.text)
+                    Text("\(lines.count) lines")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(tn.sub)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(tn.sub)
+                }
+                .frame(minHeight: 44)
+                .padding(.horizontal, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Earlier output, \(lines.count) lines")
+            .accessibilityHint(open ? "Hides the earlier output" : "Shows the earlier output")
+            if open {
+                VStack(alignment: .leading, spacing: 0) {
+                    if width > 0 { TermLinesView(lines: lines, width: width).textSelection(.enabled) }
+                }
+                .frame(maxWidth: .infinity, minHeight: termRowHeight, alignment: .leading)
+                .padding(.bottom, 10)
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { width = g.size.width }
+                        .onChange(of: g.size.width) { _, w in width = w }
+                })
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(shape.fill(tn.offTile))
         .overlay(shape.strokeBorder(tn.line))
     }

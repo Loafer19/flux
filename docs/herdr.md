@@ -69,7 +69,7 @@ The agent screen of Flux for Android and Flux for iOS has these parts:
 - The thread shows the messages of the agent, its tool calls, the files that it changed, and your prompts. Select a tool call to show its result. Flux reads the transcripts of Claude Code, Codex, and opencode. Lines that it cannot read show as terminal lines.
 - The dock at the bottom shows the question and the choices of a blocked agent, the step of a working agent with **Interrupt**, or the end of a finished turn. The text field and the mic key are under it.
 
-Flux for Android also reads these parts of the transcripts:
+Each app also reads these parts of the transcripts:
 
 - Claude Code 2.1 sums up tool calls in 1 line, for example `Read 2 files, ran 3 shell commands`. The thread shows each summary as a tool call. A shell command that runs shows its description, and its result shows the command.
 - A table that the agent draws with box characters shows as a grid of cells. A wide table scrolls to the side.

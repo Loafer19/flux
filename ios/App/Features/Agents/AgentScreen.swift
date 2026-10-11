@@ -345,7 +345,15 @@ private struct ThreadList: View {
         case .changes(let c): ThreadChangesView(changes: c, review: review)
         case .prompt(let text): ThreadYou(text: text)
         case .raw(let from, let to):
-            ThreadRaw(lines: Array(out.lines[min(from, out.lines.count)..<min(to, out.lines.count)]))
+            let raw = Array(out.lines[min(from, out.lines.count)..<min(to, out.lines.count)])
+            // The first block can be the end of a block whose start is older than the read. A long one folds,
+            // unless it is the only block, for example the output of an agent that the thread does not read.
+            if row.index == 0 && !last && raw.count > earlierFoldLines {
+                let open = opened["earlier"] ?? false
+                ThreadEarlier(lines: raw, open: open) { opened["earlier"] = !open }
+            } else {
+                ThreadRaw(lines: raw)
+            }
         }
     }
 }

@@ -539,5 +539,229 @@ final class AgentThreadTests: XCTestCase {
         XCTAssertEqual(choices.map(\.detail), ["No tax", "A quarter", ""])
         XCTAssertEqual(choices.first?.selected, true)
     }
-}
 
+    // MARK: Claude Code 2.1
+
+    /// An idle screen of Claude Code 2.1: the logo, prompts with ❯, tool summaries, and the ruled input with the name of the session.
+    private let claude21 = [
+        " ▐▛███▜▌   Claude Code v2.1.293",
+        "▝▜█████▛▘  Opus 5.5 · Claude Max",
+        "  ▘▘ ▝▝    ~/Code/billing",
+        "",
+        "❯ Fix the login test",
+        "  ⎿  1 skill available",
+        "",
+        "  Read 2 files, listed 1 directory, ran 3 shell commands (ctrl+o to expand)",
+        "",
+        "● The test waited on a fixed timeout.",
+        "",
+        "  Ran 1 shell command",
+        "  ⎿  “Tell the reviewer” → sent to billing-2",
+        "",
+        "● Bash(cat > /tmp/fix.py <<'EOF'",
+        "      import sys",
+        "  ⎿  done",
+        "",
+        "● Workflow(Rebase the 3 PRs into one chain and run make check at each",
+        "          step)",
+        "  ⎿  /workflows to view dynamic workflow runs",
+        "",
+        "✻ Sautéed for 6m 47s · done Tuesday 7:11 PM",
+        "",
+        "❯ Ship it",
+        "",
+        "● Shipped.",
+        "",
+        "✻ Worked for 22s · done 10:08 PM",
+        "                                                              new task? /clear to save 671.7k tokens",
+        "✦ Heads up · Publishing a release deploys to production.",
+        "  1: Learn more   2: Knew this already   0: Dismiss",
+        "──────────────────────────────────── Fix the login test ─",
+        "❯",
+        "────────────────────────────────────────────────────────",
+        "  ▸▸ auto mode on (shift+tab to cycle) · ← for agents",
+    ]
+
+    func testClaude21PromptsSummariesAndLongToolCalls() {
+        let t = AgentThread.parse(claude21)
+        XCTAssertEqual(t.blocks, [
+            .prompt("Fix the login test"),
+            .tool(ThreadTool("Read", "2 files, listed 1 directory, ran 3 shell commands", [])),
+            .message("The test waited on a fixed timeout."),
+            .tool(ThreadTool("Ran", "1 shell command", ["“Tell the reviewer” → sent to billing-2"])),
+            .tool(ThreadTool("Bash", "cat > /tmp/fix.py <<'EOF' import sys", ["done"])),
+            .tool(ThreadTool("Workflow", "Rebase the 3 PRs into one chain and run make check at each step", ["/workflows to view dynamic workflow runs"])),
+            .prompt("Ship it"),
+            .message("Shipped."),
+        ])
+        XCTAssertEqual(t.worked, "22s")
+        XCTAssertEqual(t.step, "")
+    }
+
+    func testClaude21WorkingScreenGivesTheStepAndTheRunningCommand() {
+        let lines = [
+            "● I will capture the output.",
+            "",
+            // The bullet of a call that runs blinks, so this capture has 2 blanks in its place.
+            "  Capture the output · 11s",
+            "  ⎿  $ mkdir -p /tmp/cap && cat >",
+            "     /tmp/cap/a.txt",
+            "     (ctrl+b to run in background)",
+            "",
+            "✶ Orbiting… (1m 17s · ↓ 5.7k tokens)",
+            "  ⎿  Tip: Use /btw to ask a quick side question",
+            "                                                     Update available! Run: mise upgrade claude",
+            "────────────────────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────────────────────",
+            "  ▸▸ auto mode on · 1 shell · esc to interrupt · ← for agents · ↓ to manage",
+        ]
+        let t = AgentThread.parse(lines)
+        XCTAssertEqual(t.step, "Orbiting")
+        XCTAssertEqual(t.elapsed, "1m 17s")
+        XCTAssertEqual(t.blocks, [
+            .message("I will capture the output."),
+            .tool(ThreadTool("Bash", "Capture the output", ["$ mkdir -p /tmp/cap && cat >", "/tmp/cap/a.txt"])),
+        ])
+    }
+
+    func testSummaryNeedsACountAndNoSentenceEnd() {
+        let lines = ["● Done.", "", "  Waves 1 to 5 each passed.", "", "  Ran 20 tests and all passed."]
+        XCTAssertEqual(AgentThread.parse(lines).blocks.count, 1)
+    }
+
+    func testALineAtTheLeftEdgeContinuesTheHead() {
+        let lines = ["● Dynamic workflow \"Build the PRs\"", "completed · 7h 55m", "", "● Next."]
+        XCTAssertEqual(AgentThread.parse(lines).blocks, [.message("Dynamic workflow \"Build the PRs\"\ncompleted · 7h 55m"), .message("Next.")])
+    }
+
+    func testMessageSplitsIntoTextAndTables() {
+        let text = "The PRs are open:\n┌───┬────┐\n│ # │ PR │\n├───┼────┤\n│ 1 │ #9 │\n└───┴────┘\nMerge them in order."
+        XCTAssertEqual(AgentThread.messageParts(text), [
+            MessagePart("The PRs are open:", table: false),
+            MessagePart("┌───┬────┐\n│ # │ PR │\n├───┼────┤\n│ 1 │ #9 │\n└───┴────┘", table: true),
+            MessagePart("Merge them in order.", table: false),
+        ])
+        XCTAssertEqual(AgentThread.messageParts("│ is a bar"), [MessagePart("│ is a bar", table: false)])
+    }
+
+    func testTableGivesRowsOfCellsAndJoinsWrappedCells() {
+        let table = [
+            "┌───┬──────┬────────────┐",
+            "│ # │  PR  │ Fixes      │",
+            "├───┼──────┼────────────┤",
+            "│ 1 │ #593 │ Keyless    │",
+            "│   │      │ REST reads │",
+            "├───┼──────┼────────────┤",
+            "│ 2 │ #601 │            │",
+            "└───┴──────┴────────────┘",
+        ].joined(separator: "\n")
+        XCTAssertEqual(AgentThread.parseTable(table), [["#", "PR", "Fixes"], ["1", "#593", "Keyless REST reads"], ["2", "#601", ""]])
+        XCTAssertNil(AgentThread.parseTable("│ a │ b │\n├───┤\n│ c │"), "rows with other counts of cells")
+    }
+
+    func testChangeMarksOfEditResults() {
+        XCTAssertEqual(AgentThread.changeMark("      42 -<<<<<<< HEAD"), "-")
+        XCTAssertEqual(AgentThread.changeMark("      43 +"), "+")
+        XCTAssertEqual(AgentThread.changeMark("+ export function total() {"), "+")
+        XCTAssertEqual(AgentThread.changeMark("    2 - export function total() {"), "-")
+        XCTAssertNil(AgentThread.changeMark("      40  Operational"))
+        XCTAssertNil(AgentThread.changeMark("  context line"))
+    }
+
+    // MARK: opencode panels
+
+    func testOpencodeTitledPanelsAreTools() {
+        let lines = [
+            "┃",
+            "┃  Clean up the middleware",
+            "┃",
+            "",
+            "┃",
+            "┃  # Todos",
+            "┃",
+            "┃  [✓] Read the middleware.",
+            "┃  [•] Replace the body limit.",
+            "┃",
+            "",
+            "┃",
+            "┃  # Deleted api/body-limit.ts",
+            "┃",
+            "┃  -93 lines",
+            "┃",
+            "",
+            "┃",
+            "┃  # Created api/limit.ts",
+            "┃",
+            "┃                              1 + import { limit } from 'x';",
+            "┃                              2 + export default limit;",
+            "┃",
+            "",
+            "┃",
+            "┃  # Running in /tmp/review",
+            "┃",
+            "┃  $ npx vitest run src/pages/MySpotsPage.test.tsx src/",
+            "┃  pages/MapPage.tsx --",
+            "┃  workers=2",
+            "┃",
+            "┃  ok",
+            "┃  …",
+            "┃",
+            "┃  Click to expand",
+            "┃",
+            "",
+            "   ▣  Build · Big Pickle · 21.2s",
+        ]
+        XCTAssertEqual(AgentThread.parse(lines).blocks, [
+            .prompt("Clean up the middleware"),
+            .tool(ThreadTool("Todos", "1 of 2 done", ["[✓] Read the middleware.", "[•] Replace the body limit."])),
+            .changes(ThreadChanges([FileChange("api/body-limit.ts", 0, 93), FileChange("api/limit.ts", 2, 0)])),
+            .tool(ThreadTool("Bash", "npx vitest run src/pages/MySpotsPage.test.tsx src/pages/MapPage.tsx --workers=2", ["ok", "…"])),
+        ])
+    }
+
+    func testSplitDiffBecomesUnified() {
+        let lines = [
+            "    1   import { a } from                 1   import { a } from",
+            "        'x';                                  'x';",
+            "    2 - const b = 1;                     2 + const b = 2;",
+            "                                         3 + const c = 3;",
+            "    3   export { a }                     4   export { a }",
+        ]
+        XCTAssertEqual(AgentThread.unifySplitDiff(lines), ["  import { a } from 'x';", "- const b = 1;", "+ const b = 2;", "+ const c = 3;", "  export { a }"])
+        // A unified diff of a narrow terminal stays as it is.
+        XCTAssertNil(AgentThread.unifySplitDiff(["    1   import { a }", "    2 - const b = 1;", "    2 + const b = 2;"]))
+    }
+
+    func testOpencodeSplitEditCountsBothSides() throws {
+        let lines = [
+            "┃",
+            "┃  ← Edit src/a.ts",
+            "┃",
+            "┃    1   import { a } from 'x';           1   import { a } from 'x';",
+            "┃    2 - const b = 1;                     2 + const b = 2;",
+            "┃                                         3 + const c = 3;",
+            "┃",
+            "",
+            "   ▣  Build · Big Pickle · 2.1s",
+        ]
+        let blocks = AgentThread.parse(lines).blocks
+        XCTAssertEqual(blocks.count, 1)
+        let edit = try XCTUnwrap(tool(blocks[0]))
+        XCTAssertEqual(edit.change, FileChange("src/a.ts", 2, 1))
+        XCTAssertEqual(edit.result, ["  import { a } from 'x';", "- const b = 1;", "+ const b = 2;", "+ const c = 3;"])
+    }
+
+    func testOpencodeThoughtWithATitleAndCompactionDoNotShow() {
+        let lines = [
+            "   + Thought: Planning the commit · 1.8s",
+            "   I will commit now.",
+            "    Pushed to main.",
+            "",
+            "   ─────────────── Compaction ───────────────",
+            "",
+            "   ▣  Build · Big Pickle · 2.1s",
+        ]
+        XCTAssertEqual(AgentThread.parse(lines).blocks, [.message("I will commit now.\nPushed to main.")])
+    }
+}

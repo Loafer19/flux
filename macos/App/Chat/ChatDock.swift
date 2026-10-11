@@ -68,10 +68,11 @@ private struct DockTool: Identifiable {
     let run: () -> Void
 }
 
-/// The dock of the chat: the clipboard of this Mac with Send, the tools,
-/// and the field for text or a link. While a reply to an agent is open, a
-/// row with Cancel takes the place of the clipboard and the tools, and the
-/// field writes to the agent.
+/// The dock of the chat: the clipboard of this Mac with Send, and the
+/// field for text or a link. The + key at the left of the field opens a
+/// menu with the tools and the other destinations. While a reply to an
+/// agent is open, a row with Cancel takes the place of the clipboard, the +
+/// key hides, and the field writes to the agent.
 struct ChatDock: View {
     @Binding var ask: TargetAsk?
     @Environment(AppModel.self) private var model
@@ -105,25 +106,12 @@ struct ChatDock: View {
                             }
                         }
                     }
-                    .frame(height: 52)
-                }
-                HStack(spacing: 6) {
-                    ForEach(tools(share: share, target: target, browse: browse)) { k in
-                        DockKey(help: k.help, enabled: k.enabled, action: k.run) {
-                            VStack(spacing: 3) {
-                                Image(systemName: k.icon)
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(tn.accent)
-                                Text(k.label)
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(tn.text)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
+                    .frame(height: 44)
                 }
             }
-            if share != nil || model.chatReply != nil { composer(on: on, share: share, target: target) }
+            if share != nil || model.chatReply != nil {
+                composer(on: on, share: share, target: target, tools: tools(share: share, target: target, browse: browse))
+            }
         }
         .pageDock(top: 12)
         .task {
@@ -185,9 +173,9 @@ struct ChatDock: View {
             : c.hidden ? "Hidden, because its app marks it as private"
             : c.unread ? "Send pastes the clipboard of this Mac on the computer"
             : "Copy text or an image on this Mac"
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 1) {
             Text(meta)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(tn.cyan)
                 .lineLimit(1)
             if let t = c.text {
@@ -204,7 +192,7 @@ struct ChatDock: View {
             }
         }
         .padding(.horizontal, 11)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(shape.fill(tn.bg))
         .accessibilityElement(children: .combine)
@@ -222,14 +210,14 @@ struct ChatDock: View {
                 send()
             }
         } label: {
-            VStack(spacing: 2) {
+            HStack(spacing: 6) {
                 Image(systemName: done ? "checkmark" : "doc.on.clipboard")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                 Text(done ? "Sent" : "Send")
                     .font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(ink)
-            .frame(width: 84)
+            .padding(.horizontal, 14)
             .frame(maxHeight: .infinity)
             .background(shape.fill(done ? tn.line : tn.accent))
             .contentShape(shape)
@@ -241,16 +229,16 @@ struct ChatDock: View {
         .accessibilityLabel(done ? "Sent" : "Send the clipboard")
     }
 
-    /// Files, Get, and the camera modes. The camera window holds the other modes in its mode bar.
+    /// Send files, Get files, and the camera modes, for the menu of the + key. The camera window holds the other modes in its mode bar.
     private func tools(share: SharePlugin?, target: ActionTarget, browse: ActionTarget) -> [DockTool] {
         var list: [DockTool] = []
         if share != nil {
-            list.append(DockTool(id: "files", icon: "doc.badge.arrow.up", label: "Files", help: "Send files", enabled: ToolTarget.ready(target)) {
+            list.append(DockTool(id: "files", icon: "doc.badge.arrow.up", label: "Send files", help: "Send files", enabled: ToolTarget.ready(target)) {
                 ToolTarget.run(target, title: "Send files to", ask: $ask) { d in ShareActions.pickFiles(to: d, model: model) }
             })
         }
         if model.paired.isEmpty || Inbox.hasFeature(scope: model.scope, devices: model.state.devices, can: { $0.accepts(PacketType.sftpRequest) }) {
-            list.append(DockTool(id: "get", icon: "folder", label: "Get", help: "Open the home folder of the computer, read-only",
+            list.append(DockTool(id: "get", icon: "folder", label: "Get files", help: "Open the home folder of the computer, read-only",
                                  enabled: ToolTarget.ready(browse)) {
                 ToolTarget.run(browse, title: "Get files from", ask: $ask) { d in BrowseWindows.shared.show(d.id, app: model) }
             })
@@ -264,11 +252,44 @@ struct ChatDock: View {
         return list
     }
 
-    /// The field with the mic key and the send key. A web link opens in the
-    /// browser of the computer, and other text goes to its clipboard. While a
-    /// reply is open, the field has the accent border, and the text goes to
-    /// the agent after its choice, see `HerdrPlugin.tell`.
-    private func composer(on: Bool, share: SharePlugin?, target: ActionTarget) -> some View {
+    /// The + key of the tools and the other destinations. It is a menu of
+    /// the Mac: a click opens it, and a press, a drag, and a release on an
+    /// item selects the item.
+    private func plusMenu(_ tools: [DockTool]) -> some View {
+        Menu {
+            ForEach(tools) { k in
+                Button(action: k.run) { Label(k.label, systemImage: k.icon) }
+                    .disabled(!k.enabled)
+                    .help(k.help)
+            }
+            Divider()
+            Section("Go to") {
+                ForEach([MacDestination.control, .computers]) { d in
+                    Button { model.go(d) } label: { Label(d.title, systemImage: d.systemImage) }
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tn.text)
+                .frame(width: DictationLayout.keySize, height: DictationLayout.keySize)
+                .background(Circle().fill(tn.line))
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Files, the camera, and the other screens")
+        .accessibilityLabel("Files, camera, and the other screens")
+    }
+
+    /// The + key, the field with the mic key, and the send key. A web link
+    /// opens in the browser of the computer, and other text goes to its
+    /// clipboard. While the field has the focus or a reply is open, the
+    /// field has the accent border. The text of a reply goes to the agent
+    /// after its choice, see `HerdrPlugin.tell`.
+    private func composer(on: Bool, share: SharePlugin?, target: ActionTarget, tools: [DockTool]) -> some View {
         let reply = model.chatReply
         let enabled = reply != nil || on
         let canSend = enabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -293,41 +314,44 @@ struct ChatDock: View {
             placeholder = "Type text or a link"
         }
         let shape = RoundedRectangle(cornerRadius: DictationLayout.keySize / 2, style: .continuous)
-        return VoiceBar(language: model.dictationLanguage, enabled: enabled, onText: { spoken in
-            text = DictationText.insert(text, start: text.utf16.count, end: text.utf16.count, spoken: spoken).text
-        }) {
-            TextField(placeholder, text: $text, prompt: Text(placeholder))
-                .labelsHidden()
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .focused($focused)
-                .fieldKeys(text: $text) { editing = true }
-                .padding(.horizontal, 14)
-                .frame(minHeight: DictationLayout.keySize)
-                .background(shape.fill(tn.bg))
-                .overlay(shape.strokeBorder(reply != nil ? tn.accent : tn.lineHi))
-                .onSubmit(send)
-                .onExitCommand { if model.chatReply != nil { model.chatReply = nil } }
-                .disabled(!enabled)
-                .sheet(isPresented: $editing) {
-                    // The editor checks the text at each change.
-                    let ready = { enabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    FieldEditor(title: reply.map { "Reply to \($0.agent)" } ?? "Text or link", text: $text,
-                                action: FieldEditorAction(title: "Send", enabled: ready, run: send)) { editing = false }
+        return HStack(alignment: .top, spacing: 8) {
+            if reply == nil { plusMenu(tools) }
+            VoiceBar(language: model.dictationLanguage, enabled: enabled, onText: { spoken in
+                text = DictationText.insert(text, start: text.utf16.count, end: text.utf16.count, spoken: spoken).text
+            }) {
+                TextField(placeholder, text: $text, prompt: Text(placeholder))
+                    .labelsHidden()
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($focused)
+                    .fieldKeys(text: $text) { editing = true }
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: DictationLayout.keySize)
+                    .background(shape.fill(tn.bg))
+                    .overlay(shape.strokeBorder(reply != nil || focused ? tn.accent : tn.lineHi))
+                    .onSubmit(send)
+                    .onExitCommand { if model.chatReply != nil { model.chatReply = nil } }
+                    .disabled(!enabled)
+                    .sheet(isPresented: $editing) {
+                        // The editor checks the text at each change.
+                        let ready = { enabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                        FieldEditor(title: reply.map { "Reply to \($0.agent)" } ?? "Text or link", text: $text,
+                                    action: FieldEditorAction(title: "Send", enabled: ready, run: send)) { editing = false }
+                    }
+            } send: {
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(canSend ? tn.onAccent : tn.sub)
+                        .frame(width: DictationLayout.keySize, height: DictationLayout.keySize)
+                        .background(Circle().fill(canSend ? tn.accent : tn.line))
+                        .contentShape(Circle())
                 }
-        } send: {
-            Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(canSend ? tn.onAccent : tn.sub)
-                    .frame(width: DictationLayout.keySize, height: DictationLayout.keySize)
-                    .background(Circle().fill(canSend ? tn.accent : tn.line))
-                    .contentShape(Circle())
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .help(reply == nil ? "Send the text or the link" : "Send the reply to \(reply?.agent ?? "the agent")")
+                .accessibilityLabel("Send")
             }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
-            .help(reply == nil ? "Send the text or the link" : "Send the reply to \(reply?.agent ?? "the agent")")
-            .accessibilityLabel("Send")
         }
     }
 

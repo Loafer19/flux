@@ -17,6 +17,7 @@ struct ContentView: View {
         @Bindable var model = model
         TabView(selection: Binding(get: { model.tab }, set: { model.select($0) })) {
             NavigationStack(path: $model.chatPath) {
+                // Chat has no tab bar. A swipe on its thread leads to the next tab, see ChatView.
                 ChatView().routeDestinations()
             }
             .modifier(ThemedTabBar())
@@ -24,18 +25,21 @@ struct ContentView: View {
             .badge(badgeText)
             .tag(AppTab.chat)
             NavigationStack(path: $model.controlPath) {
-                ControlView().routeDestinations()
+                // A swipe from the edge, so that it does not take the swipes of a row that scrolls to the side.
+                ControlView().tabSwipe(edges: true).routeDestinations()
             }
             .modifier(ThemedTabBar())
             .tabItem { Label("Control", systemImage: "slider.horizontal.3") }
             .tag(AppTab.control)
             NavigationStack(path: $model.computersPath) {
-                ComputersView().routeDestinations()
+                ComputersView().tabSwipe(edges: true).routeDestinations()
             }
             .modifier(ThemedTabBar())
             .tabItem { Label("Computers", systemImage: "laptopcomputer") }
             .tag(AppTab.computers)
         }
+        // The dots of the tabs, under the status bar, in the same place on each tab.
+        .safeAreaInset(edge: .top, spacing: 0) { SwipeDots() }
         .overlay(alignment: .bottom) {
             if let toast = model.toast {
                 ToastBanner(message: toast.message)
@@ -47,6 +51,8 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: model.toast)
+        // The iPhone ticks when the tab changes, also by a swipe.
+        .sensoryFeedback(.selection, trigger: model.tab)
         .modifier(FeatureRoot())
         .targetPicker()
         .onAppear { Overlays.install(model: model) }

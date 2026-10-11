@@ -24,6 +24,11 @@ struct ChatView: View {
     /// A reply that went to an agent: the computer, the pane, and the number
     /// of the last reply of the computer before it. A refused reply shows as a message.
     @State private var told: Told?
+    @State private var menu = ThumbMenu()
+    /// True after the chat showed once that a swipe leads to the other tabs.
+    @AppStorage("swipeHinted") private var swipeHinted = false
+    @State private var nudge: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Told: Equatable {
         var deviceId: String
@@ -51,16 +56,44 @@ struct ChatView: View {
                     LineFill(fraction: Double(done) / Double(max(size, 1)), color: tn.accent)
                 }
             }
+            // A swipe on the thread leads to the next tab. The dock takes no swipe, so the field keeps its drags.
             if !model.state.enabled || !paired {
                 ChatEmpty()
+                    .tabSwipe()
             } else {
                 ChatThread(entries: entries, scoped: scoped, all: all)
+                    .tabSwipe()
                     .safeAreaInset(edge: .bottom, spacing: 0) {
-                        ChatDock(sent: sent, tools: tools, onText: sendText, onReply: sendReply)
+                        ChatDock(sent: sent, menu: menu, onText: sendText, onReply: sendReply)
                     }
             }
         }
+        // The thumb menu lies over the thread and the dock. The key and the items have their frames in this space,
+        // so the space holds the overlay too.
+        .overlay {
+            if model.state.enabled && paired { ThumbMenuOverlay(menu: menu, sections: sections) }
+        }
+        .coordinateSpace(.named(thumbMenuSpace))
+        .offset(x: nudge)
         .destinationRoot("Chat", context: paired ? ChatTexts.context(model, needs: Inbox.needsYou(scoped)) : "")
+        // Chat has no tab bar. The thumb menu, the dots, and a swipe lead to the other tabs.
+        // Before the first pairing, the chat has no dock, so the tab bar stays.
+        .toolbar(model.state.enabled && paired ? .hidden : .automatic, for: .tabBar)
+        .onChange(of: model.tab) { _, _ in menu.close() }
+        .onChange(of: model.chatReply) { _, _ in menu.close() }
+        // Once, the chat moves a little to the side and back, to show that a swipe leads to the other tabs.
+        .task {
+            guard !swipeHinted, !reduceMotion, paired else { return }
+            do { try await Task.sleep(for: .milliseconds(900)) } catch { return }
+            withAnimation(.easeOut(duration: 0.35)) { nudge = -56 }
+            // A cancel during the move still brings the chat back.
+            do { try await Task.sleep(for: .milliseconds(380)) } catch {
+                nudge = 0
+                return
+            }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) { nudge = 0 }
+            swipeHinted = true
+        }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if paired { ScopeChip() }
@@ -108,19 +141,30 @@ struct ChatView: View {
         }
     }
 
-    /// The 6 tools of the dock.
+    /// The sections of the thumb menu: the tools, and the other tabs nearest the thumb.
+    private var sections: [ThumbSection] {
+        [
+            ThumbSection(title: "Files and camera", items: tools.map { ThumbItem(icon: $0.icon, label: $0.label, name: $0.name, enabled: $0.enabled, run: $0.action) }),
+            ThumbSection(title: "Go to", items: [
+                ThumbItem(icon: "slider.horizontal.3", label: "Control", name: "Go to Control") { model.select(.control) },
+                ThumbItem(icon: "laptopcomputer", label: "Computers", name: "Go to Computers") { model.select(.computers) },
+            ], wide: true),
+        ]
+    }
+
+    /// The 6 tools of the thumb menu.
     private var tools: [ChatDockTool] {
         let share = SendTools.canShare(model)
         let browse = canBrowse
         let camera = canCamera
         return [
-            ChatDockTool(icon: "doc.badge.arrow.up", label: "Files", name: "Send files", enabled: TargetRun.enabled(model, can: share)) {
+            ChatDockTool(icon: "doc.badge.arrow.up", label: "Send files", name: "Send files", enabled: TargetRun.enabled(model, can: share)) {
                 TargetRun.run(model, can: share, title: "Send files to") { d in
                     filesTarget = d
                     pickingFiles = true
                 }
             },
-            ChatDockTool(icon: "folder", label: "Get", name: "Get files from the computer", enabled: TargetRun.enabled(model, can: browse)) {
+            ChatDockTool(icon: "folder", label: "Get files", name: "Get files from the computer", enabled: TargetRun.enabled(model, can: browse)) {
                 open(browse, "Get files from") { .browse($0) }
             },
             ChatDockTool(icon: CameraMode.photo.systemImage, label: "Photo", name: CameraMode.photo.hint, enabled: TargetRun.enabled(model, can: camera)) {

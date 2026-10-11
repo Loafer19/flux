@@ -13,15 +13,16 @@ struct ChatDockTool: Identifiable {
     var id: String { label }
 }
 
-/// The dock of the chat: the clipboard of this iPhone with Send, the 6
-/// tools, and the field for text or a link. iOS asks before an app reads
-/// the clipboard, so the dock shows only the kind of the copy, and the text
-/// of a copy that went out from here. While a reply to an agent is open, a
-/// row with Cancel takes the place of the clipboard and the tools, and the
-/// field writes to the agent. `sent` tells whether the copy went out already.
+/// The dock of the chat: the clipboard of this iPhone with Send, and the field for text or a link with the + key, the mic
+/// key, and the send key. The + key opens the thumb `menu`. iOS asks before
+/// an app reads the clipboard, so the dock shows only the kind of the copy,
+/// and the text of a copy that went out from here. While a reply to an
+/// agent is open, a row with Cancel takes the place of the clipboard, the +
+/// key hides, and the field writes to the agent. `sent` tells whether the
+/// copy went out already.
 struct ChatDock: View {
     let sent: [SentItem]
-    let tools: [ChatDockTool]
+    let menu: ThumbMenu
     let onText: (String) -> Void
     let onReply: (String) -> Void
     @Environment(AppModel.self) private var model
@@ -30,6 +31,8 @@ struct ChatDock: View {
     @State private var text = ""
     /// The change count of the clipboard and the kind of the copy.
     @State private var clip = PhoneClip(count: 0, kind: .empty)
+    @State private var voice = VoiceTyping()
+    @State private var editing = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -63,30 +66,22 @@ struct ChatDock: View {
                 .frame(minHeight: 32)
             } else {
                 clipRow
-                HStack(spacing: 6) {
-                    ForEach(tools) { k in
-                        DockKeyButton(name: k.name, enabled: k.enabled, action: k.action) {
-                            VStack(spacing: 3) {
-                                Image(systemName: k.icon)
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(tn.accent)
-                                Text(k.label)
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundStyle(tn.text)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
-                            }
-                        }
-                    }
-                }
             }
             composer(reply)
+            VoiceStatus(voice: voice)
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 10)
         .dockFrame()
         .onAppear { clip = PhoneClip.now() }
+        .task { await voice.load() }
+        // The field is gone, so the words of a dictation have no place.
+        .onDisappear { voice.cancel() }
+        .sheet(isPresented: $editing) {
+            FieldEditor(title: reply.map { "Reply to \($0.agent)" } ?? "Text or a link", text: $text, actionLabel: "Send",
+                        actionEnabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, onAction: send)
+        }
         .onChange(of: scenePhase) { _, phase in if phase == .active { clip = PhoneClip.now() } }
         .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in clip = PhoneClip.now() }
         .task {
@@ -104,7 +99,7 @@ struct ChatDock: View {
         }
     }
 
-    /// The clipboard of this iPhone and its Send key, 56 pt high. The box
+    /// The clipboard of this iPhone and its Send key, 44 pt high. The box
     /// tells where the copy is, and shows its text on 1 line. After a send,
     /// the key shows Sent.
     private var clipRow: some View {
@@ -124,7 +119,7 @@ struct ChatDock: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.horizontal, 11)
-            .padding(.vertical, 8)
+            .padding(.vertical, 4)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tn.bg))
             .accessibilityElement(children: .combine)
             Button {
@@ -134,14 +129,14 @@ struct ChatDock: View {
                     SendTools.sendClipboard(model)
                 }
             } label: {
-                VStack(spacing: 2) {
+                HStack(spacing: 6) {
                     Image(systemName: last != nil ? "checkmark" : "doc.on.clipboard")
-                        .font(.system(size: 18))
+                        .font(.system(size: 15, weight: .medium))
                     Text(last != nil ? "Sent" : "Send")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.footnote.weight(.semibold))
                 }
                 .foregroundStyle(last != nil ? tn.text : tn.onAccent)
-                .frame(width: 88)
+                .padding(.horizontal, 14)
                 .frame(maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(last != nil ? tn.line : tn.accent))
             }
@@ -150,33 +145,59 @@ struct ChatDock: View {
             .opacity(canClip ? 1 : TiledMetrics.disabledAlpha)
             .accessibilityLabel("Send the clipboard")
         }
-        .frame(height: 56)
+        .frame(height: 44)
     }
 
-    /// The field and its send key. While a reply is open, the field has the
-    /// accent border and writes to the agent.
+    /// The + key, the field, the mic key, and the send key. While the field
+    /// has the focus, the + key hides, so the field takes its width and
+    /// grows to 6 lines. With text, the field shows the key of the large
+    /// editor. While a reply is open, the field has the accent border and
+    /// writes to the agent. The words of a dictation go at the end of the
+    /// text.
     private func composer(_ reply: ChatReply?) -> some View {
         let can = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let placeholder: String = {
             if let reply { return "Tell \(reply.agent) what to do differently" }
-            if let d = TargetRun.single(model) { return "Type text or a link for \(d.name)" }
-            return "Type text or a link"
+            if let d = TargetRun.single(model) { return "Text or a link for \(d.name)" }
+            return "Text or a link"
         }()
         return HStack(alignment: .bottom, spacing: 8) {
-            TextField(placeholder, text: $text, axis: .vertical)
-                .lineLimit(1...4)
-                .font(.subheadline)
-                .foregroundStyle(tn.text)
-                .textInputAutocapitalization(reply != nil ? TextInputAutocapitalization.sentences : TextInputAutocapitalization.never)
-                .autocorrectionDisabled(reply == nil)
-                .submitLabel(.send)
-                .onSubmit(send)
-                .focused($focused)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 13)
-                .frame(minHeight: 48)
-                .background(Capsule().fill(tn.bg))
-                .overlay(Capsule().strokeBorder(reply != nil ? tn.accent : tn.lineHi, lineWidth: 1))
+            if reply == nil && !focused && !voice.active {
+                ThumbKey(menu: menu)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            HStack(alignment: .bottom, spacing: 0) {
+                TextField(placeholder, text: $text, axis: .vertical)
+                    .lineLimit(focused ? 1...6 : 1...4)
+                    .font(.subheadline)
+                    .foregroundStyle(tn.text)
+                    .textInputAutocapitalization(reply != nil ? TextInputAutocapitalization.sentences : TextInputAutocapitalization.never)
+                    .autocorrectionDisabled(reply == nil)
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                    .focused($focused)
+                    .padding(.vertical, 13)
+                // Only the key of the large editor shows, so the text keeps the width. The editor has Clear.
+                if !text.isEmpty { ExpandKey(isPresented: $editing).padding(.bottom, 6) }
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, text.isEmpty ? 16 : 4)
+            .frame(minHeight: 48)
+            .background(Capsule().fill(tn.bg))
+            .overlay(Capsule().strokeBorder(reply != nil || focused ? tn.accent : tn.lineHi, lineWidth: 1))
+            if voice.available {
+                Button {
+                    voice.toggle(model.core) { spoken in text = DictationText.append(text, spoken) }
+                } label: {
+                    Image(systemName: voice.active ? "stop.fill" : "mic")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(voice.active ? tn.onAccent : tn.text)
+                        .frame(width: 48, height: 48)
+                        .background(Circle().fill(voice.active ? tn.green : tn.line))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(voice.active ? "Stop the dictation" : "Dictate")
+            }
             Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 18, weight: .semibold))
@@ -188,11 +209,14 @@ struct ChatDock: View {
             .disabled(!can)
             .accessibilityLabel("Send")
         }
+        .animation(.snappy(duration: 0.2), value: focused)
+        .animation(.snappy(duration: 0.2), value: voice.active)
     }
 
     private func send() {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
+        editing = false
         // A reply keeps its text until it goes out, because Face ID can stop it. The end of the reply clears the field.
         if model.chatReply != nil {
             onReply(t)

@@ -21,20 +21,31 @@ data class ChatEventItem(val item: InboxItem, override val at: Long) : ChatItem 
     override val key: String get() = item.key
 }
 
+/** How long [SeenClock] keeps the time of an item that is gone, so that an item that comes back after a short disconnect keeps its place. */
+const val SEEN_GRACE_MS = 10 * 60_000L
+
 /**
  * Keeps the first time that the chat showed each Inbox item, for the
  * items whose start is not known: an approval, a pair request, and an
  * agent whose status started before this phone connected, see
- * [AgentClock]. It forgets the items that are gone.
+ * [AgentClock]. It forgets an item that is gone for more than [graceMs].
  */
-class SeenClock {
-    private val seen = HashMap<String, Long>()
+class SeenClock(private val graceMs: Long = SEEN_GRACE_MS) {
+    private val first = HashMap<String, Long>()
+    private val goneAt = HashMap<String, Long>()
 
     /** Takes the keys of the items at the time [now] and returns the first time of each key. */
     fun update(keys: Collection<String>, now: Long): Map<String, Long> {
-        seen.keys.retainAll(keys.toSet())
-        for (k in keys) seen.getOrPut(k) { now }
-        return HashMap(seen)
+        val live = keys.toSet()
+        for (k in first.keys) if (k !in live) goneAt.putIfAbsent(k, now)
+        val expired = goneAt.filterValues { now - it > graceMs }.keys.toSet()
+        first.keys.removeAll(expired)
+        goneAt.keys.removeAll(expired)
+        for (k in live) {
+            first.getOrPut(k) { now }
+            goneAt.remove(k)
+        }
+        return live.associateWith { first.getValue(it) }
     }
 }
 

@@ -35,12 +35,15 @@ class ChatFeedTest {
     }
 
     @Test
-    fun theClockKeepsTheFirstTimeAndForgetsWhatIsGone() {
-        val clock = SeenClock()
+    fun theClockKeepsTheFirstTimeAndForgetsWhatIsGoneForLong() {
+        val clock = SeenClock(graceMs = 100)
         assertEquals(mapOf("a" to 10L), clock.update(listOf("a"), 10))
         assertEquals(mapOf("a" to 10L, "b" to 20L), clock.update(listOf("a", "b"), 20))
         assertEquals(mapOf("b" to 20L), clock.update(listOf("b"), 30))
-        assertEquals("an item that comes back is new", mapOf("a" to 40L, "b" to 20L), clock.update(listOf("a", "b"), 40))
+        assertEquals("an item that comes back soon keeps its time", mapOf("a" to 10L, "b" to 20L), clock.update(listOf("a", "b"), 40))
+        clock.update(listOf("b"), 100)
+        assertEquals("an item that is gone for long is new", mapOf("a" to 201L, "b" to 20L), clock.update(listOf("a", "b"), 201))
+        assertEquals("an item that stays keeps its time without updates", mapOf("a" to 201L, "b" to 20L), clock.update(listOf("a", "b"), 9_999))
     }
 
     @Test

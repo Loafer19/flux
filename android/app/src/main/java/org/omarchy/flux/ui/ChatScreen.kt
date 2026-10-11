@@ -105,6 +105,7 @@ import org.omarchy.flux.core.SendKind
 import org.omarchy.flux.core.SendLog
 import org.omarchy.flux.core.Share
 import org.omarchy.flux.core.Target
+import org.omarchy.flux.core.TermLine
 import org.omarchy.flux.core.TransferState
 import org.omarchy.flux.core.UiState
 import org.omarchy.flux.core.agentAsk
@@ -151,9 +152,10 @@ class ChatActions(
 /**
  * A reply that the dock writes to the agent in [pane] in the place of the
  * [choice] that rejects its action, such as "No, and tell Codex what to
- * do differently".
+ * do differently". [lines] are the output lines of the question that the
+ * user read. The reply goes out only while the question is the same.
  */
-private data class ChatReply(val deviceId: String, val pane: String, val agent: String, val project: String, val choice: AgentChoice)
+private data class ChatReply(val deviceId: String, val pane: String, val agent: String, val project: String, val choice: AgentChoice, val lines: List<TermLine>)
 
 /** The first time that the chat showed each item whose start is not known. It lives as long as the app process. */
 private val seenClock = SeenClock()
@@ -165,6 +167,13 @@ private val seenClock = SeenClock()
  * status changes.
  */
 private val chatAnswers = mutableStateMapOf<String, SentAnswer>()
+
+/**
+ * The lines of the question that a reply of the chat answered, by computer
+ * and pane. The choices of that question stay off until the agent shows
+ * another question, so that 1 tap does not answer it again.
+ */
+private val toldLines = mutableStateMapOf<String, List<TermLine>>()
 
 /**
  * The Chat destination: 1 thread of what happens between this phone and
@@ -238,8 +247,17 @@ fun ChatScreen(
     }
     fun tell(r: ChatReply, text: String) {
         ReplyLock.run(context, {
+            // The keys of the choice go out only while the agent shows the question that the user read.
+            val now = devices.firstOrNull { it.id == r.deviceId }?.herdrOutput?.takeIf { it.pane == r.pane }?.lines
+                ?: if (isDemo(r.deviceId)) r.lines else null
+            if (reply != r || now != r.lines) {
+                reply = null
+                FluxCore.toast("The question changed. Read it, then answer again.")
+                return@run
+            }
             told = Triple(r.deviceId, r.pane, devices.firstOrNull { it.id == r.deviceId }?.herdrReply?.seq ?: 0L)
             chatAnswers["${r.deviceId}|${r.pane}"] = SentAnswer(text, "Reply", null)
+            toldLines["${r.deviceId}|${r.pane}"] = r.lines
             HerdrSync.tell(FluxCore, r.deviceId, r.pane, r.choice.keys, text)
             reply = null
         }) { FluxCore.toast(it) }
@@ -306,7 +324,8 @@ fun ChatScreen(
 /**
  * The entries of the chat with the day over each new day, the newest at
  * the bottom, and the notices under them. The view follows the end. When
- * the user scrolls up, the view stays there until the next new entry.
+ * the user scrolls up, the view stays there, unless this phone sent the
+ * new entry.
  * [bottom] is the space under the last entry. [focus] holds the keys of
  * the agents whose output this screen reads.
  */
@@ -337,11 +356,14 @@ private fun ChatThread(
             if (follow && !scroll.isScrollInProgress && end in 1 until Int.MAX_VALUE) scroll.scrollTo(end)
         }
     }
-    // A new entry at the end shows, also after the user scrolled up.
-    val last = chat.lastOrNull()?.key
-    LaunchedEffect(last) {
-        follow = true
-        scroll.scrollTo(scroll.maxValue)
+    // While the view follows, it shows a new entry at the end. What this phone sent shows also after the user scrolled up.
+    val last = chat.lastOrNull()
+    LaunchedEffect(last?.key) {
+        val mine = (last as? ChatLogItem)?.entry?.let { !it.incoming } == true
+        if (follow || mine) {
+            follow = true
+            scroll.scrollTo(scroll.maxValue)
+        }
     }
     val context = LocalContext.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -554,6 +576,7 @@ private fun AgentCard(
         val s = chatAnswers[answerKey] ?: return@LaunchedEffect
         if (working) chatAnswers[answerKey] = s.copy(working = true) else if (s.working) chatAnswers.remove(answerKey)
     }
+    LaunchedEffect(item.kind) { if (!blocked) toldLines.remove(answerKey) }
     val context = LocalContext.current
     var lockError by remember { mutableStateOf<String?>(null) }
     // The number of the last reply before this card answered. The card shows only the replies that it sent.
@@ -562,7 +585,7 @@ private fun AgentCard(
     val sending = herdrReply?.sending == true
     fun answer(c: AgentChoice) {
         if (isTellChoice(c)) {
-            onReply(ChatReply(item.deviceId, pane, a.agent, a.project.ifEmpty { a.workspace }, c))
+            onReply(ChatReply(item.deviceId, pane, a.agent, a.project.ifEmpty { a.workspace }, c, out?.lines.orEmpty()))
             return
         }
         lockError = null
@@ -633,7 +656,7 @@ private fun AgentCard(
             else -> texts?.let { agentPrompt(it, 4) }?.takeIf { it.isNotEmpty() }?.let { LineText(breakAll(it), size = 12f, lineHeight = 1.4f, color = Tn.sub, family = Mono) }
         }
         if (choices.isNotEmpty()) {
-            val enabled = item.control && choicesOpen(out, answered, sending)
+            val enabled = item.control && choicesOpen(out, answered, sending) && toldLines[answerKey] != out?.lines
             Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 choices.forEachIndexed { i, c -> AskChoice(c, primary = i == 0, enabled = enabled, height = 44.dp, size = 13.5f) { answer(c) } }
             }
@@ -794,7 +817,7 @@ private fun ApprovalResult(e: SendEntry, context: Context) {
     val host = r?.host.orEmpty()
     InCard(
         mark = { Dot(if (ok) Tn.green else Tn.sub, 8.dp) },
-        state = if (ok) "Approved" else "Denied",
+        state = if (enroll && ok) "Enrolled" else if (ok) "Approved" else "Denied",
         color = if (ok) Tn.green else Tn.sub,
         source = e.text,
         time = timeText(context, e.at),

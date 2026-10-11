@@ -124,7 +124,7 @@ An agent that waits shows its choices in the thread, and an approval shows **App
 Flux keeps the thread in memory only, with at most 400 characters of each text.
 The dock under the thread shows the phone clipboard with **Send**, and a field for text or a link with a mic key and **Send**.
 On Android, the **+** key at the left of the field opens a menu over the chat: **Send files**, **Get files**, **Photo**, **Scan**, **Text**, and **QR**, and under them **Control** and **Computers**.
-Chat has no navigation bar, so this menu and a swipe to the side lead to the other screens. 3 dots at the top of the dock show the screen and follow a swipe, and the phone ticks at each new screen. The first time Chat opens, it moves a little to the side and back to show the swipe.
+Chat has no navigation bar, so this menu and a swipe to the side lead to the other screens. 3 dots under the status bar show the screen on Chat, Control, and Computers, and they follow a swipe, and the phone ticks at each new screen. The first time Chat opens, it moves a little to the side and back to show the swipe.
 Tap **+**, then tap an item. Or hold **+**, slide the thumb to an item, and release it there. A release on no item keeps the menu open.
 A tap on the field hides the **+** key, so the field takes its width and grows to 6 lines. The expand key in the field opens the large editor.
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).

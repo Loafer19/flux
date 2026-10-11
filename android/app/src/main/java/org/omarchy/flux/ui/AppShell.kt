@@ -101,6 +101,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.snapshotFlow
@@ -268,18 +269,29 @@ fun FluxShell(
                 val shown = Tab.entries[pager.currentPage]
                 ShellFrame(wide, shown, needs, select, bar = shown != Tab.Chat) {
                     CompositionLocalProvider(LocalShellPager provides pager) {
-                        HorizontalPager(pager, Modifier.fillMaxSize(), key = { Tab.entries[it] }) { page ->
-                            val tab = Tab.entries[page]
-                            // Only the destination where the pager stops reads its data.
-                            val active = settled && pager.settledPage == page
-                            Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
-                                when (tab) {
-                                    Tab.Chat -> ChatScreen(state, all, active, notices, actions, scope, onScope, picker)
-                                    Tab.Control -> ControlScreen(state, scope, onScope, picker, onOpen = ::open, onPair = toComputers)
-                                    Tab.Computers -> ComputersScreen(state, scope, onScope, onPair, onUnpair, onSync = toSync, onAbout = toAbout)
+                        Column(Modifier.fillMaxSize()) {
+                            // The dots of the destinations, under the status bar, in the same place on each destination.
+                            Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))) {
+                                SwipeDots(Modifier.fillMaxWidth().padding(top = 2.dp))
+                            }
+                            // The headers of the destinations start under the dots.
+                            HorizontalPager(
+                                pager,
+                                Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars),
+                                key = { Tab.entries[it] },
+                            ) { page ->
+                                val tab = Tab.entries[page]
+                                // Only the destination where the pager stops reads its data.
+                                val active = settled && pager.settledPage == page
+                                Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
+                                    when (tab) {
+                                        Tab.Chat -> ChatScreen(state, all, active, notices, actions, scope, onScope, picker)
+                                        Tab.Control -> ControlScreen(state, scope, onScope, picker, onOpen = ::open, onPair = toComputers)
+                                        Tab.Computers -> ComputersScreen(state, scope, onScope, onPair, onUnpair, onSync = toSync, onAbout = toAbout)
+                                    }
                                 }
                             }
-                    }
+                        }
                     }
                 }
             }

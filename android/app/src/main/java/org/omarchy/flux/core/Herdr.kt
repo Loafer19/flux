@@ -1,6 +1,7 @@
 package org.omarchy.flux.core
 
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -27,6 +28,12 @@ private const val REPLY_TIMEOUT_MS = 10_000L
 
 /** How long a terminal open waits for terminal_opened. fluxd answers each open within 15 seconds. */
 private const val TERMINAL_OPEN_TIMEOUT_MS = 20_000L
+
+/** How long a reply in the place of a choice waits for the agent to leave its dialog, see [HerdrSync.tell]. */
+private const val TELL_WAIT_MS = 4_000L
+
+/** How often a reply in the place of a choice checks the status of the agent. */
+private const val TELL_STEP_MS = 250L
 
 /** How long the phone waits after a reply before it reads the output again. The agent needs a moment to draw. */
 private const val REREAD_DELAY_MS = 700L
@@ -614,6 +621,28 @@ object HerdrSync {
             return
         }
         reply(core, id, pane, "prompt", herdrPromptBody(pane, t, answer))
+    }
+
+    /**
+     * Rejects the action that the agent in [pane] asks for with the choice
+     * [keys], such as "No, and tell Codex what to do differently", and then
+     * sends [text] as the next prompt. The prompt goes out when the agent no
+     * longer waits for a choice, or after [TELL_WAIT_MS]. fluxd refuses a
+     * prompt to an agent that still waits, so the text cannot select a
+     * choice.
+     */
+    fun tell(core: FluxCore, id: String, pane: String, keys: List<String>, text: String) {
+        sendKeys(core, id, pane, keys)
+        val start = SystemClock.elapsedRealtime()
+        fun check() {
+            val waits = core.locked { core.device(id)?.herdr?.agents?.firstOrNull { it.pane == pane }?.status == AgentStatus.Blocked }
+            if (waits && SystemClock.elapsedRealtime() - start < TELL_WAIT_MS) {
+                core.scheduler.schedule({ check() }, TELL_STEP_MS, TimeUnit.MILLISECONDS)
+            } else {
+                sendPrompt(core, id, pane, text)
+            }
+        }
+        core.scheduler.schedule({ check() }, TELL_STEP_MS, TimeUnit.MILLISECONDS)
     }
 
     /**

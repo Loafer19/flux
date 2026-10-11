@@ -101,7 +101,7 @@ internal fun elsewhereText(count: Int): String =
  * While the computers connect, the Inbox does not call them not reachable.
  */
 @Composable
-internal fun InboxNoticeList(n: InboxNotices, actions: InboxActions, offline: Boolean = true, paired: Boolean = true) {
+internal fun InboxNoticeList(n: InboxNotices, actions: ChatActions, offline: Boolean = true, paired: Boolean = true) {
     // Green marks a live camera or microphone, as the privacy dot of Android does.
     for (s in n.streams) {
         val kind = s.stream.kind

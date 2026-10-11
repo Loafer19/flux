@@ -1,8 +1,8 @@
 package org.omarchy.flux.core
 
 /**
- * Debug builds only: sample Inbox data next to the sample computers of
- * [DebugDemo], so that the Inbox and the Omarchy panel render on an
+ * Debug builds only: sample chat data next to the sample computers of
+ * [DebugDemo], so that the chat and the Omarchy panel render on an
  * emulator with no computer. All functions give nothing while the demo is
  * off. The samples take no network action.
  */
@@ -47,28 +47,25 @@ object DebugInbox {
         )
     }
 
-    /** The time that the demo agents got their status: the blocked agent waits 3 minutes, and the working agent works for 2:14. */
+    /** The time that the demo agents got their status, in the order of the design: done, working, then blocked. */
     private val agentSince: Map<String, Long>
         get() {
             val now = System.currentTimeMillis()
-            return mapOf("w2:p1" to now - 3 * 60_000, "w1:p1" to now - 134_000)
+            return mapOf("w3:p1" to now - 17 * 60_000, "w1:p1" to now - 8 * 60_000, "w2:p1" to now - 4 * 60_000)
         }
 
-    /** The sample entries of the Send thread: a link, a photo, a clip, and a file that comes in. */
+    /** The sample entries of the chat log: a link, a photo, a clip from the computer, and a file that comes in. */
     fun sends(): List<SendEntry> {
         if (!DebugDemo.on) return emptyList()
-        val day = java.util.Calendar.getInstance().apply {
-            set(java.util.Calendar.HOUR_OF_DAY, 0)
-            set(java.util.Calendar.MINUTE, 0)
-        }.timeInMillis
-        fun at(h: Int, m: Int) = day + (h * 60L + m) * 60_000
+        val now = System.currentTimeMillis()
+        fun ago(min: Int) = now - min * 60_000L
         val pc = DebugDemo.PC
         return listOf(
-            SendEntry(-11, pc, "omarchy-xps", SendKind.Link, "https://omarchy.org/manual", at = at(13, 20)),
-            SendEntry(-12, pc, "omarchy-xps", SendKind.File, "holiday.jpg", at = at(13, 41), size = 2_400_000, done = 2_400_000),
-            SendEntry(-13, pc, "omarchy-xps", SendKind.Clip, "git push origin ui-shell", at = at(13, 58)),
+            SendEntry(-11, pc, "omarchy-xps", SendKind.Link, "https://omarchy.org/manual", at = ago(49)),
+            SendEntry(-12, pc, "omarchy-xps", SendKind.File, "holiday.jpg", at = ago(28), size = 2_400_000, done = 2_400_000),
+            SendEntry(-13, pc, "omarchy-xps", SendKind.Clip, "git push origin ui-shell", incoming = true, at = ago(11)),
             SendEntry(
-                -14, pc, "omarchy-xps", SendKind.File, "invoice-2026-09.pdf", incoming = true, at = at(14, 8),
+                -14, pc, "omarchy-xps", SendKind.File, "invoice-2026-09.pdf", incoming = true, at = ago(6),
                 size = 3_200_000, done = 1_856_000, state = TransferState.Running,
             ),
         )
@@ -91,21 +88,5 @@ object DebugInbox {
             nonce = "0".repeat(64),
             timeoutSeconds = 60,
         )
-    }
-
-    /** A sample transfer that runs and one that ended. */
-    fun transfers(): List<Transfer> {
-        if (!DebugDemo.on) return emptyList()
-        val now = System.currentTimeMillis()
-        return listOf(
-            Transfer(-1, DebugDemo.PC, "omarchy-xps", "invoice-2026-09.pdf", incoming = true, state = TransferState.Running, at = now),
-            Transfer(-2, DebugDemo.PC, "omarchy-xps", "holiday.jpg", incoming = false, state = TransferState.Done, at = now - 120_000, ended = now - 100_000),
-        )
-    }
-
-    /** A sample clip from the sample computer. */
-    fun clip(): ClipEvent? {
-        if (!DebugDemo.on) return null
-        return ClipEvent(listOf(DebugDemo.PC), "omarchy-xps", sent = false, preview = "git push origin ui-shell", at = System.currentTimeMillis() - 60_000)
     }
 }

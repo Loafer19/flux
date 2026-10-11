@@ -1,33 +1,27 @@
 package org.omarchy.flux.core
 
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 
 /**
- * The kinds of Inbox items, in the order of the Inbox. The first 3 kinds
- * need the user: an agent that waits for input, an approval, and a pair
- * request. Then come the kinds that the user can act on from the stack:
- * what plays now, the clipboard, and the transfers. The agents that are
- * done or that work come last. The order is the declaration order, and
- * nothing stores it, so a new order needs no migration.
+ * The kinds of Inbox items. The first 3 kinds need the user: an agent that
+ * waits for input, an approval, and a pair request. The agents that are
+ * done or that work follow. The chat shows the items in the order of
+ * their time, see [chatItems].
  */
 enum class InboxKind(val needsYou: Boolean) {
     AgentInput(true),
     Approval(true),
     PairRequest(true),
-    Media(false),
-    Clipboard(false),
-    Transfer(false),
     AgentDone(false),
     AgentWorking(false),
 }
 
 /**
- * One item of the Inbox. [key] stays the same while the item is the same,
- * so the UI keeps its place. [deviceIds] are the computers of the item. An
- * item with no computers shows in every scope.
+ * One item of the Inbox: something on a computer that has a state now.
+ * [key] stays the same while the item is the same, so the UI keeps its
+ * place. [deviceIds] are the computers of the item. An item with no
+ * computers shows in every scope.
  */
 sealed interface InboxItem {
     val key: String
@@ -67,47 +61,8 @@ data class PairItem(val deviceId: String, override val computer: String) : Inbox
     override val deviceIds: Set<String> get() = emptySet()
 }
 
-/** A file that goes to or comes from a computer. */
-data class TransferItem(val transfer: Transfer) : InboxItem {
-    override val kind: InboxKind get() = InboxKind.Transfer
-    override val key: String get() = "transfer|${transfer.id}"
-    override val deviceIds: Set<String> get() = setOf(transfer.deviceId)
-    override val computer: String get() = transfer.computer
-}
-
-/** The last clip that this phone sent or received. */
-data class ClipItem(val clip: ClipEvent) : InboxItem {
-    override val kind: InboxKind get() = InboxKind.Clipboard
-    override val key: String get() = "clip"
-    override val deviceIds: Set<String> get() = clip.deviceIds.toSet()
-    override val computer: String get() = clip.computer
-}
-
-/** What a player on a computer plays now. */
-data class MediaItem(val deviceId: String, override val computer: String, val player: PlayerState) : InboxItem {
-    override val kind: InboxKind get() = InboxKind.Media
-    override val key: String get() = "media|$deviceId"
-    override val deviceIds: Set<String> get() = setOf(deviceId)
-}
-
 /** The state of a file transfer. */
 enum class TransferState { Running, Done, Failed }
-
-/**
- * A file transfer. [incoming] is true for a file from the computer. [at]
- * is the start time and [ended] the end time, in milliseconds since the
- * epoch. [ended] is 0 while the transfer runs.
- */
-data class Transfer(
-    val id: Long,
-    val deviceId: String,
-    val computer: String,
-    val name: String,
-    val incoming: Boolean,
-    val state: TransferState = TransferState.Running,
-    val at: Long = 0,
-    val ended: Long = 0,
-)
 
 /**
  * A clip that this phone sent ([sent]) or received. [preview] is a short
@@ -123,29 +78,13 @@ data class ClipEvent(
     val at: Long = 0,
 )
 
-/** How long a finished transfer, the last clip, and a paused player stay in the Inbox, in milliseconds. */
-const val INBOX_KEEP_MS = 30 * 60_000L
-
 /**
- * Collects the Inbox items of all computers and ranks them. The order is
- * the order of [InboxKind]. Inside a kind, the computers keep their order,
- * running transfers come before the newest finished ones, and a player
- * that plays comes before a paused one.
- *
- * [now] is the time in milliseconds since the epoch. A finished transfer
- * and the clip stay for [INBOX_KEEP_MS] after they end. A paused player
- * stays for [INBOX_KEEP_MS] after the time in [playedAt], which maps a
- * device ID to the last time that its player played. Each key shows once.
+ * Collects the Inbox items of all computers: the agents that wait, are
+ * done, or work, the open [approval], and the pair requests. A computer
+ * that is not reachable adds no agents. Each key shows once, because a
+ * computer can report 2 agents on 1 pane.
  */
-fun inboxItems(
-    devices: List<DeviceUi>,
-    approval: ApproveRequest?,
-    transfers: List<Transfer>,
-    clip: ClipEvent?,
-    now: Long,
-    playedAt: Map<String, Long>,
-): List<InboxItem> {
-    fun recent(at: Long) = now - at <= INBOX_KEEP_MS
+fun inboxItems(devices: List<DeviceUi>, approval: ApproveRequest?): List<InboxItem> {
     val out = ArrayList<InboxItem>()
     for (d in devices) {
         if (!d.paired) {
@@ -163,26 +102,7 @@ fun inboxItems(
         }
     }
     approval?.let { out += ApprovalItem(it) }
-    transfers.filter { it.state == TransferState.Running || recent(if (it.ended > 0) it.ended else it.at) }
-        .sortedWith(compareBy<Transfer> { it.state != TransferState.Running }.thenByDescending { it.at })
-        .forEach { out += TransferItem(it) }
-    clip?.takeIf { recent(it.at) }?.let { out += ClipItem(it) }
-    devices.filter { it.paired && it.online }
-        .mapNotNull { d ->
-            d.player?.takeIf { it.playing || (it.title.isNotEmpty() && playedAt[d.id]?.let(::recent) == true) }?.let { MediaItem(d.id, d.name, it) }
-        }
-        .sortedBy { !it.player.playing }
-        .forEach { out += it }
-    // The sort is stable, so the order above stays inside each kind. A
-    // computer can report 2 agents on 1 pane, and the Inbox needs each key once.
-    return out.sortedBy { it.kind.ordinal }.distinctBy { it.key }
-}
-
-/** Records [now] as the last play time of each computer whose player plays. */
-fun notePlaying(playedAt: Map<String, Long>, devices: List<DeviceUi>, now: Long): Map<String, Long> {
-    val playing = devices.filter { it.paired && it.online && it.player?.playing == true }
-    if (playing.isEmpty()) return playedAt
-    return playedAt + playing.associate { it.id to now }
+    return out.distinctBy { it.key }
 }
 
 /** The items of the computer [scope], or all items when [scope] is null. */
@@ -206,51 +126,6 @@ data class InboxReach(val online: Int, val offline: List<DeviceUi>) {
 fun inboxReach(scope: String?, devices: List<DeviceUi>): InboxReach {
     val paired = devices.filter { it.paired && (scope == null || it.id == scope) }
     return InboxReach(paired.count { it.online }, paired.filter { !it.online })
-}
-
-/**
- * The order that the user gave the Inbox. [pinned] is the item that the
- * user moved to the master tile. [deferred] are the items that the user
- * swiped away, in the order of the swipes. [known] are the item keys of the
- * last [sync], so that a new item that needs the user can take the master
- * tile back.
- */
-data class InboxArrangement(
-    val pinned: String? = null,
-    val deferred: List<String> = emptyList(),
-    val known: Set<String> = emptySet(),
-    val started: Boolean = false,
-) {
-    /** Moves the master item [key] to the end of the stack. The next item becomes the master. */
-    fun swipe(key: String): InboxArrangement = copy(pinned = pinned?.takeIf { it != key }, deferred = deferred - key + key)
-
-    /** Moves the stack item [key] to the master tile. */
-    fun promote(key: String): InboxArrangement = copy(pinned = key, deferred = deferred - key)
-
-    /**
-     * Forgets the keys that are gone. A new item that needs the user
-     * removes the pin, so that the ranking puts the new item first.
-     */
-    fun sync(items: List<InboxItem>): InboxArrangement {
-        val keys = items.mapTo(HashSet()) { it.key }
-        val fresh = started && items.any { it.kind.needsYou && it.key !in known }
-        return InboxArrangement(
-            pinned = pinned?.takeIf { it in keys && !fresh },
-            deferred = deferred.filter { it in keys },
-            known = keys,
-            started = true,
-        )
-    }
-
-    /** Puts [items] in the order of the user: the pinned item first, and the deferred items last. */
-    fun arrange(items: List<InboxItem>): List<InboxItem> {
-        val byKey = items.associateBy { it.key }
-        val late = deferred.mapNotNull { byKey[it] }
-        val lateKeys = late.mapTo(HashSet()) { it.key }
-        val ordered = items.filter { it.key !in lateKeys } + late
-        val pin = pinned?.let { byKey[it] } ?: return ordered
-        return listOf(pin) + ordered.filter { it.key != pin.key }
-    }
 }
 
 /**
@@ -333,50 +208,16 @@ fun clipPreview(text: String, max: Int = CLIP_PREVIEW): String {
     return if (t.length > max) t.take(max - 1) + "…" else t
 }
 
-/** The most transfers that the Inbox keeps. All running transfers stay. */
-const val MAX_TRANSFERS = 4
-
-/** Adds the new transfer [t] first, and drops the oldest finished transfers above [max]. */
-fun startTransfer(list: List<Transfer>, t: Transfer, max: Int = MAX_TRANSFERS): List<Transfer> {
-    val all = listOf(t) + list
-    val running = all.filter { it.state == TransferState.Running }
-    val done = all.filter { it.state != TransferState.Running }.take(maxOf(0, max - running.size))
-    val keep = (running + done).mapTo(HashSet()) { it.id }
-    return all.filter { it.id in keep }
-}
-
-/** Marks the running transfer [id] as done or failed at the time [at]. */
-fun endTransfer(list: List<Transfer>, id: Long, ok: Boolean, at: Long): List<Transfer> =
-    list.map { if (it.id == id && it.state == TransferState.Running) it.copy(state = if (ok) TransferState.Done else TransferState.Failed, ended = at) else it }
-
-/** Marks the ended transfer [id] as running again. A file that the computer sends again keeps its item. */
-fun resumeTransfer(list: List<Transfer>, id: Long): List<Transfer> =
-    list.map { if (it.id == id && it.state != TransferState.Running) it.copy(state = TransferState.Running, ended = 0) else it }
-
 /**
- * The recent transfers and the last clip, for the Inbox. The share and
- * clipboard code reports to it. It keeps no file content and only a short
- * preview of a text clip, in memory.
+ * The last clip that this phone sent or received. The clipboard code
+ * reports to it, and a clip from a computer also goes to the chat log. It
+ * keeps only a short preview of a text clip, in memory.
  */
 object InboxFeed {
-    private val ids = AtomicLong()
-    private val _transfers = MutableStateFlow<List<Transfer>>(emptyList())
     private val _clip = MutableStateFlow<ClipEvent?>(null)
-    private val _playedAt = MutableStateFlow<Map<String, Long>>(emptyMap())
-
-    /** The recent transfers, newest first. */
-    val transfers: StateFlow<List<Transfer>> = _transfers
 
     /** The last clip that this phone sent or received. */
     val clip: StateFlow<ClipEvent?> = _clip
-
-    /** The last time that the player of each computer played, by device ID. See [inboxItems]. */
-    val playedAt: StateFlow<Map<String, Long>> = _playedAt
-
-    /** Records the players that play at the time [now]. The Inbox calls it while it shows. */
-    fun seePlayers(devices: List<DeviceUi>, now: Long) {
-        _playedAt.update { notePlaying(it, devices, now) }
-    }
 
     /** Reports a clip that went to [computers], as pairs of the device ID and the name. [text] is null for an image. */
     fun clipSent(computers: List<Pair<String, String>>, text: String?) {
@@ -388,27 +229,6 @@ object InboxFeed {
     /** Reports a clip from the computer [deviceId]. [text] is null for an image. */
     fun clipReceived(deviceId: String, computer: String, text: String?) {
         _clip.value = ClipEvent(listOf(deviceId), computer, sent = false, preview = text?.let(::clipPreview).orEmpty(), image = text == null, at = System.currentTimeMillis())
-    }
-
-    /** Reports a new transfer and returns its ID for [transferEnded]. */
-    fun transferStarted(deviceId: String, computer: String, name: String, incoming: Boolean): Long {
-        val id = ids.incrementAndGet()
-        val t = Transfer(id, deviceId, computer, name, incoming, at = System.currentTimeMillis())
-        _transfers.update { startTransfer(it, t) }
-        return id
-    }
-
-    fun transferEnded(id: Long, ok: Boolean) {
-        _transfers.update { endTransfer(it, id, ok, System.currentTimeMillis()) }
-    }
-
-    /** Reports that the transfer [id] runs again. It returns false when the Inbox no longer has the transfer. */
-    fun transferResumed(id: Long): Boolean {
-        var found = false
-        _transfers.update { list ->
-            found = list.any { it.id == id }
-            resumeTransfer(list, id)
-        }
-        return found
+        SendLog.clipIn(deviceId, computer, text)
     }
 }

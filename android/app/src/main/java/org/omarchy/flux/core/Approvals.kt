@@ -84,6 +84,7 @@ object Approvals {
     /** Sends the signature of the approval message of the current request. */
     fun approve(core: FluxCore, r: ApproveRequest, signature: ByteArray): Boolean {
         val ok = send(core, r, ApproveMessage.approved(r.id, signature))
+        if (ok) SendLog.approval(r, approved = true)
         clear(core.app, r.id)
         return ok
     }
@@ -91,13 +92,14 @@ object Approvals {
     /** Sends the new public key and the proof of the current enrollment. */
     fun enrolled(core: FluxCore, r: ApproveRequest, spki: ByteArray, signature: ByteArray): Boolean {
         val ok = send(core, r, ApproveMessage.enrolled(r.id, spki, signature))
+        if (ok) SendLog.approval(r, approved = true)
         clear(core.app, r.id)
         return ok
     }
 
     fun deny(core: FluxCore, r: ApproveRequest? = _current.value) {
         if (r == null) return
-        send(core, r, ApproveMessage.denied(r.id))
+        if (send(core, r, ApproveMessage.denied(r.id))) SendLog.approval(r, approved = false)
         clear(core.app, r.id)
     }
 

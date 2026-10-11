@@ -57,7 +57,7 @@ Each app also shows the Git changes of the agent.
 See [Agent diff review](workflows.md#agent-diff-review).
 
 1. Start herdr on the computer.
-2. Open Flux for Android. An agent that waits for input shows first in the **Inbox**, with its question and its choices.
+2. Open Flux for Android. An agent that waits for input shows in **Chat**, with its question and its choices.
 3. To see all agents, open **Control** and select **Agents and terminals**.
 4. Select an agent to read its recent output.
 

@@ -106,11 +106,13 @@ To show a web page on the phone, select **Open link on phone** on the Overview p
 The field starts with the newest clipboard entry when that entry is a link.
 The phone shows the link in a notification. A tap on the notification opens the link in the browser.
 
-To show a web page on the desktop, type the link in the field at the bottom of **Send** in Flux for Android, then tap the send key.
+To show a web page on the desktop, type the link in the field at the bottom of **Chat** in Flux for Android, then tap the send key.
 The desktop opens a link that starts with `http://` or `https://` in its browser. Other text goes to the clipboard of the desktop.
 The field of the desktop window adds `https://` to a host name without a scheme, for example `omarchy.org/flux`.
 
-**Send** shows what the phone sent in this session as a thread: links, text, clips, and files, and the files that come from the desktop, with the progress of each transfer.
+**Chat** in Flux for Android shows what the phone sent in this session as a thread: links, text, clips, and files.
+The desktop writes in the same thread: received files with their progress, the last clip, herdr agents, sudo approvals, and pair requests.
+An agent that waits shows its choices in the thread, and an approval shows **Approve** and **Deny**.
 Flux keeps the thread in memory only, with at most 400 characters of each text.
 The dock under the thread shows the phone clipboard with **Send**, and the tools for files, the camera, and QR codes.
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).
@@ -209,7 +211,7 @@ Turn on `auto_clipboard` on the desktop and **Sync clipboard** on the phone.
 Both are on by default.
 
 - Copy an image on the desktop, for example a screenshot. Then paste it in an app on the phone.
-- Copy an image on the phone, open **Send** in Flux, and tap **Send** next to the clipboard. Then paste it on the desktop.
+- Copy an image on the phone, open **Chat** in Flux, and tap **Send** next to the clipboard. Then paste it on the desktop.
 
 A clip that you send with **Send**, the **Send clipboard** tile, or the notification action goes on the desktop clipboard also while `auto_clipboard` is off.
 The desktop then shows a notification with the start of the text, for example **Clipboard from Pixel 8**.
@@ -338,7 +340,7 @@ Chat messages that an app keeps in its own database, for example RCS chats, do n
 ## Media and desktop commands
 
 The phone controls the media players on the desktop.
-Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume. The **Inbox** also shows what plays now, with play and pause.
+Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume. The **Inbox** of Flux for iOS and Flux for macOS also shows what plays now, with play and pause.
 The controls show when a desktop player publishes its state over MPRIS.
 The phone selects the player that plays.
 If more than one player runs, select another player at the top of the screen.
@@ -433,7 +435,7 @@ See [camera and streams](camera.md) for direct capture and live media.
 
 ## herdr agents
 
-When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows first in the phone's **Inbox**. To see all agents and terminals, open **Control**.
+When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows its choices in **Chat** on Android, and first in the **Inbox** on iPhone and Mac. To see all agents and terminals, open **Control**.
 The phone shows the status and the colored output of each coding agent, and posts a notification when an agent needs input or finishes.
 
 To answer agents from the phone, set:

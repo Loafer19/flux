@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
-/** The kind of 1 entry of the Send thread. */
+/** The kind of 1 entry of the chat log. */
 enum class SendKind {
     /** A web link that the browser of the computer opened. */
     Link,
@@ -16,23 +16,30 @@ enum class SendKind {
     /** Text from a scan of the camera. The computer saves it as a text file in its scan folder. */
     Scan,
 
-    /** The clipboard of this phone, with text. */
+    /** A clip with text, from this phone or from the computer. */
     Clip,
 
-    /** The clipboard of this phone, with an image. */
+    /** A clip with an image, from this phone or from the computer. */
     ClipImage,
 
     /** A file, in either direction. */
     File,
+
+    /** A sudo, polkit, or enrollment request that this phone approved. */
+    Approved,
+
+    /** A sudo, polkit, or enrollment request that this phone denied. */
+    Denied,
 }
 
 /**
- * 1 entry of the Send thread: what this phone sent to the computer
- * [deviceId], or a file that the computer sent ([incoming]). [text] is the
- * link, the text, or the file name. [size] and [done] are the bytes of a
- * file. [clipStamp] is the time that Android set on a clip that went out,
- * see Android.clipTimestamp. [at] is the time in milliseconds since the
- * epoch.
+ * 1 entry of the chat log: what this phone sent to the computer
+ * [deviceId], or what came from it ([incoming]): a file, a clip, or the
+ * answer of this phone to an [approval]. [text] is the link, the text, the
+ * file name, or the service of the approval. [size] and [done] are the
+ * bytes of a file. [uri] is the received file in Downloads, or empty.
+ * [clipStamp] is the time that Android set on a clip that went out, see
+ * Android.clipTimestamp. [at] is the time in milliseconds since the epoch.
  */
 data class SendEntry(
     val id: Long,
@@ -46,12 +53,14 @@ data class SendEntry(
     val done: Long = 0,
     val state: TransferState = TransferState.Done,
     val clipStamp: Long = 0,
+    val uri: String = "",
+    val approval: ApproveRequest? = null,
 ) {
     /** The part of a file that went through, from 0 to 1. */
     val progress: Float get() = if (size <= 0) (if (state == TransferState.Running) 0f else 1f) else (done.toFloat() / size).coerceIn(0f, 1f)
 }
 
-/** The most entries that the Send thread keeps. All running transfers stay. */
+/** The most entries that the chat log keeps. All running transfers stay. */
 const val MAX_SEND_LOG = 60
 
 /** The most characters of a text or a link that an entry keeps. */
@@ -76,11 +85,15 @@ fun addSend(list: List<SendEntry>, e: SendEntry, max: Int = MAX_SEND_LOG): List<
 fun progressSend(list: List<SendEntry>, id: Long, done: Long, size: Long = -1): List<SendEntry> =
     list.map { if (it.id == id && it.state == TransferState.Running) it.copy(done = done, size = if (size >= 0) size else it.size) else it }
 
-/** Marks the running file [id] as done or failed. A file that is done has all its bytes. */
-fun endSend(list: List<SendEntry>, id: Long, ok: Boolean): List<SendEntry> =
+/** Adds the clip [e] from a computer at the end. It takes the place of the last clip from a computer, because the clipboard holds 1 clip. */
+fun addClipIn(list: List<SendEntry>, e: SendEntry, max: Int = MAX_SEND_LOG): List<SendEntry> =
+    addSend(list.filterNot { it.incoming && (it.kind == SendKind.Clip || it.kind == SendKind.ClipImage) }, e, max)
+
+/** Marks the running file [id] as done or failed. A file that is done has all its bytes, and [uri] names it when it came in. */
+fun endSend(list: List<SendEntry>, id: Long, ok: Boolean, uri: String = ""): List<SendEntry> =
     list.map {
         if (it.id == id && it.state == TransferState.Running) {
-            it.copy(state = if (ok) TransferState.Done else TransferState.Failed, done = if (ok) it.size else it.done)
+            it.copy(state = if (ok) TransferState.Done else TransferState.Failed, done = if (ok) it.size else it.done, uri = if (ok) uri else "")
         } else {
             it
         }
@@ -107,10 +120,11 @@ class ProgressGate(private val size: Long) {
 }
 
 /**
- * The Send thread: the links, text, clips, and files that this phone sent
- * to the computers, and the files that came from them. The share and
- * clipboard code reports to it. It keeps the entries in memory only, with
- * at most [SEND_TEXT_MAX] characters of a text, and no file content.
+ * The chat log: the links, text, clips, and files that this phone sent to
+ * the computers, the files and the last clip that came from them, and the
+ * answers to approvals. The share, clipboard, and approval code reports to
+ * it. It keeps the entries in memory only, with at most [SEND_TEXT_MAX]
+ * characters of a text, and no file content.
  */
 object SendLog {
     private val ids = AtomicLong()
@@ -150,6 +164,18 @@ object SendLog {
         add(e.copy(clipStamp = stamp))
     }
 
+    /** Reports a clip from a computer. [text] is null for an image. */
+    fun clipIn(deviceId: String, computer: String, text: String?) {
+        val e = entry(deviceId, computer, if (text == null) SendKind.ClipImage else SendKind.Clip, text.orEmpty()).copy(incoming = true)
+        _entries.update { addClipIn(it, e) }
+    }
+
+    /** Reports that this phone approved or denied the request [r]. */
+    fun approval(r: ApproveRequest, approved: Boolean) {
+        val e = entry(r.computerId, r.computerName, if (approved) SendKind.Approved else SendKind.Denied, r.service)
+        add(e.copy(incoming = true, approval = r))
+    }
+
     /** Reports a new file of [size] bytes and returns its ID for [fileProgress] and [fileEnded]. */
     fun fileStarted(deviceId: String, computer: String, name: String, size: Long, incoming: Boolean): Long =
         add(entry(deviceId, computer, SendKind.File, name).copy(incoming = incoming, size = maxOf(size, 0), state = TransferState.Running))
@@ -159,8 +185,9 @@ object SendLog {
         _entries.update { progressSend(it, id, done, size) }
     }
 
-    fun fileEnded(id: Long, ok: Boolean) {
-        _entries.update { endSend(it, id, ok) }
+    /** Reports the end of the file [id]. [uri] is the received file in Downloads, or empty when the chat must not open it. */
+    fun fileEnded(id: Long, ok: Boolean, uri: String = "") {
+        _entries.update { endSend(it, id, ok, uri) }
     }
 
     /** Reports that the file [id] runs again from byte [done]. It returns false when the thread no longer has the file. */

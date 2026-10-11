@@ -36,6 +36,24 @@ class SendLogTest {
     }
 
     @Test
+    fun aReceivedFileKeepsItsLinkOnlyWhenItArrived() {
+        val list = listOf(file(1, TransferState.Running).copy(incoming = true), file(2, TransferState.Running).copy(incoming = true))
+        val done = endSend(endSend(list, 1, ok = true, uri = "content://downloads/1"), 2, ok = false, uri = "content://downloads/2")
+        assertEquals("content://downloads/1", done[0].uri)
+        assertEquals("a failed file has nothing to open", "", done[1].uri)
+    }
+
+    @Test
+    fun aClipFromAComputerTakesThePlaceOfTheLastOne() {
+        val sent = SendEntry(1, "pc", "omarchy-xps", SendKind.Clip, "out")
+        val first = SendEntry(2, "pc", "omarchy-xps", SendKind.Clip, "a", incoming = true)
+        val image = SendEntry(3, "desk", "omarchy-desk", SendKind.ClipImage, "", incoming = true)
+        var list = addClipIn(listOf(sent), first)
+        list = addClipIn(list, image)
+        assertEquals("the clipboard holds 1 clip, and a clip that went out stays", listOf(1L, 3L), list.map { it.id })
+    }
+
+    @Test
     fun gateLetsEachPercentThroughOnce() {
         val gate = ProgressGate(1_000)
         assertTrue(gate.pass(0))
@@ -60,6 +78,24 @@ class SendLogTest {
         assertEquals(0L, SendLog.entries.value.last().size)
         assertTrue(SendLog.fileResumed(id, 0))
         assertFalse(SendLog.fileResumed(-99, 0))
+        SendLog.replace(emptyList())
+    }
+
+    @Test
+    fun logKeepsTheAnswersToApprovals() {
+        SendLog.replace(emptyList())
+        val r = ApproveRequest(
+            computerId = "pc", computerName = "omarchy-xps", id = "r1", kind = ApproveRequest.Kind.Approve,
+            host = "omarchy-xps", user = "dev", service = "sudo", tty = "pts/3", rhost = "", time = 0, nonce = "0".repeat(64), timeoutSeconds = 60,
+        )
+        SendLog.approval(r, approved = true)
+        SendLog.approval(r, approved = false)
+        val (yes, no) = SendLog.entries.value
+        assertEquals(SendKind.Approved, yes.kind)
+        assertEquals(SendKind.Denied, no.kind)
+        assertEquals("sudo", yes.text)
+        assertTrue("the answer shows on the side of the computer", yes.incoming)
+        assertEquals(r, yes.approval)
         SendLog.replace(emptyList())
     }
 }

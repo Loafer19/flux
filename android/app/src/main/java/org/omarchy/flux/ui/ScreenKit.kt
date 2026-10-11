@@ -63,10 +63,11 @@ import org.omarchy.flux.core.FluxCore
 
 /**
  * The header of a destination or a feature screen: the Flux mark, or Back
- * when [onBack] is set, the [title], and the [context] line in mono.
+ * when [onBack] is set, the [title], the [context] line in mono, and
+ * [trailing] at the end, such as the scope chip.
  */
 @Composable
-internal fun ScreenHeader(title: String, context: String, onBack: (() -> Unit)? = null) {
+internal fun ScreenHeader(title: String, context: String, onBack: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 2.dp, end = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -85,6 +86,7 @@ internal fun ScreenHeader(title: String, context: String, onBack: (() -> Unit)? 
             T(title, Modifier.semantics { heading() }, size = 16, weight = FontWeight.SemiBold, maxLines = 1)
             if (context.isNotEmpty()) LineText(context, size = 11f, lineHeight = MONO_LINE, color = Tn.sub, family = Mono, maxLines = 1)
         }
+        trailing?.invoke()
     }
 }
 

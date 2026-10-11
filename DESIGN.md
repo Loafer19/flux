@@ -1,6 +1,6 @@
 ---
 name: Flux for Android, iOS, and macOS
-description: The device side of Flux. A Hyprland master layout of what needs the user, in the live Omarchy theme of the computer.
+description: The device side of Flux. Chat on Android and a Hyprland master layout on iOS and macOS, in the live Omarchy theme of the computer.
 colors:
   bg: "#16161E"
   off-tile: "#1A1B26"
@@ -211,19 +211,19 @@ components:
 
 **Creative North Star: "The Master Layout of What Needs You"**
 
-Flux for Android looks like the user's own Omarchy desktop. Tiles sit on the page with Hyprland gaps. The item that needs the user most takes the master tile, and the other items wait in the stack. Only a master tile that needs the user carries the active border gradient of the computer, as the focused window does in Hyprland.
+Flux for Android looks like the user's own Omarchy desktop. Tiles sit on the page with Hyprland gaps. **Chat** shows what happens between the phone and the computers as 1 thread, with the newest entry at the bottom. A card that needs the user takes the full width and a red border, and it holds its whole action. Flux for iOS and Flux for macOS keep the Inbox. There, the item that needs the user most takes the master tile, and the other items wait in the stack. Only a master tile that needs the user carries the active border gradient of the computer, as the focused window does in Hyprland.
 
 The app has no palette of its own. The colors come from the live Omarchy theme of the computer in scope, through a contrast guard. Tokyo Night is the fallback when no computer sent a theme. The token values in this file are the Tokyo Night reference set. The roles are the system, and the values change with the theme.
 
 The density is that of a tiled desktop: 8 dp gaps, 12 dp corners, flat tiles, and no shadows. Mono sets what the computer says, such as window titles, prompts, keys, and data. Roboto sets what Flux says. The app rejects the category default of a device list, then a grid of feature cards for each device.
 
-Flux for iOS and Flux for macOS use the same system. They share the token roles, the contrast guard, the Tokyo Night fallback, the Inbox rank, the window title with the state word first, and the one-tap rule for agent choices. The Android app is the reference for every section. The section "Apple platforms" gives only what differs on iOS and macOS. That section comes from the Swift code, because no capture of the Apple apps exists yet.
+Flux for iOS and Flux for macOS use the same system. They share the token roles, the contrast guard, the Tokyo Night fallback, the Inbox rank, the window title with the state word first, and the one-tap rule for agent choices. The Android app is the reference for every section, except the master tile and the stack tile, which only the Apple apps have. The section "Apple platforms" gives only what differs on iOS and macOS. That section comes from the Swift code, because no capture of the Apple apps exists yet.
 
 **Key Characteristics:**
 
 - The colors are roles from the theme of the computer, not fixed values.
 - Every role pair reaches WCAG 2.2 AA in every theme: 4.5:1 for text, and 3:1 for icons and borders.
-- 1 master tile, with the `hyprland_active_border` gradient while it needs the user, and a stack of plain tiles.
+- On Android, 1 chat thread in time order. On iOS and macOS, 1 master tile with the `hyprland_active_border` gradient while it needs the user, and a stack of plain tiles.
 - Red means only "needs you" and errors.
 - Mono for computer data, Roboto for Flux text.
 - Flat tiles with 1 dp borders. Depth comes from tonal steps.
@@ -325,20 +325,20 @@ All text grows with the Android font size. Layouts hold at 200%. A key label shr
 
 ## Layout
 
-The app follows the Hyprland master layout. The master tile holds the first item with its whole action. The stack holds the other items.
+Flux for Android shows **Chat** as its first destination. The Inbox of the Apple apps follows the Hyprland master layout. Its master tile holds the first item with its whole action, and its stack holds the other items.
 
 - **Gaps and gutter:** Tiles keep an 8 dp gap. The screen gutter is 10 dp. The shell top bar starts 5 dp further in, to align the Flux mark.
-- **Phone in portrait:** The Inbox is 1 grid with 2 columns. The status line comes first, then the master across the full width. The master takes the height of its content, and the stack follows it directly. The choices sit under the question, and Open thread ends the master.
-- **Wide window, 600 dp and more:** A navigation rail replaces the navigation bar. The Inbox splits: the master takes 60% of the width at full height, and the status line and the stack fill a column on the right. The choices sit directly under the prompt.
-- **Short window, under 480 dp high:** The top bar takes less height. Below 460 dp, the master is compact. Its inset is 12 dp, its gaps are 8 dp, the prompt is shorter, and Open thread moves to the top row.
-- **Content width:** Screens other than the Inbox scroll in `CappedScrollColumn`. The content is at most 840 dp wide and stays in the center. Choice and action rows in the master are at most 600 dp wide.
-- **Destinations:** Inbox, Send, Control, and Computers. Send and Control open with 1 master tool, then groups of tool rows under section labels. In Control, the agent rows come right after the master tool, because the user needs them most often.
-- **Rank:** The Inbox order is the order of `InboxKind` in `core/InboxModel.kt`: agent input, approval, pair request, media, clipboard, transfer, agent done, and agent working. What needs the user comes first.
+- **Phone in portrait:** **Chat** is 1 thread with the newest entry at the bottom, and the dock under it. Cards of a computer sit on the left at 88% of the width. A card that needs the user takes the full width. What the phone sent sits on the right.
+- **Wide window, 600 dp and more:** A navigation rail replaces the navigation bar. The dock of **Chat** becomes a tile at the bottom of a column on the right.
+- **Short window:** The dock of **Chat** takes at most 70% of the height, and it scrolls inside that part.
+- **Content width:** Screens other than **Chat** scroll in `CappedScrollColumn`. The content is at most 840 dp wide and stays in the center.
+- **Destinations:** Chat, Control, and Computers. Control opens with 1 master tool, then groups of tool rows under section labels. In Control, the agent rows come right after the master tool, because the user needs them most often.
+- **Order:** **Chat** puts its entries in time order, see `chatItems` in `core/ChatFeed.kt`. An agent takes the start time of its status, so an agent with a new status moves to the end.
 - **Targets:** Every control takes taps on at least 48 by 48 dp.
 
 ## Elevation & Depth
 
-The system is flat. Tiles have no shadows. Depth comes from 4 tonal surface steps, `bg`, `off-tile`, `tile`, and `tile-hi`, and from 1 dp borders in `line`. In a dark theme, the tiles are lighter steps of the page. In a light theme, they are darker steps. The only emphasis beyond tone is the 2 dp active border gradient of a master tile that needs the user.
+The system is flat. Tiles have no shadows. Depth comes from 4 tonal surface steps, `bg`, `off-tile`, `tile`, and `tile-hi`, and from 1 dp borders in `line`. In a dark theme, the tiles are lighter steps of the page. In a light theme, they are darker steps. The only emphasis beyond tone is the 2 dp red border of a **Chat** card that needs the user, and the 2 dp active border gradient of the pairing guide and of a master tile that needs the user.
 
 ### Named Rules
 
@@ -387,14 +387,25 @@ A pressed tile changes its border to the accent. A selected choice changes its b
 
 ### Navigation
 
-- **Bar:** A 66 dp bar on `bg` in a compact window, with 4 destinations: Inbox, Send, Control, and Computers. Each has a 22 dp icon in a 56 by 30 dp pill, and a 12 sp label. The pill of the open destination takes `line`, and its label is 600 in `text`. The Inbox pill shows a red badge with the number of items that need the user, up to "9+". The content fades out over 24 dp above the bar.
+- **Bar:** A 66 dp bar on `bg` in a compact window, with 3 destinations: Chat, Control, and Computers. Each has a 22 dp icon in a 56 by 30 dp pill, and a 12 sp label. The pill of the open destination takes `line`, and its label is 600 in `text`. The Chat pill shows a red badge with the number of items that need the user, up to "9+". Each destination ends with a dock, so the bar has no fade.
 - **Rail:** The Material 3 navigation rail in a window of 600 dp and more, with the same destinations.
-- **Top bar:** A destination shows the Flux mark and the scope chip. A feature screen shows a 40 dp back button, the title, and an optional mono context line. When the actions leave the title too little width, they move to a second row. The agent screen has its own top bar, see Agent screen.
+- **Top bar:** A destination shows the Flux mark, its title, and a mono context line. **Chat** ends the row with a 36 dp scope chip. A feature screen shows a 40 dp back button, the title, and an optional mono context line. When the actions leave the title too little width, they move to a second row. The agent screen has its own top bar, see Agent screen.
 - **Motion:** Destinations fade through in 240 ms. A feature screen moves on the horizontal axis in 220 ms. Predictive back follows the gesture.
+
+### Chat
+
+The signature component of Flux for Android: 1 thread of the computers and the phone.
+
+- **Header:** The Flux mark, Chat in 16 sp 600, the computer in scope and the count of what needs the user in mono 11 sp, and the scope chip.
+- **Progress:** A 2 dp `line` rule under the header. A file that comes in or goes out fills it in the accent.
+- **Card of a computer:** `tile` with 14 dp corners and a 4 dp corner at the bottom left. The top row holds the state mark and word, the source in mono, and the time. A 14 sp 600 title, a mono 12 sp body in `sub`, and a 13 sp accent text action follow.
+- **Card that needs the user:** An agent that waits, an approval, and a pair request take the full width and a 2 dp red border. An agent shows its command and its numbered choices, each 44 dp high. An approval shows Deny and Approve, 48 dp high. Approve opens the approval screen.
+- **What the phone sent:** A bubble on `accent-tile` with a `line-hi` border, 16 dp corners, and a 4 dp corner at the bottom right, at most 82% of the width. A file is a 236 dp card.
+- **Dock:** The phone clipboard with an 88 dp Send key, 6 tools of 56 dp, and the composer. A choice such as "No, and tell Codex what to do differently" turns the dock into a reply: a row with Cancel, and the composer with an accent border.
 
 ### Master tile
 
-The signature component. It holds the first Inbox item with its whole action.
+Flux for iOS and Flux for macOS only. It holds the first Inbox item with its whole action.
 
 - The top row holds the window title and Later. With more than 1 computer in scope, the window title ends with the computer.
 - An agent item shows its title, the question, the command in mono 12 sp on `bg`, the numbered choices, and Open thread. A choice is at least 44 dp high, with a 12 dp corner. The first choice takes the accent fill, and the other choices take `line`. A working agent shows the answer that the Inbox sent, a moving accent bar, and its step.
@@ -403,7 +414,7 @@ The signature component. It holds the first Inbox item with its whole action.
 
 ### Stack tile
 
-A `tile` row with the window title, a 14 sp 600 title, and a 12 sp `sub` line, each on 1 line. From a font scale of 1.3, the window title takes 2 lines in every tile, so the tiles of 1 row keep the same height. A working agent shows a turning ring in the place of its dot.
+Flux for iOS and Flux for macOS only. A `tile` row with the window title, a 14 sp 600 title, and a 12 sp `sub` line, each on 1 line. From a font scale of 1.3, the window title takes 2 lines in every tile, so the tiles of 1 row keep the same height. A working agent shows a turning ring in the place of its dot.
 
 ### Agent screen
 

@@ -1419,7 +1419,7 @@ private fun LiveTerminalView(
 // ───────────────────────── Output ─────────────────────────
 
 /** How close to the end the output must be, in pixels, to follow new lines. */
-private const val FOLLOW_SLACK_PX = 48
+internal const val FOLLOW_SLACK_PX = 48
 
 /**
  * The output of an agent or a terminal as a small terminal: dark, mono,

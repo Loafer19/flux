@@ -137,10 +137,8 @@ object Share {
         tls: org.omarchy.flux.net.Tls,
     ) {
         val mime = Android.mimeType(name)
-        val transfer = InboxFeed.transferStarted(d.id, from, name, incoming = true)
         val entry = SendLog.fileStarted(d.id, from, name, p.payloadSize, incoming = true)
         val dl = runCatching { Android.createDownload(core.app, name, mime) }.getOrElse {
-            InboxFeed.transferEnded(transfer, false)
             SendLog.fileEnded(entry, false)
             core.toast("Cannot save $name: ${it.message}")
             d.send(TunnelPackets.failed(token, "cannot save the file"))
@@ -154,8 +152,8 @@ object Share {
             .onFailure { Log.w(TAG, "receive $name failed", it) }
             .isSuccess
         Android.finishDownload(core.app, dl, ok)
-        InboxFeed.transferEnded(transfer, ok)
-        SendLog.fileEnded(entry, ok)
+        // The chat opens the file. An app only shows in Downloads, so that a computer cannot offer an app to install.
+        SendLog.fileEnded(entry, ok, if (ApkCheck.isApk(name, mime)) "" else dl.uri.toString())
         if (!ok) {
             core.toast("Receiving $name failed")
             return
@@ -207,7 +205,6 @@ object Share {
                 d.send(Packet(Types.SHARE_UPDATE, bodyOf("numberOfFiles" to files.size, "totalPayloadSize" to total)))
                 val sent = ArrayList<String>()
                 for ((uri, name, size) in files) {
-                    val transfer = InboxFeed.transferStarted(d.id, d.identity.deviceName, name, incoming = false)
                     val entry = SendLog.fileStarted(d.id, d.identity.deviceName, name, size, incoming = false)
                     val ok = runCatching {
                         // The protocol needs the exact size before the transfer.
@@ -239,7 +236,6 @@ object Share {
                             temp?.delete()
                         }
                     }.onFailure { Log.w(TAG, "send $name failed", it) }.isSuccess
-                    InboxFeed.transferEnded(transfer, ok)
                     SendLog.fileEnded(entry, ok)
                     if (ok) sent += name else core.toast("Sending $name to ${d.identity.deviceName} failed")
                 }

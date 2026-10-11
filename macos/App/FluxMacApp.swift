@@ -23,7 +23,7 @@ struct FluxMacApp: App {
         }
 
         // A window, not a menu: a menu runs no task when it opens, so the
-        // master tile could not read a fresh output for its choices.
+        // cards could not read a fresh output for their choices.
         MenuBarExtra {
             switch delegate.launch {
             case .ready(let model):
@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ReplyLock.watch()
         guard case .ready(let model) = launch else { return }
         model.watchTheme()
+        model.watchEvents()
         FeatureHooks.didLaunch(model: model)
         model.startConnectGrace()
         model.core.start()
@@ -146,7 +147,7 @@ private struct MenuBarMark: View {
     let model: AppModel
 
     var body: some View {
-        let count = Inbox.needsYou(model.inboxItems(now: Date()))
+        let count = Inbox.needsYou(model.inboxItems())
         HStack(spacing: 3) {
             Image(model.connectedPaired.isEmpty ? "MenuBarIconOffline" : "MenuBarIcon")
             if count > 0 {

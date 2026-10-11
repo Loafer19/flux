@@ -2,7 +2,7 @@ import AppKit
 import FluxKit
 import SwiftUI
 
-/// The main window: the sidebar with the 4 destinations, and the stack of
+/// The main window: the sidebar with the 3 destinations, and the stack of
 /// the selected destination in the detail column.
 struct ContentView: View {
     @Environment(AppModel.self) private var model
@@ -14,10 +14,8 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
             switch model.destination {
-            case .inbox:
-                NavigationStack(path: $model.inboxPath) { InboxView() }
-            case .send:
-                NavigationStack(path: $model.sendPath) { SendView() }
+            case .chat:
+                NavigationStack(path: $model.chatPath) { ChatView() }
             case .control:
                 NavigationStack(path: $model.controlPath) { ControlView() }
             case .computers:

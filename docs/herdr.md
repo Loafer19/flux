@@ -439,9 +439,9 @@ It shows up to 1000 lines of output.
 It does not start agents, close them, open terminals, or show the live terminal.
 
 - **Control** has the **Agents and terminals** tool. Its line counts the agents and the terminals. Its badge shows the number of blocked agents.
-- The Inbox shows each agent that waits for input, works, or is done. See [Inbox and navigation](macos.md#inbox-and-navigation).
+- **Chat** shows each agent that waits for input, works, or is done. An agent that waits shows its choices there. See [Chat and navigation](macos.md#chat-and-navigation).
 - **Agents and terminals** opens a window with the agent list on the left and the thread of the selected agent on the right. When more than 1 computer has agents, Flux asks which one.
-- **Open thread** on the master tile of the Inbox opens the agent in that window. The menu of each computer in the menu bar panel has **Agents…** too.
+- **Open thread** on the card of an agent in **Chat** opens the agent in that window. The menu of each computer in the menu bar panel has **Agents…** too.
 - The output uses the colors of Tokyo Night in dark mode and Tokyo Night Day in light mode.
 - The Mac fits the output to the width of the window, as the phone does. See [See your agents](#see-your-agents).
 - When you scroll up to read older lines, the output stays there when new output comes. To go back to the newest lines, select the arrow at the bottom of the output. On Android, the arrow is a round key at the bottom right of the thread.

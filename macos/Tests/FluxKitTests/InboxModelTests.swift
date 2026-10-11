@@ -3,8 +3,6 @@ import XCTest
 
 /// Ported from InboxModelTest.kt of the Android app, plus the text of the items.
 final class InboxModelTests: XCTestCase {
-    private let t0 = Date(timeIntervalSince1970: 0)
-
     private func device(_ id: String, paired: Bool = true, online: Bool = true, pairState: PairState? = nil) -> DeviceSnapshot {
         let state: PairState = pairState ?? (paired ? PairState.paired : PairState.none)
         return DeviceSnapshot(id: id, name: "name-\(id)", type: "laptop", ip: "", isFlux: true, paired: paired, online: online,
@@ -15,53 +13,18 @@ final class InboxModelTests: XCTestCase {
         HerdrState(enabled: true, running: true, agents: list, control: true)
     }
 
-    private func player(_ name: String, title: String = "", artist: String = "", playing: Bool = false) -> RemotePlayer {
-        var p = RemotePlayer(name: name)
-        p.title = title
-        p.artist = artist
-        p.playing = playing
-        return p
-    }
-
-    private func media(_ p: RemotePlayer) -> RemoteMedia {
-        var m = RemoteMedia()
-        m.players = [p.name]
-        m.current = p.name
-        m.states = [p.name: p]
-        return m
-    }
-
     private func approval(_ computer: String) -> ApproveRequest {
         ApproveRequest(computerId: computer, computerName: "name-\(computer)", id: "r1", kind: .approve, host: "host",
                        user: "user", service: "sudo", tty: "pts/1", rhost: "", time: 0,
                        nonce: String(repeating: "0", count: 64), timeoutSeconds: 60)
     }
 
-    private func transfer(_ name: String, incoming: Bool = true, state: FileTransfer.State = .running,
-                          started: Date, ended: Date? = nil) -> FileTransfer {
-        FileTransfer(deviceId: "a", name: name, incoming: incoming, size: 0, state: state, started: started, ended: ended)
-    }
-
-    /// The items at the time 0, with every player seen at the time 0.
-    private func inbox(_ devices: [DeviceSnapshot], herdr: [String: HerdrState] = [:], media: [String: RemoteMedia] = [:],
-                       approval: ApproveRequest? = nil, transfers: [FileTransfer] = [], clip: ClipEvent? = nil) -> [InboxItem] {
-        let playedAt = Dictionary(devices.map { ($0.id, t0) }, uniquingKeysWith: { first, _ in first })
-        return Inbox.items(devices: devices, herdr: herdr, media: media, approval: approval, transfers: transfers, clip: clip,
-                           now: t0, playedAt: playedAt)
+    private func inbox(_ devices: [DeviceSnapshot], herdr: [String: HerdrState] = [:], approval: ApproveRequest? = nil) -> [InboxItem] {
+        Inbox.items(devices: devices, herdr: herdr, approval: approval)
     }
 
     private func agentOf(_ item: InboxItem) -> HerdrAgent? {
         if case .agent(_, let agent, _) = item.content { return agent }
-        return nil
-    }
-
-    private func transferOf(_ item: InboxItem) -> FileTransfer? {
-        if case .transfer(let t) = item.content { return t }
-        return nil
-    }
-
-    private func mediaDevice(_ item: InboxItem) -> String? {
-        if case .media(let deviceId, _) = item.content { return deviceId }
         return nil
     }
 
@@ -70,74 +33,17 @@ final class InboxModelTests: XCTestCase {
     private let done = HerdrAgent(pane: "w3:p1", agent: "claude", status: .done, title: "Fix test")
     private let idle = HerdrAgent(pane: "w3:p2", agent: "pi", status: .idle)
 
-    func testWhatNeedsTheUserComesFirst() {
+    func testTheItemsAreTheAgentsTheApprovalAndThePairRequests() {
         let devices = [device("a"), device("new", paired: false, pairState: .incoming)]
-        let clip = ClipEvent(deviceIds: ["a"], computer: "name-a", sent: true, preview: "text", at: t0)
-        let items = inbox(devices, herdr: ["a": agents([working, blocked, done, idle])],
-                          media: ["a": media(player("Spotify", title: "Song", playing: true))],
-                          approval: approval("a"), transfers: [transfer("f.pdf", started: t0)], clip: clip)
-        XCTAssertEqual(items.map { $0.kind },
-                       [.agentInput, .approval, .pairRequest, .media, .clipboard, .transfer, .agentDone, .agentWorking],
-                       "what needs the user, then what plays, the clip, and the transfers, then the agents that do not wait")
+        let items = inbox(devices, herdr: ["a": agents([working, blocked, done, idle])], approval: approval("a"))
+        XCTAssertEqual(items.map { $0.kind }, [.agentWorking, .agentInput, .agentDone, .pairRequest, .approval])
         XCTAssertEqual(items.compactMap { agentOf($0) }.filter { $0.status == .idle }.count, 0, "an idle agent is not news")
         XCTAssertEqual(Inbox.needsYou(items), 3)
     }
 
-    func testAComputerThatIsNotReachableAddsNoAgentsAndNoPlayer() {
+    func testAComputerThatIsNotReachableAddsNoAgents() {
         let d = device("a", online: false)
-        let items = inbox([d], herdr: ["a": agents([blocked])], media: ["a": media(player("mpv", title: "x", playing: true))])
-        XCTAssertTrue(items.isEmpty)
-    }
-
-    func testRunningTransfersComeFirstThenTheNewest() {
-        let old = transfer("old", state: .done, started: Date(timeIntervalSince1970: 10))
-        let newer = transfer("new", state: .failed("x"), started: Date(timeIntervalSince1970: 20))
-        let run = transfer("run", incoming: false, started: Date(timeIntervalSince1970: 5))
-        let names = inbox([], transfers: [old, newer, run]).compactMap { transferOf($0)?.name }
-        XCTAssertEqual(names, ["run", "new", "old"])
-    }
-
-    func testAPlayingPlayerComesBeforeAPausedOne() {
-        let devices = [device("a"), device("b"), device("c")]
-        let players = ["a": media(player("mpv", title: "Paused song")),
-                       "b": media(player("Spotify", title: "Song", playing: true)),
-                       "c": media(player("Firefox"))]
-        let ids = inbox(devices, media: players).compactMap { mediaDevice($0) }
-        XCTAssertEqual(ids, ["b", "a"], "a paused player without a title is not news")
-    }
-
-    func testFinishedTransfersAndTheClipLeaveAfterTheKeepTime() {
-        let now = Date(timeIntervalSince1970: 10 * Inbox.keep)
-        let run = transfer("run", started: t0)
-        let done = transfer("done", state: .done, started: t0, ended: now.addingTimeInterval(-Inbox.keep))
-        let old = transfer("old", state: .failed("x"), started: t0, ended: now.addingTimeInterval(-Inbox.keep - 1))
-        let fresh = ClipEvent(deviceIds: ["a"], computer: "a", sent: true, preview: "x", at: now.addingTimeInterval(-60))
-        var stale = fresh
-        stale.at = now.addingTimeInterval(-Inbox.keep - 1)
-        let items = Inbox.items(devices: [], herdr: [:], media: [:], approval: nil, transfers: [run, done, old], clip: fresh,
-                                now: now, playedAt: [:])
-        XCTAssertEqual(items.map { $0.key }, ["clip", "transfer|\(run.id.uuidString)", "transfer|\(done.id.uuidString)"])
-        let gone = Inbox.items(devices: [], herdr: [:], media: [:], approval: nil, transfers: [old], clip: stale,
-                               now: now, playedAt: [:])
-        XCTAssertTrue(gone.isEmpty)
-    }
-
-    func testAPausedPlayerLeavesAfterTheKeepTime() {
-        let now = Date(timeIntervalSince1970: 10 * Inbox.keep)
-        let a = device("a")
-        let b = device("b")
-        let playing = ["a": media(player("Spotify", title: "Song", playing: true)), "b": media(player("mpv", title: "x"))]
-        let paused = ["a": media(player("Spotify", title: "Song"))]
-        let played = Inbox.notePlaying([:], devices: [a, b], media: playing, now: now)
-        XCTAssertEqual(played, ["a": now], "only a player that plays gets a time")
-        XCTAssertEqual(Inbox.notePlaying(played, devices: [a], media: paused, now: now.addingTimeInterval(1)), played)
-        func items(_ players: [String: RemoteMedia], at time: Date, _ playedAt: [String: Date]) -> [InboxItem] {
-            Inbox.items(devices: [a], herdr: [:], media: players, approval: nil, transfers: [], clip: nil, now: time, playedAt: playedAt)
-        }
-        XCTAssertEqual(items(paused, at: now.addingTimeInterval(Inbox.keep), played).count, 1)
-        XCTAssertTrue(items(paused, at: now.addingTimeInterval(Inbox.keep + 1), played).isEmpty)
-        XCTAssertTrue(items(paused, at: now, [:]).isEmpty, "a paused player that did not play here is not news")
-        XCTAssertEqual(items(playing, at: now, [:]).count, 1, "a player that plays always shows")
+        XCTAssertTrue(inbox([d], herdr: ["a": agents([blocked])]).isEmpty)
     }
 
     func testTwoAgentsOnOnePaneMakeOneItem() {
@@ -161,59 +67,9 @@ final class InboxModelTests: XCTestCase {
 
     func testTheScopeKeepsItsComputerAndThePairRequests() {
         let devices = [device("a"), device("b"), device("new", paired: false, pairState: .incoming)]
-        let clip = ClipEvent(deviceIds: ["a", "b"], computer: "2 computers", sent: true, preview: "x", at: t0)
-        let items = inbox(devices, herdr: ["a": agents([blocked]), "b": agents([done])], clip: clip)
-        XCTAssertEqual(Inbox.inScope(items, scope: nil).count, 4)
-        XCTAssertEqual(Inbox.inScope(items, scope: "b").map { $0.kind }, [.pairRequest, .clipboard, .agentDone])
-    }
-
-    func testASwipeMovesTheMasterToTheEndAndATapPromotes() {
-        let items = inbox([device("a")], herdr: ["a": agents([blocked, done, working])])
-        let keys = items.map { $0.key }
-        var a = InboxArrangement().sync(items)
-        XCTAssertEqual(a.arrange(items).map { $0.key }, keys)
-
-        a = a.swipe(keys[0])
-        XCTAssertEqual(a.arrange(items).map { $0.key }, [keys[1], keys[2], keys[0]])
-
-        a = a.promote(keys[0])
-        XCTAssertEqual(a.arrange(items).map { $0.key }, [keys[0], keys[1], keys[2]])
-
-        a = a.promote(keys[2])
-        XCTAssertEqual(a.arrange(items).map { $0.key }, [keys[2], keys[0], keys[1]])
-
-        // A swipe on the pinned master removes the pin.
-        a = a.swipe(keys[2])
-        XCTAssertNil(a.pinned)
-        XCTAssertEqual(a.arrange(items).map { $0.key }, [keys[0], keys[1], keys[2]])
-    }
-
-    func testANewItemThatNeedsTheUserTakesTheMasterBack() {
-        let before = inbox([device("a")], herdr: ["a": agents([done, working])])
-        var a = InboxArrangement().sync(before).promote(before[1].key)
-        XCTAssertEqual(a.arrange(before).first?.key, before[1].key)
-
-        // The same items keep the pin.
-        a = a.sync(before)
-        XCTAssertEqual(a.pinned, before[1].key)
-
-        let after = inbox([device("a")], herdr: ["a": agents([done, working, blocked])])
-        a = a.sync(after)
-        XCTAssertNil(a.pinned)
-        XCTAssertEqual(a.arrange(after).first?.kind, .agentInput)
-    }
-
-    func testTheFirstSyncKeepsARestoredPin() {
-        let items = inbox([device("a")], herdr: ["a": agents([blocked, done])])
-        let a = InboxArrangement(pinned: items[1].key).sync(items)
-        XCTAssertEqual(a.pinned, items[1].key)
-    }
-
-    func testSyncForgetsTheKeysThatAreGone() {
-        let items = inbox([device("a")], herdr: ["a": agents([blocked, done])])
-        let a = InboxArrangement(pinned: "gone", deferred: ["gone", items[0].key]).sync(items)
-        XCTAssertNil(a.pinned)
-        XCTAssertEqual(a.deferred, [items[0].key])
+        let items = inbox(devices, herdr: ["a": agents([blocked]), "b": agents([done])])
+        XCTAssertEqual(Inbox.inScope(items, scope: nil).count, 3)
+        XCTAssertEqual(Inbox.inScope(items, scope: "b").map { $0.kind }, [.agentDone, .pairRequest])
     }
 
     func testAStatusChangeMakesANewItem() {
@@ -287,21 +143,6 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(Inbox.clipPreview(String(repeating: "x", count: 160)).count, 160, "160 characters stay whole")
     }
 
-    func testTheFeedKeepsRunningTransfersAndTheNewestFinishedOnes() {
-        // Newest first, as ShareModel keeps them. f2 failed.
-        let finished = (1...5).reversed().map { i in
-            transfer("f\(i)", state: i == 2 ? .failed("x") : .done, started: Date(timeIntervalSince1970: Double(i)))
-        }
-        XCTAssertEqual(Inbox.recentTransfers(finished, limit: 3).map { $0.name }, ["f5", "f4", "f3"])
-        let running = (6...9).reversed().map { i in
-            transfer("f\(i)", incoming: false, started: Date(timeIntervalSince1970: Double(i)))
-        }
-        XCTAssertEqual(Inbox.recentTransfers(running + finished, limit: 3).map { $0.name }, ["f9", "f8", "f7", "f6"],
-                       "running transfers stay above the limit")
-        XCTAssertEqual(Inbox.recentTransfers([running[0]] + finished, limit: 3).map { $0.name }, ["f9", "f5", "f4"])
-        XCTAssertEqual(Inbox.recentTransfers(finished).count, 4, "the Inbox keeps 4 transfers")
-    }
-
     func testTheFeedNamesTheComputersOfAClip() throws {
         let c = try XCTUnwrap(ClipEvent.sent(to: [(id: "a", name: "desk"), (id: "b", name: "laptop")], text: "hello\nworld"))
         XCTAssertEqual(c.computer, "2 computers")
@@ -327,13 +168,9 @@ final class InboxModelTests: XCTestCase {
         XCTAssertFalse(c.image)
         XCTAssertEqual(c.preview, "Hidden text")
         XCTAssertFalse(c.preview.contains("s3cret"), "the event keeps no part of the secret")
-        let item = InboxItem(.clip(c), computer: "desk")
-        XCTAssertEqual(item.stackTitle, "Hidden text")
-        XCTAssertEqual(item.masterTitle, "Sent to desk")
 
         let direct = ClipEvent(deviceIds: ["a"], computer: "desk", sent: true, preview: "s3cret", secret: true)
         XCTAssertEqual(direct.preview, "Hidden text", "the init drops the text of a secret")
-        XCTAssertEqual(InboxItem(.clip(direct), computer: "desk").stackTitle, "Hidden text")
 
         let image = try XCTUnwrap(ClipEvent.sent(to: [(id: "a", name: "desk")], text: nil, secret: true))
         XCTAssertFalse(image.secret, "an image has no text to hide")
@@ -358,9 +195,7 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(input.stateWord, "Needs input")
         XCTAssertEqual(input.tone, .red)
         XCTAssertEqual(input.sourceParts, ["codex", "billing"])
-        XCTAssertEqual(input.stackTitle, "Migrate")
-        XCTAssertEqual(input.stackLine, "desk")
-        XCTAssertEqual(input.masterTitle, "Migrate")
+        XCTAssertEqual(input.title, "Migrate")
 
         let finished = InboxItem(.agent(deviceId: "a", agent: done, control: true), computer: "desk")
         XCTAssertEqual(finished.stateWord, "Done")
@@ -374,7 +209,7 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(works.stateWord, "Working")
         XCTAssertEqual(works.tone, .accent)
         XCTAssertEqual(works.sourceParts, ["claude", "flux"], "the workspace stands in for the project")
-        XCTAssertEqual(works.stackTitle, "w1:p1", "without a title and a project, the pane names the agent")
+        XCTAssertEqual(works.title, "w1:p1", "without a title and a project, the pane names the agent")
 
         let approve = InboxItem(.approval(approval("a")), computer: "name-a")
         XCTAssertEqual(approve.kind, .approval)
@@ -383,14 +218,10 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(approve.stateWord, "Needs approval")
         XCTAssertEqual(approve.tone, .red)
         XCTAssertEqual(approve.sourceParts, ["sudo"])
-        XCTAssertEqual(approve.stackTitle, "Approve sudo")
-        XCTAssertEqual(approve.stackLine, "user on host")
-        XCTAssertEqual(approve.masterTitle, "Approve sudo on host?")
+        XCTAssertEqual(approve.title, "Approve sudo on host?")
         var enrollRequest = approval("a")
         enrollRequest.kind = .enroll
-        let enroll = InboxItem(.approval(enrollRequest), computer: "name-a")
-        XCTAssertEqual(enroll.stackTitle, "Enroll \(noun)")
-        XCTAssertEqual(enroll.masterTitle, "Enroll \(noun) on host?")
+        XCTAssertEqual(InboxItem(.approval(enrollRequest), computer: "name-a").title, "Enroll \(noun) on host?")
 
         let pair = InboxItem(.pair(deviceId: "new"), computer: "name-new")
         XCTAssertEqual(pair.kind, .pairRequest)
@@ -399,68 +230,7 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(pair.stateWord, "Pair request")
         XCTAssertEqual(pair.tone, .red)
         XCTAssertEqual(pair.sourceParts, [])
-        XCTAssertEqual(pair.stackTitle, "name-new")
-        XCTAssertEqual(pair.stackLine, "Compare the key to pair")
-        XCTAssertEqual(pair.masterTitle, "name-new")
-
-        let incoming = transfer("f.pdf", started: t0)
-        let receiving = InboxItem(.transfer(incoming), computer: "desk")
-        XCTAssertEqual(receiving.kind, .transfer)
-        XCTAssertEqual(receiving.key, "transfer|\(incoming.id.uuidString)")
-        XCTAssertEqual(receiving.deviceIds, ["a"])
-        XCTAssertEqual(receiving.stateWord, "Receiving")
-        XCTAssertEqual(receiving.tone, .accent)
-        XCTAssertEqual(receiving.sourceParts, [])
-        XCTAssertEqual(receiving.stackTitle, "f.pdf")
-        XCTAssertEqual(receiving.stackLine, "From desk")
-        XCTAssertEqual(receiving.masterTitle, "f.pdf")
-        let sending = InboxItem(.transfer(transfer("g.png", incoming: false, started: t0)), computer: "desk")
-        XCTAssertEqual(sending.stateWord, "Sending")
-        XCTAssertEqual(sending.stackLine, "To desk")
-        let received = InboxItem(.transfer(transfer("f.pdf", state: .done, started: t0, ended: t0)), computer: "desk")
-        XCTAssertEqual(received.stateWord, "Received")
-        XCTAssertEqual(received.tone, .green)
-        let sent = InboxItem(.transfer(transfer("g.png", incoming: false, state: .done, started: t0, ended: t0)), computer: "desk")
-        XCTAssertEqual(sent.stateWord, "Sent")
-        let failed = InboxItem(.transfer(transfer("f.pdf", state: .failed("x"), started: t0, ended: t0)), computer: "desk")
-        XCTAssertEqual(failed.stateWord, "Failed")
-        XCTAssertEqual(failed.tone, .red)
-
-        let text = InboxItem(.clip(ClipEvent(deviceIds: ["a"], computer: "desk", sent: true, preview: "hello", at: t0)), computer: "desk")
-        XCTAssertEqual(text.kind, .clipboard)
-        XCTAssertEqual(text.key, "clip")
-        XCTAssertEqual(text.deviceIds, ["a"])
-        XCTAssertEqual(text.stateWord, "Clipboard")
-        XCTAssertEqual(text.tone, .cyan)
-        XCTAssertEqual(text.sourceParts, [])
-        XCTAssertEqual(text.stackTitle, "hello")
-        XCTAssertEqual(text.stackLine, "Sent to desk")
-        XCTAssertEqual(text.masterTitle, "Sent to desk")
-        let image = InboxItem(.clip(ClipEvent.received(from: "a", computer: "desk", text: nil, at: t0)), computer: "desk")
-        XCTAssertEqual(image.stackTitle, "An image")
-        XCTAssertEqual(image.stackLine, "From desk")
-        XCTAssertEqual(image.masterTitle, "From desk")
-
-        let plays = InboxItem(.media(deviceId: "a", player: player("Spotify", title: "Song", artist: "Artist", playing: true)), computer: "desk")
-        XCTAssertEqual(plays.kind, .media)
-        XCTAssertEqual(plays.key, "media|a")
-        XCTAssertEqual(plays.deviceIds, ["a"])
-        XCTAssertEqual(plays.stateWord, "Playing")
-        XCTAssertEqual(plays.tone, .green)
-        XCTAssertEqual(plays.sourceParts, ["Spotify"])
-        XCTAssertEqual(plays.stackTitle, "Song")
-        XCTAssertEqual(plays.stackLine, "Artist · desk")
-        XCTAssertEqual(plays.masterTitle, "Song")
-        let paused = InboxItem(.media(deviceId: "a", player: player("mpv")), computer: "desk")
-        XCTAssertEqual(paused.stateWord, "Paused")
-        XCTAssertEqual(paused.tone, .sub)
-        XCTAssertEqual(paused.stackTitle, "Unknown title")
-        XCTAssertEqual(paused.stackLine, "desk")
-        // The thread design names the computer of a player only with more than 1 computer in scope.
-        XCTAssertEqual(plays.stackLine(many: false), "Artist")
-        XCTAssertEqual(plays.stackLine(many: true), "Artist · desk")
-        XCTAssertEqual(paused.stackLine(many: false), "desk", "a player with no artist keeps its computer")
-        XCTAssertEqual(receiving.stackLine(many: false), "From desk")
+        XCTAssertEqual(pair.title, "name-new asks to pair")
     }
 
     @MainActor

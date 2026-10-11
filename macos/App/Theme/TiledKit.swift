@@ -12,10 +12,8 @@ enum TiledMetrics {
     /// The corner of the smaller parts in a tile: choice rows, buttons, badges, the command block.
     static let smallCorner: CGFloat = 8
     static let chipCorner: CGFloat = 10
-    /// The widest column of the pages other than the Inbox.
+    /// The widest column of the pages, also of the chat.
     static let maxContentWidth: CGFloat = 840
-    /// The widest choice row and action row in the master tile.
-    static let maxActionWidth: CGFloat = 600
     /// The alpha of a tile, a tool, or a choice that takes no clicks.
     static let disabledAlpha: Double = 0.55
     /// The least height of a stack tile and a choice row.
@@ -200,7 +198,7 @@ private struct FluxButtonBody: View {
     }
 }
 
-/// The large tool at the top of Send and Control: an icon at the top, the
+/// The large tool at the top of Control: an icon at the top, the
 /// label and its line at the bottom, on `tileHi`.
 struct MasterTool: View {
     let icon: String

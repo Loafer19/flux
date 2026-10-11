@@ -103,6 +103,10 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     /// How long this Mac waits after a reply before it reads the output
     /// again. The agent needs a moment to draw.
     static let rereadDelay: Duration = .milliseconds(700)
+    /// How long a reply in the place of a choice waits for the agent to leave its dialog, see `tell`.
+    static let tellWait: Duration = .seconds(4)
+    /// How often a reply in the place of a choice checks the status of the agent.
+    static let tellStep: Duration = .milliseconds(250)
 
     public let incoming = [PacketType.fluxHerdr]
     public let outgoing = [PacketType.fluxHerdr]
@@ -381,12 +385,13 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     /// with the error "The agent waits for a choice. Pick a choice first."
     /// and the code "blocked", see `HerdrReply.blocked`. With `answer`,
     /// fluxd types the text into the dialog. Set `answer` only from an
-    /// action where the user chose to type an answer.
+    /// action where the user chose to type an answer. Without `feedback`,
+    /// an open review of the pane adds no "Review feedback" line.
     @MainActor
-    public func sendPrompt(_ deviceId: String, pane: String, _ text: String, answer: Bool = false) {
+    public func sendPrompt(_ deviceId: String, pane: String, _ text: String, answer: Bool = false, feedback: Bool = true) {
         var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
-        if !answer, let path = reviews[deviceId + ":" + pane] {
+        if !answer, feedback, let path = reviews[deviceId + ":" + pane] {
             t = "Review feedback for \(path.isEmpty ? "the working tree" : path):\n" + t
         }
         guard t.utf8.count <= HerdrWire.maxPrompt else {
@@ -396,6 +401,26 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
             return
         }
         reply(deviceId, pane: pane, action: "prompt", HerdrWire.prompt(pane: pane, t, answer: answer), text: t)
+    }
+
+    /// Rejects the action that the agent in `pane` asks for with the choice
+    /// `keys`, such as "No, and tell Codex what to do differently", and then
+    /// sends `text` as the next prompt. The prompt goes out when the agent no
+    /// longer waits for a choice, or after `tellWait`. fluxd refuses a
+    /// prompt to an agent that still waits, so the text cannot select a choice.
+    @MainActor
+    public func tell(_ deviceId: String, pane: String, keys: [String], text: String) {
+        sendKeys(deviceId, pane: pane, keys)
+        Task { @MainActor [weak self] in
+            let start = ContinuousClock.now
+            while ContinuousClock.now - start < Self.tellWait {
+                try? await Task.sleep(for: Self.tellStep)
+                guard let self else { return }
+                if self.model.states[deviceId]?.agents.first(where: { $0.pane == pane })?.status != .blocked { break }
+            }
+            // The reply answers the agent, not a review of its changes.
+            self?.sendPrompt(deviceId, pane: pane, text, feedback: false)
+        }
     }
 
     /// Types `text` in the terminal `pane`, then sends `keys`, for example

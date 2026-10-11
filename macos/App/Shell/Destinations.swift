@@ -2,16 +2,15 @@ import AppKit
 import FluxKit
 import SwiftUI
 
-/// The 4 destinations of the sidebar, in order.
+/// The 3 destinations of the sidebar, in order.
 enum MacDestination: String, CaseIterable, Identifiable, Hashable {
-    case inbox, send, control, computers
+    case chat, control, computers
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .inbox: return "Inbox"
-        case .send: return "Send"
+        case .chat: return "Chat"
         case .control: return "Control"
         case .computers: return "Computers"
         }
@@ -19,8 +18,7 @@ enum MacDestination: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
-        case .inbox: return "tray"
-        case .send: return "paperplane"
+        case .chat: return "text.bubble"
         case .control: return "slider.horizontal.3"
         case .computers: return "laptopcomputer"
         }
@@ -29,15 +27,14 @@ enum MacDestination: String, CaseIterable, Identifiable, Hashable {
     /// The key of the destination in the Go menu, with Command.
     var shortcut: KeyEquivalent {
         switch self {
-        case .inbox: return KeyEquivalent("1")
-        case .send: return KeyEquivalent("2")
-        case .control: return KeyEquivalent("3")
-        case .computers: return KeyEquivalent("4")
+        case .chat: return KeyEquivalent("1")
+        case .control: return KeyEquivalent("2")
+        case .computers: return KeyEquivalent("3")
         }
     }
 }
 
-/// A feature card that opens on a page of its own from Send or Control.
+/// A feature card that opens on a page of its own from Control.
 enum MacCard: String, Hashable {
     case share, clipboard, media, commands, mic, stream
 
@@ -63,14 +60,14 @@ enum MacRoute: Hashable {
     case computer(String)
 }
 
-/// The sidebar: the 4 destinations, and this Mac at the bottom. The Inbox
+/// The sidebar: the 3 destinations, and this Mac at the bottom. The Chat
 /// row counts the items of all computers that need the user.
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.tn) private var tn
 
     var body: some View {
-        let count = Inbox.needsYou(model.inboxItems(now: Date()))
+        let count = Inbox.needsYou(model.inboxItems())
         let needs = needsText(count)
         List(selection: Binding<MacDestination?>(
             get: { model.destination },
@@ -78,8 +75,8 @@ struct SidebarView: View {
         )) {
             ForEach(MacDestination.allCases) { d in
                 Label(d.title, systemImage: d.systemImage)
-                    .badge(d == .inbox ? count : 0)
-                    .accessibilityValue(d == .inbox ? needs : "")
+                    .badge(d == .chat ? count : 0)
+                    .accessibilityValue(d == .chat ? needs : "")
                     .tag(d)
             }
         }
@@ -163,9 +160,8 @@ extension View {
     }
 }
 
-/// The Go menu: Command-1 to Command-4 open the destinations, and
-/// Command-] shows the next item of the Inbox. Command-R stays with the
-/// agents window.
+/// The Go menu: Command-1 to Command-3 open the destinations. Command-R
+/// stays with the agents window.
 struct GoMenu: View {
     let launch: Launch
     @Environment(\.openWindow) private var openWindow
@@ -180,12 +176,6 @@ struct GoMenu: View {
                 }
                 .keyboardShortcut(d.shortcut, modifiers: .command)
             }
-            Divider()
-            Button("Show the next item") {
-                model.destination = .inbox
-                model.showNextItem()
-            }
-            .keyboardShortcut("]", modifiers: .command)
         }
     }
 }

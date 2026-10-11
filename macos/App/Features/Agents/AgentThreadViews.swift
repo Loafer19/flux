@@ -1,8 +1,8 @@
 import FluxKit
 import SwiftUI
 
-// The parts of the agent thread: the agents window and the Inbox master use
-// them. They follow the agent thread design of the Android app, see the
+// The parts of the agent thread: the agents window and the cards of the
+// chat use them. They follow the agent thread design of the Android app, see the
 // "Agent screen" section of DESIGN.md, in the sizes of the Mac app. The
 // agents window keeps its sidebar in the place of the strip of pills.
 

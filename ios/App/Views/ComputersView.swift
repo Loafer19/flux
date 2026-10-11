@@ -309,7 +309,7 @@ struct PairedComputerRow: View {
 }
 
 /// A computer that runs Flux and is not paired. A tap opens the pairing
-/// sheet. The pairing guide of the Inbox uses it too.
+/// sheet. The pairing guide of the chat uses it too.
 struct AvailableRow: View {
     let device: DeviceSnapshot
     @Environment(AppModel.self) private var model

@@ -4,7 +4,7 @@ import Observation
 import UserNotifications
 
 /// The UI state of the app. It mirrors the core and holds the destination,
-/// the scope, the order of the Inbox, and the theme setting.
+/// the scope, the times of the chat, and the theme setting.
 @MainActor
 @Observable
 final class AppModel {
@@ -14,18 +14,17 @@ final class AppModel {
     /// The device that the pairing sheet shows.
     var pairingSheet: String?
     /// The destination that the sidebar selects.
-    var destination: MacDestination = .inbox
+    var destination: MacDestination = .chat
     /// The pages on top of each destination.
-    var inboxPath: [MacRoute] = []
-    var sendPath: [MacRoute] = []
+    var chatPath: [MacRoute] = []
     var controlPath: [MacRoute] = []
     var computersPath: [MacRoute] = []
     /// The computer in scope, or nil for all computers. A new start begins with all computers.
     var scope: String?
-    /// The order that the user gave the Inbox.
-    var arrangement = InboxArrangement()
-    /// The last time that the player of each computer played, by device ID.
-    var playedAt: [String: Date] = [:]
+    /// The first time that this Mac saw each Inbox item of all computers, by key. See `watchEvents`.
+    private(set) var seen: [String: Date] = [:]
+    /// The reply that the dock of the chat writes to an agent in the place of a choice, or nil.
+    var chatReply: ChatReply?
     /// True for 3 seconds after a connection attempt starts. A computer
     /// that is not online then counts as connecting.
     private(set) var connecting = false
@@ -38,6 +37,7 @@ final class AppModel {
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var graceTask: Task<Void, Never>?
     @ObservationIgnored private var pairedTask: Task<Void, Never>?
+    @ObservationIgnored private var seenClock = SeenClock()
 
     init(core: FluxCore) {
         self.core = core
@@ -87,16 +87,14 @@ final class AppModel {
     var path: [MacRoute] {
         get {
             switch destination {
-            case .inbox: return inboxPath
-            case .send: return sendPath
+            case .chat: return chatPath
             case .control: return controlPath
             case .computers: return computersPath
             }
         }
         set {
             switch destination {
-            case .inbox: inboxPath = newValue
-            case .send: sendPath = newValue
+            case .chat: chatPath = newValue
             case .control: controlPath = newValue
             case .computers: computersPath = newValue
             }
@@ -144,59 +142,63 @@ final class AppModel {
         AppearanceController.shared.apply(night)
     }
 
-    // MARK: Inbox
+    // MARK: Chat
 
-    /// The Inbox items of all computers.
-    func inboxItems(now: Date) -> [InboxItem] {
-        Inbox.items(core: core, devices: state.devices, now: now, playedAt: playedAt)
+    /// The Inbox items of all computers: the agents, the approval, and the pair requests.
+    func inboxItems() -> [InboxItem] {
+        Inbox.items(core: core, devices: state.devices)
     }
 
-    /// Sets the computer in scope. The order of the Inbox syncs with the
-    /// items of the new scope at once, so that a pin set after the change stays.
+    /// Sets the computer in scope.
     func setScope(_ id: String?) {
         guard id != scope else { return }
         scope = id
-        let all = inboxItems(now: Date())
-        inboxChanged(all: all, scoped: Inbox.inScope(all, scope: id))
     }
 
-    /// Keeps the order of the Inbox and the prompts of the agents that wait.
-    /// The order syncs with the items in scope, as on Android. A new item in
-    /// scope that needs the user removes the pin. The menu bar panel shows
-    /// all computers in the same order, so a deferred item stays deferred
-    /// while it is on a computer. The prompts follow all computers.
-    func inboxChanged(all: [InboxItem], scoped: [InboxItem]) {
-        var next = arrangement.sync(scoped)
-        let present = Set(all.map(\.key))
-        next.deferred = arrangement.deferred.filter { present.contains($0) }
-        if next != arrangement { arrangement = next }
+    /// Keeps the times and the prompts of the Inbox items of all computers
+    /// while the app runs, also while no window shows them. It runs again
+    /// after each change of the items.
+    func watchEvents() {
+        let items = withObservationTracking {
+            inboxItems()
+        } onChange: { [weak self] in
+            // onChange runs before the change, so read again on the next turn.
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.watchEvents() } }
+        }
+        eventsChanged(items)
+    }
+
+    /// Records the first time of each new item, and keeps the prompt of each
+    /// agent that waits or works. A reply to an agent ends when the agent no
+    /// longer waits.
+    private func eventsChanged(_ items: [InboxItem]) {
+        let next = seenClock.update(items.map(\.key), now: Date())
+        if next != seen { seen = next }
         var keys = Set<String>()
-        for item in all {
-            // A working agent shows its step on the master, so its prompt stays too.
+        for item in items {
             if case .agent(let deviceId, let agent, _) = item.content, agent.status == .blocked || agent.status == .working {
                 keys.insert(HerdrModel.promptKey(deviceId, pane: agent.pane))
             }
         }
         core.plugin(HerdrPlugin.self)?.keepPrompts(keys)
+        // A reply ends when its agent no longer waits for the choice.
+        if let r = chatReply, !items.contains(where: { Self.waits($0, deviceId: r.deviceId, pane: r.pane) }) {
+            chatReply = nil
+        }
     }
 
-    /// Moves the master item to the end of the stack.
-    func showNext(_ key: String) {
-        arrangement = arrangement.swipe(key)
+    /// True when `item` is the agent in `pane` of the computer and waits for input.
+    private static func waits(_ item: InboxItem, deviceId: String, pane: String) -> Bool {
+        if case .agent(let id, let agent, _) = item.content { return id == deviceId && agent.pane == pane && agent.status == .blocked }
+        return false
     }
 
-    /// Moves a stack item to the master position.
-    func showFirst(_ key: String) {
-        arrangement = arrangement.promote(key)
-    }
-
-    /// Moves the master item of the Inbox in scope to the end of the stack.
-    /// The Go menu calls it.
-    func showNextItem() {
-        let scoped = Inbox.inScope(inboxItems(now: Date()), scope: scope)
-        let arranged = arrangement.arrange(scoped)
-        guard arranged.count > 1, let first = arranged.first else { return }
-        showNext(first.key)
+    /// The times of the chat for `items`: the first time of each item, or
+    /// `now` for an item that `watchEvents` did not record yet.
+    func chatSeen(_ items: [InboxItem], now: Date = Date()) -> [String: Date] {
+        var out = seen
+        for item in items where out[item.key] == nil { out[item.key] = now }
+        return out
     }
 
     /// Starts the 3 seconds in which a computer that is not online counts as connecting.
@@ -222,12 +224,12 @@ final class AppModel {
         if s != state { state = s }
         // A computer that is no longer paired leaves the scope.
         if let scope, !s.devices.contains(where: { $0.id == scope && $0.paired }) { self.scope = nil }
-        // A new pairing shows the Inbox of the new computer.
+        // A new pairing shows the chat of the new computer.
         if let id = Self.newlyPaired(old: old.devices.map { ($0.id, $0.paired) }, new: s.devices.map { ($0.id, $0.paired) }).first {
             pairingSheet = nil
             scope = id
-            destination = .inbox
-            inboxPath = []
+            destination = .chat
+            chatPath = []
             computersPath = []
             notePaired(id)
         }
@@ -275,7 +277,7 @@ final class AppModel {
     }
 
     /// A request from a computer does not take the window, so that a key
-    /// press meant for the open page cannot accept it. The Inbox shows the
+    /// press meant for the open page cannot accept it. The chat shows the
     /// request, and a notification shows the key. A click on the
     /// notification opens the pairing page of the computer.
     private func pairRequested(_ d: DeviceSnapshot) {

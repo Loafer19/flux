@@ -2,22 +2,25 @@ import FluxKit
 import SwiftUI
 import UserNotifications
 
-/// The texts of the Inbox about the computers in scope.
+/// The texts of the chat about the computers in scope.
 @MainActor
-enum InboxTexts {
+enum ChatTexts {
     /// The name of the computer in scope, or nil for all computers.
     static func scopeName(_ model: AppModel) -> String? {
         model.scope.flatMap { model.device($0)?.name }
     }
 
-    /// The title of an Inbox with nothing to do. In a scope, it names the computer.
-    static func nothing(_ model: AppModel) -> String {
-        scopeName(model).map { "Nothing on \($0) needs you" } ?? "Nothing needs you"
+    /// The context line of the chat, such as "omarchy · 2 need you". With
+    /// all computers in scope, the scope chip names the scope, so the line
+    /// gives only the count.
+    static func context(_ model: AppModel, needs: Int) -> String {
+        let count = needs > 0 ? "\(needs) need you" : "nothing needs you"
+        return scopeName(model).map { "\($0) · \(count)" } ?? count
     }
 
-    /// The count of the items that need the user, as a sentence.
-    nonisolated static func needs(_ count: Int) -> String {
-        count == 1 ? "1 item needs you" : "\(count) items need you"
+    /// The title of the computers in scope while the links connect.
+    nonisolated static func connecting(_ reach: InboxReach) -> String {
+        reach.offline.count == 1 ? "Connecting to \(reach.offline[0].name)" : "Connecting to your computers"
     }
 
     /// The line for the computers in scope that are not reachable.
@@ -28,84 +31,25 @@ enum InboxTexts {
         return "\(reach.offline.count) computers are not reachable. Their agents do not show here."
     }
 
-    /// True when the Inbox tells that computers in scope are not reachable.
-    /// While the links connect after a start, the Inbox does not say it.
+    /// True when the chat tells that computers in scope are not reachable.
+    /// While the links connect after a start, the chat does not say it.
     static func offlineShows(_ model: AppModel) -> Bool {
         !model.connecting && !Inbox.reach(scope: model.scope, devices: model.state.devices).offline.isEmpty
     }
 
-    /// The name of the computer that paired last, while the Inbox shows it.
+    /// The name of the computer that paired last, while the chat shows it.
     static func newlyPaired(_ model: AppModel) -> String? {
         guard let id = model.newlyPairedId, model.scope == nil || model.scope == id else { return nil }
         return model.device(id)?.name
     }
 }
 
-/// The status line above the master: how many items need the user, then
-/// the computers in scope that are not reachable, with Retry. The other
-/// notices follow under it.
-struct StatusLine: View {
-    /// The items in scope.
-    let scoped: [InboxItem]
-    /// The items of all computers.
-    let all: [InboxItem]
-    @Environment(AppModel.self) private var model
-    @Environment(\.tn) private var tn
-
-    var body: some View {
-        let needs = Inbox.needsYou(scoped)
-        let offline = InboxTexts.offlineShows(model)
-        let reach = Inbox.reach(scope: model.scope, devices: model.state.devices)
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                HStack(alignment: .top, spacing: 10) {
-                    if needs > 0 {
-                        Circle().fill(tn.red).frame(width: 8, height: 8).padding(.top, 5)
-                            .accessibilityHidden(true)
-                    } else if offline {
-                        LinkDot(online: false).padding(.top, 5)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        if needs > 0 {
-                            Text(InboxTexts.needs(needs))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(tn.text)
-                        } else {
-                            Text(InboxTexts.nothing(model))
-                                .font(.subheadline)
-                                .foregroundStyle(tn.sub)
-                        }
-                        if offline {
-                            Text(InboxTexts.offlineLine(reach))
-                                .font(.footnote)
-                                .foregroundStyle(tn.sub)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
-                if offline {
-                    Button("Retry") { model.retry() }
-                        .buttonStyle(FluxButtonStyle(kind: .text))
-                }
-            }
-            .frame(minHeight: offline ? 44 : 32)
-            .padding(.leading, 4)
-            InboxNotices(scoped: scoped, all: all, showOffline: false)
-        }
-    }
-}
-
-/// What the Inbox tells next to its items: a new pairing, the items on
-/// other computers that need the user, the computers in scope that are not
-/// reachable, and the notifications. `showOffline` is false when the status
-/// line or the large tile already tells that computers are not reachable.
-/// `showPaired` is false when the large tile already shows a new pairing.
-struct InboxNotices: View {
+/// What the chat tells under its entries: that the links connect, a new
+/// pairing, the items on other computers that need the user, the computers
+/// in scope that are not reachable, and the notifications.
+struct ChatNotices: View {
     let scoped: [InboxItem]
     let all: [InboxItem]
-    var showOffline = true
-    var showPaired = true
     @Environment(AppModel.self) private var model
     @Environment(\.tn) private var tn
     @AppStorage("inbox.notificationsHidden") private var notificationsHidden = false
@@ -116,7 +60,17 @@ struct InboxNotices: View {
         let status = NotificationAccess.shared.status
         let asks = !model.demo && !notificationsHidden && model.state.devices.contains { $0.paired }
         VStack(alignment: .leading, spacing: 4) {
-            if showPaired, let name = InboxTexts.newlyPaired(model) {
+            if model.connecting && reach.noneOnline {
+                HStack(spacing: 10) {
+                    FluxSpinner(size: 16)
+                    Text(ChatTexts.connecting(reach))
+                        .font(.footnote)
+                        .foregroundStyle(tn.sub)
+                }
+                .padding(.horizontal, 4)
+                .accessibilityElement(children: .combine)
+            }
+            if let name = ChatTexts.newlyPaired(model) {
                 Notice(mark: .paired, text: "\(name) is paired. What waits for you on \(name) shows here first.", strong: true) {
                     EmptyView()
                 }
@@ -128,8 +82,8 @@ struct InboxNotices: View {
                         .buttonStyle(FluxButtonStyle(kind: .text))
                 }
             }
-            if showOffline && InboxTexts.offlineShows(model) {
-                Notice(mark: .offline, text: InboxTexts.offlineLine(reach), strong: false) {
+            if ChatTexts.offlineShows(model) {
+                Notice(mark: .offline, text: ChatTexts.offlineLine(reach), strong: false) {
                     Button("Retry") { model.retry() }
                         .buttonStyle(FluxButtonStyle(kind: .text))
                 }

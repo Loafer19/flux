@@ -35,18 +35,24 @@ final class DemoModeTests: XCTestCase {
 
     func testRendersTheDemoScreens() throws {
         let app = try TestApp.model(demo: true, plugins: PluginRegistry.make())
-        try ScreenRender.render(NavigationStack { InboxView() }.modifier(ThemeRoot()).environment(app), name: "demo-01-inbox")
-        try ScreenRender.render(NavigationStack { SendView() }.modifier(ThemeRoot()).environment(app), name: "demo-02-send")
-        try ScreenRender.render(NavigationStack { ControlView() }.modifier(ThemeRoot()).environment(app), name: "demo-03-control")
-        try ScreenRender.render(NavigationStack { ComputersView() }.modifier(ThemeRoot()).environment(app), name: "demo-04-computers")
+        try ScreenRender.render(NavigationStack { ChatView() }.modifier(ThemeRoot()).environment(app), name: "demo-01-chat")
+        try ScreenRender.render(NavigationStack { ControlView() }.modifier(ThemeRoot()).environment(app), name: "demo-02-control")
+        try ScreenRender.render(NavigationStack { ComputersView() }.modifier(ThemeRoot()).environment(app), name: "demo-03-computers")
         XCTAssertFalse(app.core.isRunning)
     }
 
-    func testTheDemoInboxHasTheSampleItems() throws {
-        let items = DemoMode.inboxItems(now: Date())
-        XCTAssertEqual(items.map(\.kind), [.agentInput, .approval, .media, .clipboard, .transfer, .agentDone, .agentWorking])
+    func testTheDemoChatHasTheSampleEntries() throws {
+        let app = try TestApp.model(demo: true)
+        let items = DemoMode.inboxItems()
+        XCTAssertEqual(items.map(\.kind), [.agentInput, .agentWorking, .agentDone, .approval])
         XCTAssertEqual(Inbox.needsYou(items), 2)
-        XCTAssertEqual(DemoMode.inboxItems(now: Date()).map(\.key), items.map(\.key), "the keys stay the same")
+        XCTAssertEqual(DemoMode.inboxItems().map(\.key), items.map(\.key), "the keys stay the same")
+        let entries = app.chatEntries(all: items)
+        XCTAssertEqual(entries.map(Self.entryName), ["link", "photo", "done", "clip", "working", "file", "blocked", "approval"],
+                       "the order of the chat design")
+        XCTAssertEqual(app.chatEntries(all: items).map(\.id), entries.map(\.id), "each entry keeps its place")
+        XCTAssertEqual(DemoMode.output(pane: "w2:p1", review: false)?.choices.last.map(Chat.isTellChoice), true,
+                       "the last choice of the sample agent opens a reply")
         XCTAssertEqual(DemoMode.output.choices.map(\.key), ["1", "2", "3"])
         XCTAssertEqual(DemoMode.output(pane: "w2:p1", review: false)?.choices.map(\.key), ["1", "2", "3"])
         XCTAssertEqual(DemoMode.output(pane: "w1:p1", review: false).map { AgentThread.parse($0.lines.map(\.text)).step }, "Running tests")
@@ -54,6 +60,24 @@ final class DemoModeTests: XCTestCase {
                        ["app/models/invoice.rb", "db/migrate/0042_add_invoice_status.sql"])
         XCTAssertEqual(Inbox.agentPrompt(DemoMode.output.lines.map(\.text)),
                        "Bash command\nbin/migrate --apply\nApply the pending migration\nDo you want to proceed?")
+    }
+
+    /// A short name of a chat entry of the demo.
+    private static func entryName(_ e: ChatEntry) -> String {
+        switch e {
+        case .sent: return "link"
+        case .file(let t): return t.incoming ? "file" : "photo"
+        case .clip: return "clip"
+        case .answer: return "answer"
+        case .event(let item, _):
+            switch item.kind {
+            case .agentInput: return "blocked"
+            case .agentWorking: return "working"
+            case .agentDone: return "done"
+            case .approval: return "approval"
+            case .pairRequest: return "pair"
+            }
+        }
     }
 
     func testTheDemoThemeIsOnTheLaptop() throws {

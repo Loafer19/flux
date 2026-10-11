@@ -1,7 +1,7 @@
 import FluxKit
 import SwiftUI
 
-// The parts of the agent thread: the agent screen and the Inbox master use
+// The parts of the agent thread: the agent screen and the chat use
 // them. They follow the agent thread design of the Android app, see the
 // "Agent screen" section of DESIGN.md, in the text styles of iOS.
 

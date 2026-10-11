@@ -126,13 +126,13 @@ The journal then shows `dropped audio after a network stall` once for the stream
 On Android, the webcam and the mic keep streaming after you leave their screen, switch to another app, or lock the phone.
 Flux shows each stream that runs:
 
-- The Inbox shows a green notice, for example `The mic streams to omarchy. It keeps running when you leave Flux.` The notice has **Open** and **Stop the mic**, or **Stop webcam**.
+- **Chat** shows a green notice, for example `The mic streams to omarchy. It keeps running when you leave Flux.` The notice has **Open** and **Stop the mic**, or **Stop webcam**.
 - A notification in the **Live streams** channel names the streams, for example `The webcam and the mic stream to omarchy`. It has a stop action for each stream. A tap on the notification opens Flux.
 - Android shows its privacy dot for the camera or the microphone.
 
 To stop a stream, use one of these:
 
-- **Stop webcam** or **Stop the mic** on the stream screen, in the Inbox, or in the notification.
+- **Stop webcam** or **Stop the mic** on the stream screen, in **Chat**, or in the notification.
 - `flux-cli webcam stop` or `flux-cli mic stop` on the computer.
 
 Android gives the camera and the microphone to an app in the background only through a foreground service.

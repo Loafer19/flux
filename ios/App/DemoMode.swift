@@ -5,7 +5,7 @@ import Foundation
 /// `-FLUX_DEMO 1`, the app shows them in place of the real computers and
 /// starts no discovery, listener, or link, see `AppModel`. The core does not
 /// know the sample computers, so the actions on their screens reach no
-/// computer. The Inbox shows sample items. With `-FLUX_THEME neon`, the
+/// computer. The chat shows sample entries. With `-FLUX_THEME neon`, the
 /// laptop has the sample theme of that name, see `SampleThemes`.
 enum DemoMode {
     /// The defaults key that the launch argument sets.
@@ -126,67 +126,60 @@ enum DemoMode {
         ].joined(),
     ]
 
-    /// The time that the sample agents got their status: the blocked agent
-    /// waits 3 minutes, and the working agent works for 2:14.
+    /// The time that the sample agents got their status, in the order of the
+    /// chat design: the agent in web is done for 17 minutes, the agent in
+    /// api works for 8 minutes, and the agent in billing waits for 4 minutes.
     static func since(pane: String, now: Date = Date()) -> Date? {
         switch pane {
-        case "w2:p1": return now.addingTimeInterval(-180)
-        case "w1:p1": return now.addingTimeInterval(-134)
+        case "w3:p1": return now.addingTimeInterval(-17 * 60)
+        case "w1:p1": return now.addingTimeInterval(-8 * 60)
+        case "w2:p1": return now.addingTimeInterval(-4 * 60)
         default: return nil
         }
     }
 
-    /// The sample items of the Send thread: a link and a clip of today.
+    /// The sample IDs, so that each entry of the chat keeps its place.
+    private static let linkId = UUID(uuidString: "6F1D5E0A-0D7C-4C1B-9E55-0000000000B1") ?? UUID()
+    private static let photoId = UUID(uuidString: "6F1D5E0A-0D7C-4C1B-9E55-0000000000B2") ?? UUID()
+    private static let fileId = UUID(uuidString: "6F1D5E0A-0D7C-4C1B-9E55-0000000000B3") ?? UUID()
+
+    /// The sample link that this iPhone sent, 49 minutes ago.
     static var sent: [SentItem] {
-        let laptop = computers[0].id
-        let day = Calendar.current.startOfDay(for: Date())
-        return [
-            SentItem(deviceId: laptop, kind: .link, text: "https://omarchy.org/manual", at: day.addingTimeInterval(13 * 3600 + 20 * 60)),
-            SentItem(deviceId: laptop, kind: .clip, text: "git push origin ui-shell", at: day.addingTimeInterval(13 * 3600 + 58 * 60)),
-        ]
+        [SentItem(id: linkId, deviceId: computers[0].id, kind: .link, text: "https://omarchy.org/manual",
+                  at: Date().addingTimeInterval(-49 * 60))]
     }
 
-    /// The sample files of the Send thread: a photo that went out, and a file that comes in.
+    /// The sample files of the chat: a photo that went out 28 minutes ago,
+    /// and a file that comes in since 6 minutes.
     static var sendTransfers: [FileTransfer] {
         let laptop = computers[0].id
-        let day = Calendar.current.startOfDay(for: Date())
-        let sentAt = day.addingTimeInterval(13 * 3600 + 41 * 60)
+        let now = Date()
+        let sentAt = now.addingTimeInterval(-28 * 60)
         return [
-            FileTransfer(deviceId: laptop, name: "holiday.jpg", incoming: false, size: 2_400_000, bytes: 2_400_000, state: .done,
-                         started: sentAt, ended: sentAt),
-            FileTransfer(deviceId: laptop, name: "invoice-2026-09.pdf", incoming: true, size: 3_200_000, bytes: 1_856_000,
-                         started: day.addingTimeInterval(14 * 3600 + 8 * 60)),
+            FileTransfer(id: fileId, deviceId: laptop, name: "invoice-2026-09.pdf", incoming: true, size: 3_200_000, bytes: 1_856_000,
+                         started: now.addingTimeInterval(-6 * 60)),
+            FileTransfer(id: photoId, deviceId: laptop, name: "holiday.jpg", incoming: false, size: 2_400_000, bytes: 2_400_000,
+                         state: .done, started: sentAt, ended: sentAt),
         ]
     }
 
-    /// The sample transfer keeps 1 ID, so that its Inbox key stays the same.
-    private static let transferId = UUID(uuidString: "6F1D5E0A-0D7C-4C1B-9E55-0000000000A1") ?? UUID()
+    /// The sample clip from the laptop, 11 minutes ago.
+    static var clip: ClipEvent {
+        ClipEvent.received(from: computers[0].id, computer: computers[0].name, text: "git push origin ui-shell",
+                           at: Date().addingTimeInterval(-11 * 60))
+    }
 
-    /// The sample Inbox: an agent that waits, an approval, a player, a
-    /// clip, a received file, an agent that is done, and an agent that works. They go through
-    /// `Inbox.items`, so that the order is the real order.
-    static func inboxItems(now: Date) -> [InboxItem] {
+    /// The sample Inbox items: the 3 sample agents and a sudo request. They
+    /// go through `Inbox.items`, so that they are what a computer gives.
+    static func inboxItems(now: Date = Date()) -> [InboxItem] {
         let laptop = computers[0].id
-        let herdr = [laptop: Self.herdr]
-        var player = RemotePlayer(name: "spotify")
-        player.title = "Focus mix"
-        player.artist = "Lo-fi radio"
-        player.playing = true
-        var media = RemoteMedia()
-        media.players = [player.name]
-        media.current = player.name
-        media.states = [player.name: player]
         let approval = ApproveMessage.parse(
             Packet(PacketType.fluxApprove, [
-                "kind": "request", "id": "demo1", "host": "omarchy", "user": "alice", "service": "sudo", "tty": "pts/1",
+                "kind": "request", "id": "demo1", "host": "omarchy", "user": "dev", "service": "sudo", "tty": "pts/3",
                 "time": Int64(now.timeIntervalSince1970), "nonce": String(repeating: "0", count: 64),
             ]),
             computerId: laptop, computerName: "omarchy")
-        let clip = ClipEvent(deviceIds: [laptop], computer: "omarchy", sent: true, preview: "git push origin main", at: now)
-        let transfer = FileTransfer(id: transferId, deviceId: laptop, name: "invoice-2026-09.pdf", incoming: true,
-                                    size: 182_000, bytes: 182_000, state: .done, started: now, ended: now)
-        return Inbox.items(devices: computers, herdr: herdr, media: [laptop: media], approval: approval,
-                           transfers: [transfer], clip: clip, now: now, playedAt: [:])
+        return Inbox.items(devices: computers, herdr: [laptop: herdr], approval: approval)
     }
 
     /// The state of the core with the sample computers in place of the real

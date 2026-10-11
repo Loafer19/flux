@@ -52,7 +52,7 @@ enum TargetRun {
     }
 }
 
-/// The tools that send to the computer in scope, for Send and the Inbox.
+/// The tools that send to the computer in scope, for the chat.
 @MainActor
 enum SendTools {
     /// The computers that take the clipboard, see `SendClipboardQuickAction`.

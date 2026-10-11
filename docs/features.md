@@ -110,7 +110,7 @@ To show a web page on the desktop, type the link in the field at the bottom of *
 The desktop opens a link that starts with `http://` or `https://` in its browser. Other text goes to the clipboard of the desktop.
 The field of the desktop window adds `https://` to a host name without a scheme, for example `omarchy.org/flux`.
 
-**Chat** in Flux for Android shows what the phone sent in this session as a thread: links, text, clips, and files.
+**Chat** shows what the phone sent in this session as a thread: links, text, clips, and files.
 The desktop writes in the same thread: received files with their progress, the last clip, herdr agents, sudo approvals, and pair requests.
 An agent that waits shows its choices in the thread, and an approval shows **Approve** and **Deny**.
 Flux keeps the thread in memory only, with at most 400 characters of each text.
@@ -340,7 +340,7 @@ Chat messages that an app keeps in its own database, for example RCS chats, do n
 ## Media and desktop commands
 
 The phone controls the media players on the desktop.
-Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume. The **Inbox** of Flux for iOS and Flux for macOS also shows what plays now, with play and pause.
+Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume.
 The controls show when a desktop player publishes its state over MPRIS.
 The phone selects the player that plays.
 If more than one player runs, select another player at the top of the screen.
@@ -435,7 +435,7 @@ See [camera and streams](camera.md) for direct capture and live media.
 
 ## herdr agents
 
-When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows its choices in **Chat** on Android, and first in the **Inbox** on iPhone and Mac. To see all agents and terminals, open **Control**.
+When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows its choices in **Chat**. To see all agents and terminals, open **Control**.
 The phone shows the status and the colored output of each coding agent, and posts a notification when an agent needs input or finishes.
 
 To answer agents from the phone, set:

@@ -3,22 +3,85 @@ import AppKit
 import FluxKit
 import SwiftUI
 
-/// The notices of the Inbox: a new pairing, the items on other computers
-/// that need the user, the computers that are not reachable, and the
-/// Local Network permission. Flux for macOS has no notification notice.
-struct InboxNotices: View {
-    let status: InboxStatus
-    /// True when the large tile already tells about the new pairing.
-    let pairedTile: Bool
-    /// True when the status line or the large tile already tells about the computers that are not reachable.
-    let offlineInLine: Bool
+/// The texts of the context line and the notices of the chat.
+struct ChatStatus: Equatable {
+    /// The items in scope that need the user.
+    let needs: Int
+    /// The items out of scope that need the user.
+    let elsewhere: Int
+    /// The computer in scope, or nil for all computers.
+    let scopeName: String?
+    /// The computers in scope that are not reachable, while Flux does not connect.
+    let offline: [String]
+    /// The computer that Flux connects to, or "" for more computers, while
+    /// no computer in scope is online. It is nil when Flux does not connect.
+    let connecting: String?
+    /// The computer that paired in the last 6 seconds, when the scope shows it.
+    let pairedName: String?
+
+    /// "omarchy-xps · 2 need you". With all computers in scope, only the
+    /// count shows, because the scope menu names the scope.
+    var context: String {
+        let count = needs > 0 ? "\(needs) need you" : "nothing needs you"
+        return contextLine([scopeName ?? "", count])
+    }
+
+    /// "omarchy is not reachable. Its agents do not show here." or the form for more computers.
+    var offlineLine: String? {
+        switch offline.count {
+        case 0: return nil
+        case 1: return "\(offline[0]) is not reachable. Its agents do not show here."
+        default: return "\(offline.count) computers are not reachable. Their agents do not show here."
+        }
+    }
+
+    @MainActor
+    static func make(_ model: AppModel, all: [InboxItem], scoped: [InboxItem]) -> ChatStatus {
+        let reach = Inbox.reach(scope: model.scope, devices: model.state.devices)
+        let needs = Inbox.needsYou(scoped)
+        var paired: String?
+        if let id = model.newlyPairedId, model.scope == nil || model.scope == id {
+            paired = model.pairedDevice(id)?.name
+        }
+        var connecting: String?
+        if reach.noneOnline && model.connecting {
+            connecting = reach.offline.count == 1 ? reach.offline[0].name : ""
+        }
+        return ChatStatus(
+            needs: needs,
+            elsewhere: Inbox.needsYou(all) - needs,
+            scopeName: model.pairedDevice(model.scope)?.name,
+            offline: model.connecting ? [] : reach.offline.map(\.name),
+            connecting: connecting,
+            pairedName: paired
+        )
+    }
+}
+
+/// The notices under the entries of the chat: that Flux connects, a new
+/// pairing, the items on other computers that need the user, the computers
+/// that are not reachable, and the Local Network permission. Flux for macOS
+/// has no notification notice.
+struct ChatNotices: View {
+    let status: ChatStatus
     @Environment(AppModel.self) private var model
     @Environment(\.tn) private var tn
 
     var body: some View {
         let localNetworkOff = model.state.localNetworkDenied && !model.state.devices.contains(where: \.online)
         VStack(spacing: TiledMetrics.gap) {
-            if let name = status.pairedName, !pairedTile {
+            if let name = status.connecting {
+                HStack(spacing: 10) {
+                    FluxSpinner(size: 14)
+                    Text(name.isEmpty ? "Connecting to your computers" : "Connecting to \(name)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(tn.sub)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .accessibilityElement(children: .combine)
+            }
+            if let name = status.pairedName {
                 NoticeRow(icon: "checkmark.circle", ink: tn.green, text: "\(name) is paired. What waits for you on \(name) shows here first.")
                     .onAppear {
                         let text: String = "\(name) is paired. What waits for you on \(name) shows here first."
@@ -33,7 +96,7 @@ struct InboxNotices: View {
                         .buttonStyle(FluxButtonStyle(kind: .text))
                 }
             }
-            if let offline = status.offlineLine, !offlineInLine {
+            if let offline = status.offlineLine {
                 NoticeRow(ring: true, text: offline) {
                     Button("Retry") { model.retry() }
                         .buttonStyle(FluxButtonStyle(kind: .text))

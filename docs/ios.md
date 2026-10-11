@@ -88,7 +88,7 @@ To use the share extension with your own team, build the app from Xcode as descr
 
 1. Connect the iPhone and the computer to the same local network.
 2. Open Flux on the iPhone and allow access to the local network.
-3. Open **Computers** and select the computer under **Available**. Before the first pairing, the **Inbox** also lists the computers on the network. Then send the pair request.
+3. Open **Computers** and select the computer under **Available**. Before the first pairing, **Chat** also lists the computers on the network. Then send the pair request.
 4. Accept the request on the computer when it shows the same 16-character key, such as `5EE6 825F 974E D59A`.
 
 Compare all 16 characters.
@@ -136,58 +136,56 @@ flux-cli --device "Snorre's iPhone" addresses add snorres-iphone
 
 Flux must still be open on the iPhone. See [limits](#limits-of-ios).
 
-## Inbox and navigation
+## Chat and navigation
 
-Flux has 4 tabs: **Inbox**, **Send**, **Control**, and **Computers**.
+Flux has 3 tabs: **Chat**, **Control**, and **Computers**.
 Each tab has its own navigation stack, so the system back button and the edge swipe work.
 A tap on the open tab goes back to its root.
-The **Inbox** tab has a badge with the number of items that need you on all computers, from 1 to 9, then `9+`.
+The **Chat** tab has a badge with the number of items that need you on all computers, from 1 to 9, then `9+`.
 
-The scope chip sits in the navigation bar of each tab root.
-It shows **All computers** or 1 computer, with a link dot and a battery dot for each computer.
+The scope chip sits at the end of the navigation bar of **Chat**.
+It shows **All computers** or 1 computer, with a link dot for each computer.
 A tap opens the menu of scopes.
-The scope filters the **Inbox**, **Send**, and **Control**, and it picks the theme of the computer.
+The scope filters **Chat** and **Control**, and it picks the theme of the computer.
 A tap on a paired computer in **Computers** also sets the scope, and a second tap shows all computers again.
-A new pairing sets the scope to the new computer and opens the **Inbox**.
+A new pairing sets the scope to the new computer and opens **Chat**.
 A new start of Flux begins with all computers.
 
-The **Inbox** shows what happens on the computers in scope, in this order:
+**Chat** shows what happens between this iPhone and the computers in scope as 1 thread, with the newest entry at the bottom.
+The line under the title names the computer in scope and counts the items that need you.
+The computers write on the left:
 
-1. Agents that wait for input, approvals, and pair requests. These items need you.
-2. What plays now, the last clip, and the transfers.
-3. Agents that are done, then agents that work.
+- Agents that wait for input, work, or are done.
+- Sudo, polkit, and enrollment requests, and the answers of this iPhone to them.
+- Pair requests.
+- Files that come in, with their progress and **Open**.
+- The last clip from a computer.
 
-The first item takes the master tile with its whole action. While it needs you, the active border of the Omarchy theme frames it.
-The other items wait in the stack under it, 2 tiles in each row.
-A tile of an item that needs you has a red border.
-A stack tile of an agent also names the agent and its project. The other stack tiles show only the state.
-To play or pause a player from its stack tile, touch and hold the tile.
-A tap on a stack tile moves it to the master tile.
-To move the master item to the end of the stack, swipe the master tile to the side, or tap **Later**.
-VoiceOver users can select the action **Show the next item** on the master tile.
-A new item that needs you takes the master tile back.
-A finished transfer, the last clip, and a paused player stay for 30 minutes.
+What this iPhone sent shows on the right: links, text, clips, scans, and files, with the progress of each transfer.
+An agent takes the time of its last status, so an agent with a new status moves to the end.
+A card that needs you takes the full width and has a red border.
 
-An agent that waits shows its question, the command in mono, and the numbered choices in the master tile. The first choice has the accent fill.
-The tile reads the output of the agent when it shows, and only an output that comes after that read shows choices.
-The question keeps the lines nearest the choices, because they hold the command that a choice approves, and the tile never cuts them.
+An agent that waits shows its command in mono and the numbered choices. The first choice has the accent fill.
+The card reads the output of the agent when it shows, and only an output that comes after that read shows choices.
+The question keeps the lines nearest the choices, because they hold the command that a choice approves, and the card never cuts them.
 Each answer asks for Face ID, Touch ID, or the passcode first.
 After an answer, the choices stay off until the agent shows a new output.
-An agent that works shows your last answer, a moving bar, and its step.
-**Open thread** opens the agent screen. It shows the output of the agent as a thread, with a dock for the question, the step, and your prompts. See [See your agents](herdr.md#see-your-agents).
-**Review** on an approval opens the approval sheet, and **Compare the key** on a pair request opens the pairing sheet. Neither approves or pairs by itself.
+A choice such as **No, and tell Codex what to do differently** opens a reply in the dock.
+The dock then shows **Reply to** the agent with **Cancel**, and the field has the accent border.
+Flux sends the choice, waits until the agent leaves its dialog, and then sends your text as the next prompt.
+An agent that works shows your last answer, its step, and its time. **Open thread** opens the agent screen. See [See your agents](herdr.md#see-your-agents).
+A request shows **Deny** and **Approve**. **Approve** opens the approval sheet, which asks for Face ID or Touch ID.
+**Compare the key** on a pair request opens the pairing sheet. Neither card approves or pairs by itself.
 
-In a window of 600 points or wider, such as an iPhone in landscape, the **Inbox** splits.
-The master tile takes 60% of the width at full height, and its choices sit directly under the question.
-The status line and the stack fill a column on the right.
-
-Send, Control, and Computers show the computers as pills under the title. Tap a pill to make that computer the scope. Tap it again to show all computers.
-
-**Send** shows what this iPhone sent in this session as a thread: links, text, clips, and files, and the files that come from the computer, with the progress of each transfer.
 The dock under the thread shows the clipboard with **Send**, the tools **Files**, **Get**, **Photo**, **Scan**, **Text**, and **QR**, and a field for text or a link.
 A link opens in the browser of the computer. Other text goes to its clipboard.
 iOS asks before an app reads the clipboard, so the dock shows only the kind of the copy until it goes out.
 The menu at the top holds **Send photos**, the signature mode, and **Queue and transfers**.
+The notices under the entries tell when Flux connects, when a computer is not reachable, and when items on other computers need you.
+Before the first pairing, **Chat** shows the pairing guide.
+
+Control and Computers show the computers as pills under the title. Tap a pill to make that computer the scope. Tap it again to show all computers.
+
 **Control** lists the agents and the terminals of herdr, with the time of each status that this iPhone saw.
 Under them are the tools: the Omarchy panel, the touchpad, the remote desktop, and the commands, then the microphone and the webcam.
 The dock plays the media of the computer. Tap the title to open **Media**.
@@ -224,7 +222,7 @@ The theme engine is in `macos/Sources/FluxKit/Theme`, and the colors of the app 
 | --- | --- |
 | Files, text, and links | Send from the Files picker, the photo picker, the Share field, or the share sheet of any app. An `http` or `https` link with a host opens in the browser of the computer. Text and each other link go on its clipboard. Text has a limit of 1 MB. Received files go to the Flux folder in the Files app. A received file or link shows in a notification, and it opens only after a tap on the notification or on the transfer. |
 | Share sheet | **Flux** in the share sheet of other apps queues files, photos, text, and links for a computer. A text file, such as a `.txt` or `.md` file, goes as a file with its name. **Cancel** stops the share. Flux sends the items when it opens and connects. See [limits](#limits-of-ios). |
-| Clipboard | Text and images both ways while **Sync clipboard** is on and Flux is on the screen. When Flux opens, a new copy from another app goes out once. **Send** next to the clipboard in **Send**, and **Send clipboard** in the **Inbox**, send it at once. A clip that you send goes on the clipboard of the computer also while its automatic sync is off. To send without opening Flux, see [Send the clipboard without opening Flux](#send-the-clipboard-without-opening-flux). |
+| Clipboard | Text and images both ways while **Sync clipboard** is on and Flux is on the screen. When Flux opens, a new copy from another app goes out once. **Send** next to the clipboard in **Chat** sends it at once. A clip that you send goes on the clipboard of the computer also while its automatic sync is off. To send without opening Flux, see [Send the clipboard without opening Flux](#send-the-clipboard-without-opening-flux). |
 | Screenshots and photos | **Send new screenshots** and **Send new photos** send new items from the Photos library when Flux opens. An item goes only when its original is on this iPhone and it was taken at most 1 day before its switch turned on. Photos that only iCloud has, for example from your other devices or from a Shared Library, stay home. PhotoKit does not tell which device took a photo, so with **Download and Keep Originals** in iCloud Photos, new photos from those sources can go too. 1 scan sends at most 50 items. The rest go with the next scan, for example when Flux opens again. |
 | Media | Controls the players of the computer. The computer does not control the players on the iPhone. |
 | Commands | Lists and runs the commands configured on the computer. |
@@ -422,8 +420,8 @@ FluxKit runs only in the app. The code in `ios/Shared` runs in the app and in th
 The demo shows sample computers without a network, for App Review and screenshots.
 The app shows `omarchy`, a connected laptop, and `workstation`, a desktop that is not reachable.
 It starts no discovery, listener, or link, and the actions on the sample computers reach no computer.
-The **Inbox** shows sample items on the laptop: an agent that waits with its question and choices, an approval, a player, a clip, a received file, and an agent that is done.
-**Review**, the choices, and the player buttons show a message and send nothing.
+**Chat** shows a sample thread on the laptop: a link, a photo, an agent that is done, a clip, an agent that works, a file that comes in, an agent that waits with its question and choices, and an approval.
+**Approve**, **Deny**, the choices, and the reply show a message and send nothing.
 The paired computers and the share queue stay as they are, and **Flux is on** in **Settings** does not change.
 
 To start the demo in the booted simulator:
@@ -457,8 +455,8 @@ The FluxKit tests run on the iPhone simulator and on macOS with `make test-macos
 The app tests cover the app logic: pairing, share queue, clipboard actions, camera, keys, approval, dictation fields, the layout of agent output, and the demo.
 Some tests render screens.
 With `TEST_RUNNER_FLUX_SCREENS=<folder>`, they save them as PNG files in that folder.
-The demo tests save `demo-01-inbox.png`, `demo-02-send.png`, `demo-03-control.png`, and `demo-04-computers.png`.
-The theme tests save the demo Inbox in each sample theme as `demo-inbox-<theme>.png`, for example `demo-inbox-neon.png`.
+The demo tests save `demo-01-chat.png`, `demo-02-control.png`, and `demo-03-computers.png`.
+The theme tests save the demo chat in each sample theme as `demo-chat-<theme>.png`, for example `demo-chat-neon.png`.
 
 The simulator has no camera, no battery, no Secure Enclave key that needs Face ID, and no broadcast.
 Check camera capture, the webcam, the microphone, and approval on an iPhone.
@@ -476,8 +474,8 @@ xcrun simctl spawn booted log stream --predicate 'subsystem == "org.omarchy.flux
 | `ios/App` | The SwiftUI app. `App/Features/Features.swift` lists the plugins and the feature screens. |
 | `ios/App/Theme` | The colors of the theme in the environment, and the shared tiles, buttons, and rows |
 | `ios/App/Shell` | The scope chip, the computer picker of the tools, and the routes of the tabs |
-| `ios/App/Inbox` | The Inbox: the master tile, the stack, the empty states, and the notices |
-| `ios/App/Destinations` | Send, Control, and the page of a computer |
+| `ios/App/Chat` | The chat: the thread, the cards, the dock, the notices, and the pairing guide |
+| `ios/App/Destinations` | Control and the page of a computer |
 | `ios/Shared` | The share queue and the App Group, for the app and the share extension |
 | `ios/ShareExtension` | The share extension |
 | `ios/Tests` | App tests |

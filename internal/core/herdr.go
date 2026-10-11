@@ -1198,16 +1198,27 @@ func (d *Daemon) readTerminal(ctx context.Context, pane string, lines int, ansi 
 // read without its styles, under the cached history, as an ANSI read
 // does. herdrHeldGap tells the reader that the history waits for the
 // release.
+//
+// opencode shows a sidebar in a wide terminal. readAgentOutput removes it
+// from the history and the screen, see dropSidebar.
 func (d *Daemon) readAgentOutput(ctx context.Context, pane string, lines int, ansi bool) (string, bool, error) {
 	held := d.herdrControlled(pane)
+	d.mu.Lock()
+	kind := d.herdrKindLocked(pane)
+	d.mu.Unlock()
+	source := rowSource(kind)
 	if !ansi && !held {
-		r, err := herdr.ReadAgent(ctx, d.herdrPath, pane, lines, false)
+		r, err := herdr.ReadAgentFrom(ctx, d.herdrPath, pane, source, lines, false)
 		if err != nil {
 			return "", false, err
 		}
-		return cleanPlain(r.Text), r.Truncated, nil
+		rows := strings.Split(cleanPlain(r.Text), "\n")
+		if kind == "opencode" {
+			rows = dropSidebar(rows, sidebarColumn(rows), false)
+		}
+		return strings.Join(rows, "\n"), r.Truncated, nil
 	}
-	r, err := herdr.ReadAgent(ctx, d.herdrPath, pane, lines, true)
+	r, err := herdr.ReadAgentFrom(ctx, d.herdrPath, pane, source, lines, true)
 	if err != nil {
 		return "", false, err
 	}
@@ -1220,10 +1231,17 @@ func (d *Daemon) readAgentOutput(ctx context.Context, pane string, lines int, an
 	}
 	screen := strings.Split(text, "\n")
 	if len(screen) >= lines {
+		if kind == "opencode" {
+			screen = dropSidebar(screen, sidebarColumn(screen), ansi)
+		}
 		return strings.Join(screen, "\n"), r.Truncated, nil
 	}
 	history, truncated := d.readAgentHistory(ctx, pane, lines)
 	truncated = truncated || r.Truncated
+	if kind == "opencode" {
+		col := sidebarColumn(history, screen)
+		history, screen = dropSidebar(history, col, false), dropSidebar(screen, col, ansi)
+	}
 	var out []string
 	if held && len(history) == 0 {
 		// No history is in the cache. The gap shows that the older lines
@@ -1256,12 +1274,14 @@ func (d *Daemon) readAgentHistory(ctx context.Context, pane string, lines int) (
 	if ok && !last.at.IsZero() && time.Since(last.at) < herdrHistoryTTL && last.asked >= lines {
 		return last.lines, last.truncated
 	}
-	h, err := herdr.ReadAgent(ctx, d.herdrPath, pane, lines, false)
+	d.mu.Lock()
+	kind := d.herdrKindLocked(pane)
+	d.mu.Unlock()
+	h, err := herdr.ReadAgentFrom(ctx, d.herdrPath, pane, rowSource(kind), lines, false)
 	switch {
 	case err == nil:
-		next := agentHistory{lines: strings.Split(cleanPlain(h.Text), "\n"), truncated: h.Truncated, asked: lines, at: time.Now()}
+		next := agentHistory{lines: strings.Split(cleanPlain(h.Text), "\n"), truncated: h.Truncated, asked: lines, at: time.Now(), agent: kind}
 		d.mu.Lock()
-		next.agent = d.herdrKindLocked(pane)
 		if d.herdrHistory == nil {
 			d.herdrHistory = map[string]agentHistory{}
 		}

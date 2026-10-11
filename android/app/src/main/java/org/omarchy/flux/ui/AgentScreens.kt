@@ -761,7 +761,16 @@ private fun ThreadList(
                         }
                         is ThreadBlock.Changes -> ThreadChanges(b, onReview)
                         is ThreadBlock.Prompt -> ThreadYou(b.text, null)
-                        is ThreadBlock.Raw -> ThreadRaw(out.lines.subList(b.from.coerceAtMost(out.lines.size), b.to.coerceAtMost(out.lines.size)))
+                        is ThreadBlock.Raw -> {
+                            val raw = out.lines.subList(b.from.coerceAtMost(out.lines.size), b.to.coerceAtMost(out.lines.size))
+                            // The first block can be the end of a block whose start is older than the read. A long one folds.
+                            if (i == 0 && raw.size > EARLIER_FOLD_LINES) {
+                                val open = opened["earlier"] ?: false
+                                ThreadEarlier(raw, open) { opened["earlier"] = !open }
+                            } else {
+                                ThreadRaw(raw)
+                            }
+                        }
                     }
                     if (i == at) ThreadYou(sent!!.text, sent.meta)
                 }

@@ -1,6 +1,7 @@
 package org.omarchy.flux.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -281,6 +282,19 @@ class TermTextTest {
         )
         assertEquals("the lines keep the width of the terminal", 60, lines.first().cols)
         assertEquals("without a rule or a padded row, the width is not known", wrapped, termLines(wrapped.joinToString("\n")).map { it.text })
+    }
+
+    @Test
+    fun aRowThatBrokeInAWordJoinsWithoutABlank() {
+        assertTrue(wrapsInWord("run src/", "pages/a.ts"))
+        assertTrue(wrapsInWord("CI (https:", "//github.com/a"))
+        assertTrue(wrapsInWord("--workers=2 --", "retries=0"))
+        assertTrue(wrapsInWord("src/lib/share.test.", "ts"))
+        assertFalse("a sentence ends with a dot", wrapsInWord("the same view.", "pushed"))
+        assertFalse("a dash between words", wrapsInWord("the fix -", "and"))
+        assertFalse("a slash alone", wrapsInWord("a /", "b"))
+        assertEquals("src/pages/a.ts --workers=2", joinWrapped(joinWrapped("src/", "pages/a.ts --"), "workers=2"))
+        assertEquals("the end. Next", joinWrapped("the end.", "Next"))
     }
 
     @Test

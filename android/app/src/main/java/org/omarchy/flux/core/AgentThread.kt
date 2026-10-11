@@ -66,14 +66,36 @@ data class AgentThread(
  */
 data class AgentAsk(val question: String, val lines: List<String>, val command: Boolean = false)
 
-/** The bullet of a message or a tool call: ● and ⏺ of Claude Code, • of Codex. */
-private val bulletLine = Regex("""^([●⏺•])\s+(.*)$""")
+/** The bullet of a message or a tool call: ● and ⏺ of Claude Code, • of Codex. ※ marks a recap of Claude Code. */
+private val bulletLine = Regex("""^([●⏺•※])\s+(.*)$""")
 
-/** A prompt of the user: > in Claude Code, › in Codex. */
-private val promptLine = Regex("""^[>›](?:\s+(.*))?$""")
+/** A prompt of the user: > and ❯ in Claude Code, › in Codex. */
+private val promptLine = Regex("""^[>›❯](?:\s+(.*))?$""")
 
 /** A tool call of Claude Code, for example Bash(npm test) or an MCP tool. */
 private val toolCall = Regex("""^([A-Za-z][\w.-]*|[\w.-]+ - [\w.-]+ \(MCP\))\((.*)\)\s*$""")
+
+/** The first line of a tool call of Claude Code whose arguments take more than 1 line. */
+private val toolStart = Regex("""^([A-Za-z][\w.-]*|[\w.-]+ - [\w.-]+ \(MCP\))\((.*)$""")
+
+/** The tools of Claude Code. A first line with one of these names starts a tool call also before its result shows. */
+private val claudeTools = setOf(
+    "Agent", "Bash", "Edit", "Fetch", "Glob", "Grep", "LS", "MultiEdit", "NotebookEdit", "Read", "Search", "Skill", "Task",
+    "TodoWrite", "Update", "WebFetch", "WebSearch", "Workflow", "Write",
+)
+
+/**
+ * A line of Claude Code that sums up the tool calls of a step, for example
+ * "Read 2 files, listed 1 directory, ran 3 shell commands". Its first
+ * part names a count, and it does not end like a sentence.
+ */
+private val summaryLine = Regex("""^(Read|Reading|Searched|Searching|Listed|Listing|Ran|Running|Wrote|Writing|Made|Making|Edited|Editing|Updated|Updating|Created|Creating|Fetched|Fetching|Recalled|Recalling|Called|Calling|Loaded|Loading|Found|Finding|Viewed|Viewing|Used|Using)( for)? \d+ [^\n]*[^.!?:\s…]$""")
+
+/** The hint at the end of a line that the desktop can open, for example "(ctrl+o to expand)". */
+private val expandHint = Regex("""\s*\((?:ctrl|shift)\+\w+ to [a-z ]+\)\s*$""")
+
+/** The time at the end of a tool call that runs, for example " · 11s". */
+private val runTime = Regex("""\s+·\s+\d[\dhms :.]*$""")
 
 /** A tool call of Codex, for example "Ran npm test" or "Edited src/a.ts (+3 -1)". */
 private val codexTool = Regex("""^(Ran|Running|Edited|Added|Deleted|Explored|Exploring|Read|Searched|Listed|Called|Calling|Waited|Updated Plan)\b\s*(.*)$""")
@@ -99,14 +121,39 @@ private val removedLines = Regex("""[Rr]emoved (\d+) lines?""")
  */
 private val workLine = Regex("""^\s*\S{1,2}\s+(.+?)\s*\(([^()]*\bto interrupt\b[^()]*)\)\s*$""")
 
+/**
+ * The working line of Claude Code 2.1, for example "✶ Orbiting… (1m 17s ·
+ * ↓ 5.7k tokens)". The hint to interrupt is in the footer now, so the
+ * spinner mark and the ellipsis tell the line.
+ */
+private val spinnerLine = Regex("""^[·✢✳✶✻✽*]\s+(\S[^()]*?)…\s*(?:\(([^()]*)\))?\s*$""")
+
 /** A time in a working line or a finished line, for example 12s, 2m 5s, or 2:14. */
 private val timeText = Regex("""\b(\d+h(?: \d+m)?(?: \d+s)?|\d+m(?: \d+s)?|\d+s|\d+:\d{2}(?::\d{2})?)\b""")
 
-/** The line after a finished turn, for example "✻ Worked for 6m 12s" or "─ Worked for 1m 03s ───". */
-private val doneLine = Regex("""^[\s\W]*[A-Z][a-z]+ for (\d+h(?: \d+m)?(?: \d+s)?|\d+m(?: \d+s)?|\d+s)\b[\s─━]*$""")
+/**
+ * The line after a finished turn, for example "✻ Worked for 6m 12s", "─
+ * Worked for 1m 03s ───", or "✻ Crunched for 1m 12s · done Thursday 4:15 PM".
+ */
+private val doneLine = Regex("""^[\s\W]*\p{Lu}\p{Ll}+ for (\d+h(?: \d+m)?(?: \d+s)?|\d+m(?: \d+s)?|\d+s)\b(?:\s+·\s+[^·]+)?[\s─━]*$""")
 
 /** A line with only rule characters. */
 private val ruleOnly = Regex("""^[\s─━═╌┄╍┈┉\-_]+$""")
+
+/** A rule with a title, for example the rule above the input of Claude Code with the name of the session. */
+private val titledRule = Regex("""^[─━═]{8,}.*$""")
+
+/** A row of the logo of Claude Code at the start of a session, for example " ▐▛███▜▌   Claude Code v2.1.293". */
+private val logoLine = Regex("""^\s*[▐▛▜▌▝▘▗▖▙▟█▀▄]""")
+
+/** The most rows of the logo of Claude Code. */
+private const val LOGO_ROWS = 4
+
+/** A hint at the right edge above the input, for example "new task? /clear to save 671.7k tokens". */
+private const val HINT_INDENT = 30
+
+/** The choices of a notice of Claude Code above the input, for example "1: Learn more   2: Knew this already   0: Dismiss". */
+private val noticeChoices = Regex("""^(?:\d: \S.*?\s{2,})+\d: \S.*$""")
 
 /** The first numbered choice of a dialog. */
 private val firstChoiceLine = Regex("""^\s*([❯›>]\s*)?1[.)]\s+.+$""")
@@ -114,7 +161,7 @@ private val firstChoiceLine = Regex("""^\s*([❯›>]\s*)?1[.)]\s+.+$""")
 /** The hints under the input of an agent. */
 private val footerWords = listOf(
     "for shortcuts", "shift+tab", "context left", "accept edits", "bypass permissions", "plan mode", "auto-accept",
-    "% context", "esc to cancel", "to cycle", "ctrl+", "Press enter",
+    "% context", "esc to cancel", "to cycle", "ctrl+", "Press enter", "auto mode", "for agents", "to manage", "esc to interrupt",
 )
 
 /** How far from the end the working line can be, in lines that are not empty. */
@@ -125,8 +172,19 @@ private const val DIALOG_SCAN_LINES = 16
 
 private fun isBox(t: String): Boolean = t.startsWith("╭") || t.startsWith("╰") || (t.startsWith("│") && t.endsWith("│") && t.length > 1)
 
-/** A hint line under the input. It is indented by 2 spaces at most, so that a result line does not count. */
-private fun isFooter(line: String): Boolean = indent(line) <= 2 && footerWords.any { line.contains(it, ignoreCase = true) }
+/**
+ * A hint line under the input. It is indented by 2 spaces at most, so that
+ * a result line does not count. A working line is not a hint, also when it
+ * tells how to interrupt.
+ */
+private fun isFooter(line: String): Boolean =
+    indent(line) <= 2 && footerWords.any { line.contains(it, ignoreCase = true) } && !workLine.matches(line) && !spinnerLine.matches(line)
+
+/** True when [line] is a summary of tool calls of Claude Code, see [summaryLine]. */
+private fun isSummary(line: String): Boolean = indent(line) == 2 && summaryLine.matches(summaryText(line))
+
+/** The text of a summary line without its hint and the ellipsis of a step that runs. */
+private fun summaryText(line: String): String = line.trim().replace(expandHint, "").removeSuffix("…").trimEnd()
 
 private fun indent(s: String): Int = s.indexOfFirst { it != ' ' }.let { if (it < 0) s.length else it }
 
@@ -211,7 +269,9 @@ private fun editCounts(result: List<String>): Pair<Int, Int> {
 
 /**
  * Removes the input box of the agent and the hints under it from the end
- * of [lines], until [end]. It returns the new end.
+ * of [lines], until [end]. It returns the new end. Claude Code puts the
+ * name of the session in the rule above the input, and hints at the right
+ * edge above that rule.
  */
 private fun stripInput(lines: List<String>, end: Int): Int {
     var i = end
@@ -219,7 +279,7 @@ private fun stripInput(lines: List<String>, end: Int): Int {
     while (i > 0) {
         val t = lines[i - 1].trim()
         when {
-            t.isEmpty() || ruleOnly.matches(t) -> i--
+            t.isEmpty() || ruleOnly.matches(t) || input && titledRule.matches(t) -> i--
             isBox(t) -> {
                 i--
                 input = true
@@ -229,6 +289,9 @@ private fun stripInput(lines: List<String>, end: Int): Int {
                 input = true
             }
             !input && isFooter(lines[i - 1]) -> i--
+            input && indent(lines[i - 1]) >= HINT_INDENT -> i--
+            // A notice of Claude Code above the input, for example "✦ Heads up · …", and its choices.
+            input && (lines[i - 1].startsWith("✦ ") || noticeChoices.matches(t)) -> i--
             else -> return i
         }
     }
@@ -251,7 +314,7 @@ fun agentThread(lines: List<String>): AgentThread {
     while (w >= 0 && seen < WORK_SCAN_LINES) {
         val t = lines[w]
         if (t.isNotBlank()) {
-            val m = workLine.matchEntire(t)
+            val m = workLine.matchEntire(t) ?: spinnerLine.matchEntire(t)
             if (m != null) {
                 step = m.groupValues[1].trim().removeSuffix("…").removeSuffix("...").trim()
                 elapsed = timeText.find(m.groupValues[2])?.value.orEmpty()
@@ -283,7 +346,14 @@ private fun parseBlocks(lines: List<String>, end: Int): List<ThreadBlock> {
         rawFrom = -1
     }
     // The end of a block that starts at [from]: the lines under it that are indented. A blank line
-    // belongs to the block only when an indented line follows it.
+    // belongs to the block only when an indented line follows it. A summary of tool calls after a
+    // blank line starts its own block. A line at the left edge right under the first line of the
+    // block continues it, when it is not a line of its own kind.
+    // Claude Code blinks the bullet of a tool call that runs, so the first line of the call can have
+    // 2 blanks in place of its bullet. The result mark under it tells it.
+    fun blinkHead(j: Int): Boolean =
+        j > 0 && j + 1 < end && lines[j - 1].isBlank() && indent(lines[j]) == 2 && lines[j].trim().isNotEmpty() &&
+            indent(lines[j + 1]) == 2 && lines[j + 1].trimStart().startsWith("⎿")
     fun blockEnd(from: Int): Int {
         var j = from + 1
         var last = from + 1
@@ -293,7 +363,9 @@ private fun parseBlocks(lines: List<String>, end: Int): List<ThreadBlock> {
                 j++
                 continue
             }
-            if (indent(l) < 2 || bulletLine.matches(l)) break
+            if (j > last && (isSummary(l) || blinkHead(j))) break
+            if (bulletLine.matches(l)) break
+            if (indent(l) < 2 && (j != from + 1 || !continuesHead(l))) break
             j++
             last = j
         }
@@ -306,7 +378,32 @@ private fun parseBlocks(lines: List<String>, end: Int): List<ThreadBlock> {
             i++
             continue
         }
-        val bullet = bulletLine.matchEntire(line)
+        // The logo of Claude Code and the line after an earlier turn do not show.
+        if (logoLine.containsMatchIn(line)) {
+            var k = i
+            while (k < end && k - i < LOGO_ROWS && logoLine.containsMatchIn(lines[k])) k++
+            if ((i until k).any { lines[it].contains("Claude Code") }) {
+                flushRaw()
+                i = k
+                continue
+            }
+        }
+        if (doneLine.matches(line.trimEnd())) {
+            flushRaw()
+            i++
+            continue
+        }
+        if (isSummary(line)) {
+            flushRaw()
+            // A result can follow the summary, for example the note of a message that went to another session.
+            var k = i + 1
+            while (k < end && lines[k].isNotBlank() && indent(lines[k]) >= 2 && !isSummary(lines[k])) k++
+            val text = summaryText(line)
+            blocks += ThreadBlock.Tool(text.substringBefore(' '), text.substringAfter(' '), resultLines(lines.subList(i + 1, k)))
+            i = k
+            continue
+        }
+        val bullet = bulletLine.matchEntire(line) ?: if (blinkHead(i)) bulletLine.matchEntire("●" + line.drop(1)) else null
         val prompt = if (bullet == null) promptLine.matchEntire(line) else null
         if (bullet == null && prompt == null) {
             if (rawFrom < 0) rawFrom = i
@@ -318,7 +415,9 @@ private fun parseBlocks(lines: List<String>, end: Int): List<ThreadBlock> {
         val to = blockEnd(i)
         val body = lines.subList(i + 1, to)
         if (prompt != null) {
-            val text = (listOf(prompt.groupValues[1]) + dedent(body)).joinToString("\n").trim()
+            // The notes of Claude Code under a prompt, for example "⎿  1 skill available", are not part of it.
+            val own = body.takeWhile { !it.trimStart().startsWith("⎿") }
+            val text = (listOf(prompt.groupValues[1]) + dedent(own)).joinToString("\n").trim().replace(expandHint, "")
             if (text.isNotEmpty()) blocks += ThreadBlock.Prompt(text)
         } else {
             blocks += bulletBlock(bullet!!.groupValues[1], bullet.groupValues[2].trimEnd(), body)
@@ -327,6 +426,17 @@ private fun parseBlocks(lines: List<String>, end: Int): List<ThreadBlock> {
     }
     flushRaw()
     return blocks
+}
+
+/**
+ * True when [line], at the left edge right under the first line of a
+ * block, continues that line. A bullet, a prompt, a rule, a box, and the
+ * lines of the status of the agent start something else.
+ */
+private fun continuesHead(line: String): Boolean {
+    val t = line.trim()
+    return !promptLine.matches(t) && !ruleOnly.matches(t) && !titledRule.matches(t) && !isBox(t) &&
+        !doneLine.matches(t) && !workLine.matches(t) && !spinnerLine.matches(t)
 }
 
 /** Removes the indent that the [lines] share, and keeps the blank lines between them as 1 blank line. */
@@ -369,6 +479,7 @@ private fun dedentFrom(lines: List<String>, col: Int): List<String> {
 
 /** A block that starts with a bullet: a tool call or a message. */
 private fun bulletBlock(bullet: String, head: String, body: List<String>): ThreadBlock {
+    if (bullet != "•") claudeTool(head, body)?.let { return it }
     val call = if (bullet == "•") null else toolCall.matchEntire(head)
     if (call != null) {
         val name = call.groupValues[1]
@@ -400,6 +511,40 @@ private fun bulletBlock(bullet: String, head: String, body: List<String>): Threa
     }
     val text = (listOf(head) + dedent(body)).joinToString("\n").trim()
     return ThreadBlock.Message(text)
+}
+
+/**
+ * A tool call of Claude Code 2.1 that the plain [toolCall] does not match,
+ * or null:
+ * - A shell command that runs shows its description and then the command
+ *   as the result, for example "Run the tests · 11s" and "⎿  $ npm test".
+ * - The arguments of a long call take more than 1 line, and the closing
+ *   parenthesis is on the last of them or cut.
+ */
+private fun claudeTool(head: String, body: List<String>): ThreadBlock.Tool? {
+    val first = body.indexOfFirst { it.isNotBlank() }
+    if (first < 0) return null
+    val mark = resultMark.find(body[first])
+    if (mark != null && mark.groupValues[2] == "⎿" && body[first].substring(mark.range.last + 1).startsWith("$ ")) {
+        val result = resultLines(body).filter { !expandHint.matches(it) && it.trim() != "(ctrl+b to run in background)" }
+        return ThreadBlock.Tool("Bash", head.replace(runTime, "").trim(), result)
+    }
+    if (toolCall.matches(head)) return null
+    val start = toolStart.matchEntire(head) ?: return null
+    val name = start.groupValues[1]
+    val resultAt = body.indexOfFirst { resultMark.find(it)?.groupValues?.get(2) == "⎿" }
+    if (resultAt < 0 && name !in claudeTools) return null
+    val argLines = (if (resultAt < 0) body else body.subList(0, resultAt)).map { it.trim() }.filter { it.isNotEmpty() }
+    val args = (listOf(start.groupValues[2].trim()) + argLines).joinToString(" ").removeSuffix(")").trim()
+    val result = if (resultAt < 0) emptyList() else resultLines(body.subList(resultAt, body.size))
+    val failed = result.firstOrNull()?.trimStart()?.startsWith("Error") == true
+    val change = if (name in editTools && args.isNotBlank()) {
+        val (a, r) = editCounts(result)
+        FileChange(args.substringBefore(", ").trim(), a, r)
+    } else {
+        null
+    }
+    return ThreadBlock.Tool(name, args, result, failed, change)
 }
 
 /** Turns each run of 2 or more file edits into 1 [ThreadBlock.Changes]. The same file shows once, with the sum of its counts. */
@@ -457,8 +602,8 @@ private val ocOptions = Regex("""\s+\[[^\]]*\]\s*$""")
 /** The scroll bar at the right edge of a dialog of opencode. */
 private val ocScrollBar = Regex("""\s+[█▀▄▌▐░▒▓]\s*$""")
 
-/** The line of opencode that tells how long the model thought. */
-private val ocThought = Regex("""^\+\s+Thought:\s+\S+$""")
+/** The line of opencode that tells how long the model thought, for example "+ Thought: 8.3s" or "+ Thought: Planning the commit · 1.8s". */
+private val ocThought = Regex("""^\+\s+Thought:\s.*$""")
 
 /** The first choice of a question of opencode. */
 private val ocChoiceStart = Regex("""^1[.)]\s+.+$""")
@@ -546,7 +691,9 @@ private fun opencodeThread(lines: List<String>): AgentThread {
     fun flushMessage() {
         while (message.isNotEmpty() && message.last().isEmpty()) message.removeAt(message.size - 1)
         // The lines keep their indent under the first line, for example the lines of code in a message.
-        if (message.isNotEmpty()) blocks += ThreadBlock.Message(dedent(message).joinToString("\n"))
+        // A line with 1 more blank than the first line is a new line of the text, not an indent.
+        val text = dedent(message).map { if (it.startsWith(" ") && !it.startsWith("  ")) it.drop(1) else it }
+        if (text.isNotEmpty()) blocks += ThreadBlock.Message(text.joinToString("\n"))
         message.clear()
     }
     var i = 0
@@ -557,7 +704,9 @@ private fun opencodeThread(lines: List<String>): AgentThread {
             flushMessage()
             var j = i
             while (j < end && ocPanel(lines[j]) != null) j++
-            blocks += opencodePanel(lines.subList(i, j).map { ocPanel(it)!! })
+            // A panel starts with a blank row. A panel at the start of the output without one lost
+            // its first rows to the limit of the read, so it shows as terminal lines.
+            blocks += if (i == 0 && panel.isNotBlank()) listOf(ThreadBlock.Raw(i, j)) else opencodePanel(lines.subList(i, j).map { ocPanel(it)!! })
             i = j
             continue
         }
@@ -571,6 +720,8 @@ private fun opencodeThread(lines: List<String>): AgentThread {
             }
             // The time that the model thought, for example "+ Thought: 37.7s", is not a message.
             ocThought.matches(t) -> Unit
+            // The rule where opencode compacted the session, for example "─── Compaction ───".
+            titledRule.matches(t) || ruleOnly.matches(t) -> flushMessage()
             t.startsWith("···") -> {
                 flushMessage()
                 blocks += ThreadBlock.Raw(i, i + 1)
@@ -611,17 +762,157 @@ private fun opencodePanel(content: List<String>): List<ThreadBlock> {
         flush()
         return out
     }
+    // A tool shows its output in a panel with a title, for example "# Todos" or "# Created a.ts".
+    val title = rows.firstOrNull()?.takeIf { it.startsWith("# ") }
+    if (title != null) {
+        val rest = content.subList(content.indexOfFirst { it.trim() == title } + 1, content.size)
+        // "# Running in /tmp/x" names the folder of the shell command under it.
+        return if (rest.any(::isOcMarker)) opencodePanel(rest) else listOf(opencodeTitled(title.removePrefix("# ").trim(), rest))
+    }
     var k = 0
     val prompt = ArrayList<String>()
     while (k < content.size && !isOcMarker(content[k])) prompt += content[k++]
     val text = prompt.map { it.trim() }.dropWhile { it.isEmpty() }.dropLastWhile { it.isEmpty() }.joinToString("\n")
     if (text.isNotEmpty()) out += ThreadBlock.Prompt(text)
     while (k < content.size) {
-        val head = content[k++].trim()
+        var head = content[k++].trim()
+        // A long command wraps to more rows, until the first blank row.
+        if (ocShell.matches(head)) {
+            while (k < content.size && content[k].isNotBlank() && !isOcMarker(content[k])) head = joinWrapped(head, content[k++].trim())
+        }
         val body = ArrayList<String>()
         while (k < content.size && !isOcMarker(content[k])) body += content[k++]
         out += opencodeTool(head, body)
     }
+    return out
+}
+
+/** The hints of opencode at the end of the output of a tool, for example "Click to expand". */
+private val ocHints = setOf("Click to expand", "Click to collapse")
+
+/**
+ * A tool call of opencode from the title of its panel and the [body]
+ * lines under it:
+ * - "Created a.ts" and "Wrote a.ts" write a file, "Deleted a.ts" deletes
+ *   one, and "Edited a.ts" edits one. They count the changed lines.
+ * - "Todos" lists the tasks of the agent. Its arguments tell how many are done.
+ * - Another title is the name of the tool.
+ */
+private fun opencodeTitled(title: String, body: List<String>): ThreadBlock.Tool {
+    val verb = title.substringBefore(' ')
+    val path = title.substringAfter(' ', "")
+    val lines = dedent(body.filter { it.trim() !in ocHints })
+    if (verb == "Todos") {
+        val tasks = lines.filter { it.isNotBlank() }
+        val done = tasks.count { it.startsWith("[✓]") || it.startsWith("[x]") }
+        return ThreadBlock.Tool("Todos", if (tasks.isEmpty()) "" else "$done of ${tasks.size} done", tasks)
+    }
+    val name = when (verb) {
+        "Created", "Wrote", "Written" -> "Write"
+        "Deleted", "Removed" -> "Delete"
+        "Edited", "Modified", "Patched", "Updated" -> "Edit"
+        else -> return ThreadBlock.Tool(title, "", lines)
+    }
+    if (path.isEmpty()) return ThreadBlock.Tool(title, "", lines)
+    val unified = unifySplitDiff(lines)
+    val result = unified ?: lines
+    val (added, minus) = diffCounts(result)
+    var removed = minus
+    if (name == "Delete" && removed == 0) removed = ocLineCount.find(lines.joinToString("\n"))?.groupValues?.get(1)?.toInt() ?: 0
+    return ThreadBlock.Tool(name, path, result, change = FileChange(path, added, removed))
+}
+
+/** The count of the lines of a deleted file, for example "-93 lines". */
+private val ocLineCount = Regex("""-(\d+) lines?""")
+
+/** The counts of added and removed lines in the lines of a diff of opencode. */
+private fun diffCounts(lines: List<String>): Pair<Int, Int> {
+    val added = lines.count { ocDiffLine.find(it)?.groupValues?.get(1) == "+" || it.startsWith("+ ") || it == "+" }
+    val removed = lines.count { ocDiffLine.find(it)?.groupValues?.get(1) == "-" || it.startsWith("- ") || it == "-" }
+    return added to removed
+}
+
+/** A number of a line in a split diff of opencode and its mark: a blank, + or -. The group is the number. */
+private val splitMark = Regex("""(?<=^| )(\d+) [ +-](?= |$)""")
+
+/** A side of a row of a split diff: the number of the line, its mark, and its text. */
+private val splitSide = Regex("""^\s*(\d+)(?: ([ +-])(?: (.*))?)?\s*$""")
+
+/** The least column of the numbers of the right side of a split diff. */
+private const val SPLIT_MIN_COL = 16
+
+/**
+ * Turns a split diff of opencode into a unified diff, or returns null when
+ * [lines] are not a split diff. opencode shows the old lines at the left
+ * and the new lines at the right in a wide terminal, and each side wraps
+ * its long lines. On a phone, 1 column reads better: context lines start
+ * with 2 blanks, removed lines with "- ", and added lines with "+ ". The
+ * removed lines of a change come before its added lines.
+ */
+internal fun unifySplitDiff(lines: List<String>): List<String>? {
+    // The numbers are aligned at their right end, so the column after the numbers of the right side is the same in each row.
+    val ends = HashMap<Int, Int>()
+    var leftRows = 0
+    for (l in lines) {
+        for (m in splitMark.findAll(l)) {
+            val g = m.groups[1]!!.range
+            if (g.first < SPLIT_MIN_COL) leftRows++ else ends.merge(g.last + 1, 1, Int::plus)
+        }
+    }
+    val (right, rows) = ends.maxByOrNull { it.value } ?: return null
+    if (rows < 2 || rows * 2 < leftRows) return null
+    val digits = lines.maxOf { l -> if (l.length > right) l.substring(0, right).takeLastWhile { it.isDigit() }.length else 0 }
+    val split = right - digits
+    val out = ArrayList<String>()
+    val removed = ArrayList<String>()
+    val added = ArrayList<String>()
+    // The line that a wrapped row continues on each side: a list and the index in it.
+    var lastLeft: Pair<MutableList<String>, Int>? = null
+    var lastRight: Pair<MutableList<String>, Int>? = null
+    fun flush() {
+        removed.forEach { out += "- $it" }
+        added.forEach { out += "+ $it" }
+        removed.clear()
+        added.clear()
+    }
+    fun extend(last: Pair<MutableList<String>, Int>?, text: String) {
+        if (last == null || text.isBlank()) return
+        val (list, at) = last
+        list[at] = joinWrapped(list[at], text.trim())
+    }
+    for (l in lines) {
+        val leftText = l.take(split)
+        val rightText = if (l.length > split) l.substring(split) else ""
+        val left = splitSide.matchEntire(leftText)
+        val rightSide = splitSide.matchEntire(rightText)
+        if (left == null && rightSide == null) {
+            // A wrapped row: each side continues its last line.
+            extend(lastLeft, leftText)
+            extend(lastRight, rightText)
+            continue
+        }
+        val lm = left?.groupValues?.get(2)
+        val rm = rightSide?.groupValues?.get(2)
+        if (lm != "-" && rm != "+") {
+            // A context line shows once.
+            flush()
+            out += "  " + (left ?: rightSide)!!.groupValues[3].trimEnd()
+            lastLeft = out to out.lastIndex
+            lastRight = null
+            continue
+        }
+        lastLeft = null
+        lastRight = null
+        if (lm == "-") {
+            removed += left!!.groupValues[3].trimEnd()
+            lastLeft = removed to removed.lastIndex
+        }
+        if (rm == "+") {
+            added += rightSide!!.groupValues[3].trimEnd()
+            lastRight = added to added.lastIndex
+        }
+    }
+    flush()
     return out
 }
 
@@ -630,15 +921,16 @@ private fun isOcMarker(c: String): Boolean = c.isNotEmpty() && !c.startsWith(" "
 
 /** A tool call of opencode from its [head] line and the [body] lines under it. */
 private fun opencodeTool(head: String, body: List<String>): ThreadBlock.Tool {
-    val result = dedent(body)
-    ocShell.matchEntire(head)?.let { return ThreadBlock.Tool("Bash", it.groupValues[1], result) }
-    val m = ocTool.matchEntire(head) ?: return ThreadBlock.Tool(head, "", result)
+    val lines = dedent(body.filter { it.trim() !in ocHints })
+    ocShell.matchEntire(head)?.let { return ThreadBlock.Tool("Bash", it.groupValues[1], lines) }
+    val m = ocTool.matchEntire(head) ?: return ThreadBlock.Tool(head, "", lines)
     val name = m.groupValues[2]
     val args = m.groupValues[3].replace(ocOptions, "").trim()
+    val result = (if (m.groupValues[1] == "←") unifySplitDiff(lines) else null) ?: lines
     val failed = result.firstOrNull()?.trimStart()?.startsWith("Error") == true
     val change = if (m.groupValues[1] == "←" && args.isNotEmpty()) {
-        var added = result.count { ocDiffLine.find(it)?.groupValues?.get(1) == "+" }
-        val removed = result.count { ocDiffLine.find(it)?.groupValues?.get(1) == "-" }
+        val (plus, removed) = diffCounts(result)
+        var added = plus
         // A new file shows its lines with numbers and no mark.
         if (added == 0 && removed == 0 && name == "Write") added = result.count { ocNumbered.containsMatchIn(it) }
         FileChange(args, added, removed)
@@ -684,6 +976,83 @@ private fun opencodeAsk(lines: List<String>, maxLines: Int): AgentAsk? {
         else -> AgentAsk(question, (listOf(title) + body).take(maxLines))
     }
 }
+
+/** A part of a message: text, or a table that the agent drew with box characters. */
+data class MessagePart(val text: String, val table: Boolean)
+
+/** The first character of a row of a table that Claude Code draws. */
+private const val TABLE_EDGES = "┌├└│╭╰┏┣┗┃╔╠╚║"
+
+/** True when [line] is a row of a table: it starts with an edge and has another box character after it. */
+private fun isTableRow(line: String): Boolean {
+    val t = line.trimStart()
+    return t.length > 1 && t[0] in TABLE_EDGES && t.drop(1).any { it in "│┃║┐┤┘┬┼┴╮╯┓┫┛╗╣╝" }
+}
+
+/**
+ * Splits the text of a message into text and tables. A table keeps its
+ * rows as they are, because its columns line up only in a mono font.
+ */
+fun messageParts(text: String): List<MessagePart> {
+    val out = ArrayList<MessagePart>()
+    val run = ArrayList<String>()
+    var table = false
+    fun flush() {
+        val t = if (table) run.joinToString("\n") else run.joinToString("\n").trim('\n')
+        if (t.isNotBlank()) out += MessagePart(t, table)
+        run.clear()
+    }
+    for (l in text.split('\n')) {
+        val row = isTableRow(l)
+        if (row != table) {
+            flush()
+            table = row
+        }
+        run += l
+    }
+    flush()
+    return out
+}
+
+/** The bars between the cells of a row of a table. */
+private const val TABLE_BARS = "│┃║"
+
+/**
+ * The cells of a table that the agent drew with box characters, row by
+ * row, or null when [text] is not such a table or its rows have different
+ * counts of cells. A rule separates 2 rows. The rows between 2 rules are 1
+ * row whose cells wrapped, so their parts join. The first row is the
+ * header when a rule follows it.
+ */
+fun parseTable(text: String): List<List<String>>? {
+    val rows = ArrayList<List<String>>()
+    var parts: MutableList<MutableList<String>>? = null
+    fun flush() {
+        parts?.let { p -> rows += p.map { it.joinToString(" ") } }
+        parts = null
+    }
+    for (raw in text.split('\n')) {
+        val l = raw.trim()
+        if (l.isEmpty()) continue
+        if (l[0] !in TABLE_BARS) {
+            flush()
+            continue
+        }
+        val cells = l.split(*TABLE_BARS.toCharArray()).drop(1).dropLast(1).map { it.trim() }
+        if (cells.isEmpty()) return null
+        val p = parts ?: MutableList<MutableList<String>>(cells.size) { ArrayList() }.also { parts = it }
+        if (p.size != cells.size) return null
+        cells.forEachIndexed { i, c -> if (c.isNotEmpty()) p[i] += c }
+    }
+    flush()
+    return rows.takeIf { it.isNotEmpty() && it.all { r -> r.size == it[0].size } }
+}
+
+/** The mark of a changed line in the result of an edit: + or -, after the number of the line when it has one. */
+private val changeMark = Regex("""^\s*(?:\d+ ([+-])|([+-])(?: |$))""")
+
+/** The mark of a changed line in the result of an edit, '+' or '-', or null for another line. */
+fun changeMark(line: String): Char? = changeMark.find(line)?.let { m -> (m.groups[1] ?: m.groups[2])?.value?.single() }
 
 /** The kind of a line of a diff, for its color. */
 enum class DiffLineKind { Hunk, Added, Removed, Context }

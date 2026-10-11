@@ -69,6 +69,14 @@ The agent screen of Flux for Android and Flux for iOS has these parts:
 - The thread shows the messages of the agent, its tool calls, the files that it changed, and your prompts. Select a tool call to show its result. Flux reads the transcripts of Claude Code, Codex, and opencode. Lines that it cannot read show as terminal lines.
 - The dock at the bottom shows the question and the choices of a blocked agent, the step of a working agent with **Interrupt**, or the end of a finished turn. The text field and the mic key are under it.
 
+Flux for Android also reads these parts of the transcripts:
+
+- Claude Code 2.1 sums up tool calls in 1 line, for example `Read 2 files, ran 3 shell commands`. The thread shows each summary as a tool call. A shell command that runs shows its description, and its result shows the command.
+- A table that the agent draws with box characters shows as a grid of cells. A wide table scrolls to the side.
+- The result of an edit shows the added lines in green and the removed lines in red. A diff that opencode shows in 2 columns shows in 1 column.
+- The task list of opencode shows as **Todos** with the count of done tasks. A file that opencode creates or deletes counts in the changed files.
+- When the read starts inside a long block, the start of the thread shows that block as **Earlier output**. Select it to show its lines.
+
 The agents window of Flux for macOS keeps its agent list in the place of the pills. Its header has **Changes**, **Keys**, the copy button, and the refresh button. See [Use a Mac](#use-a-mac).
 
 The list puts blocked agents first, then done, working, idle, and unknown agents.
@@ -114,7 +122,7 @@ Claude Code, Codex, opencode, and other agents draw for the full width of the te
 - A box that is wider than the screen loses its right side, so its rows wrap under the left side. A table keeps all its sides.
 - The phone removes the margin that all lines share, extra empty rows, scroll bars, and the half-block edges of boxes.
 - A panel, for example a message, a tool call, or a diff line in opencode, fills the width of the screen.
-- The phone removes the sidebar that opencode shows in a wide terminal, because its rows share the lines of the conversation. The status line at the bottom still shows the tokens and the cost.
+- `fluxd` removes the sidebar that opencode shows in a wide terminal, because its rows share the lines of the conversation. It reads each row of opencode apart, so that herdr does not join a row of the conversation with a row of the sidebar. The status line at the bottom still shows the tokens and the cost.
 - The phone also removes the expanded vertical session tabs of OpenCode V2 when their
   titles and **New session** row are visible. This keeps the conversation and
   prompt at the left without changing the tab layout on the computer. Horizontal tabs

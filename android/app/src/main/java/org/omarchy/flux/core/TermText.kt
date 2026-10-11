@@ -349,8 +349,9 @@ private fun reflow(lines: List<TermLine>, width: Int): List<TermLine> {
             val space = text.indexOf(' ', hang)
             val word = (if (space < 0) text.length else space) - hang
             if (end + 1 + word > width - WRAP_SLACK) {
-                val gap = TermSpan(" ", prev.spans.last().style.copy(underline = false, strike = false))
-                out[out.size - 1] = TermLine(prev.spans + gap + dropColumns(line, hang).spans, prev.fill)
+                val rest = dropColumns(line, hang)
+                val gap = if (wrapsInWord(prev.text, rest.text)) emptyList() else listOf(TermSpan(" ", prev.spans.last().style.copy(underline = false, strike = false)))
+                out[out.size - 1] = TermLine(prev.spans + gap + rest.spans, prev.fill)
                 end = if (canContinue(text)) text.length else 0
                 continue
             }
@@ -361,6 +362,29 @@ private fun reflow(lines: List<TermLine>, width: Int): List<TermLine> {
     }
     return out
 }
+
+/**
+ * True when a wrapped line broke inside a word, so that the rows join
+ * without a blank. opencode can break a path or a link after a slash, a
+ * word after a hyphen, and a path after a dot, for example "src/" and
+ * "pages/a.ts", "--" and "workers=2", or "share.test." and "ts". A colon
+ * before 2 slashes is a link, for example "https:" and "//github.com".
+ */
+fun wrapsInWord(prev: String, next: String): Boolean {
+    val token = prev.substringAfterLast(' ')
+    val first = next.firstOrNull() ?: return false
+    if (token.length < 2 || first == ' ') return false
+    return when {
+        token.endsWith("/") -> true
+        token.endsWith(":") && next.startsWith("//") -> true
+        token.endsWith("-") || token.endsWith("_") -> first.isLetterOrDigit()
+        token.endsWith(".") && (token.dropLast(1).contains('/') || token.dropLast(1).contains('.')) -> first.isLetterOrDigit()
+        else -> false
+    }
+}
+
+/** Joins 2 rows of a wrapped line, with a blank between them unless the line broke inside a word, see [wrapsInWord]. */
+fun joinWrapped(prev: String, next: String): String = if (wrapsInWord(prev, next)) prev + next else "$prev $next"
 
 /** True when the next row can continue a line that ends with [row]: the row has text, and it is not a rule or a row of a box. */
 private fun canContinue(row: String): Boolean =

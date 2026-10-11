@@ -402,6 +402,7 @@ adb -s emulator-5554 shell am start -n org.omarchy.flux/.ui.MainActivity \
 
 To capture the screen of an agent, send `agent.read` on the herdr socket with
 `"source": "recent_unwrapped"`, `"format": "ansi"`, and `"strip_ansi": false`, as `fluxd` does.
+For opencode, `fluxd` uses `"source": "recent"` and removes the sidebar, see `internal/core/herdr_sidebar.go`.
 
 Use a small, non-private sample. This only changes the demo output; it sends no
 keys or prompts to a real agent. Omit the output extra to restore the default sample.

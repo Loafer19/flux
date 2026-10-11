@@ -192,11 +192,25 @@ func GetSnapshot(ctx context.Context, path string) (Snapshot, error) {
 	return r.Snapshot, err
 }
 
+// The sources of a read. With SourceUnwrapped, herdr joins the rows that
+// the terminal wrapped. With SourceRows, each row of the terminal stays a
+// line.
+const (
+	SourceUnwrapped = "recent_unwrapped"
+	SourceRows      = "recent"
+)
+
 // ReadAgent returns up to lines rows of recent output from the agent in
 // the pane. herdr joins soft-wrapped rows. With ansi, the text keeps the
 // ANSI codes of colors and styles. Without it, herdr removes them.
 func ReadAgent(ctx context.Context, path, pane string, lines int, ansi bool) (Read, error) {
-	params := map[string]any{"target": pane, "source": "recent_unwrapped", "lines": lines}
+	return ReadAgentFrom(ctx, path, pane, SourceUnwrapped, lines, ansi)
+}
+
+// ReadAgentFrom is ReadAgent with the source of the read, SourceUnwrapped
+// or SourceRows.
+func ReadAgentFrom(ctx context.Context, path, pane, source string, lines int, ansi bool) (Read, error) {
+	params := map[string]any{"target": pane, "source": source, "lines": lines}
 	if ansi {
 		params["format"], params["strip_ansi"] = "ansi", false
 	}

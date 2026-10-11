@@ -597,5 +597,260 @@ class AgentThreadTest {
         assertEquals(listOf("No tax", "A quarter", ""), choices.map { it.detail })
         assertTrue(choices[0].selected)
     }
-}
 
+    // ───────────────────────── Claude Code 2.1 ─────────────────────────
+
+    /** An idle screen of Claude Code 2.1: the logo, prompts with ❯, tool summaries, and the ruled input with the name of the session. */
+    private val claude21 = listOf(
+        " ▐▛███▜▌   Claude Code v2.1.293",
+        "▝▜█████▛▘  Opus 5.5 · Claude Max",
+        "  ▘▘ ▝▝    ~/Code/billing",
+        "",
+        "❯ Fix the login test",
+        "  ⎿  1 skill available",
+        "",
+        "  Read 2 files, listed 1 directory, ran 3 shell commands (ctrl+o to expand)",
+        "",
+        "● The test waited on a fixed timeout.",
+        "",
+        "  Ran 1 shell command",
+        "  ⎿  “Tell the reviewer” → sent to billing-2",
+        "",
+        "● Bash(cat > /tmp/fix.py <<'EOF'",
+        "      import sys",
+        "  ⎿  done",
+        "",
+        "● Workflow(Rebase the 3 PRs into one chain and run make check at each",
+        "          step)",
+        "  ⎿  /workflows to view dynamic workflow runs",
+        "",
+        "✻ Sautéed for 6m 47s · done Tuesday 7:11 PM",
+        "",
+        "❯ Ship it",
+        "",
+        "● Shipped.",
+        "",
+        "✻ Worked for 22s · done 10:08 PM",
+        "                                                              new task? /clear to save 671.7k tokens",
+        "✦ Heads up · Publishing a release deploys to production.",
+        "  1: Learn more   2: Knew this already   0: Dismiss",
+        "──────────────────────────────────── Fix the login test ─",
+        "❯",
+        "────────────────────────────────────────────────────────",
+        "  ▸▸ auto mode on (shift+tab to cycle) · ← for agents",
+    )
+
+    @Test
+    fun claude21PromptsSummariesAndLongToolCalls() {
+        val t = agentThread(claude21)
+        assertEquals(
+            listOf(
+                ThreadBlock.Prompt("Fix the login test"),
+                ThreadBlock.Tool("Read", "2 files, listed 1 directory, ran 3 shell commands", emptyList()),
+                ThreadBlock.Message("The test waited on a fixed timeout."),
+                ThreadBlock.Tool("Ran", "1 shell command", listOf("“Tell the reviewer” → sent to billing-2")),
+                ThreadBlock.Tool("Bash", "cat > /tmp/fix.py <<'EOF' import sys", listOf("done")),
+                ThreadBlock.Tool(
+                    "Workflow", "Rebase the 3 PRs into one chain and run make check at each step",
+                    listOf("/workflows to view dynamic workflow runs"),
+                ),
+                ThreadBlock.Prompt("Ship it"),
+                ThreadBlock.Message("Shipped."),
+            ),
+            t.blocks,
+        )
+        assertEquals("22s", t.worked)
+        assertEquals("", t.step)
+    }
+
+    @Test
+    fun claude21WorkingScreenGivesTheStepAndTheRunningCommand() {
+        val lines = listOf(
+            "● I will capture the output.",
+            "",
+            // The bullet of a call that runs blinks, so this capture has 2 blanks in its place.
+            "  Capture the output · 11s",
+            "  ⎿  $ mkdir -p /tmp/cap && cat >",
+            "     /tmp/cap/a.txt",
+            "     (ctrl+b to run in background)",
+            "",
+            "✶ Orbiting… (1m 17s · ↓ 5.7k tokens)",
+            "  ⎿  Tip: Use /btw to ask a quick side question",
+            "                                                     Update available! Run: mise upgrade claude",
+            "────────────────────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────────────────────",
+            "  ▸▸ auto mode on · 1 shell · esc to interrupt · ← for agents · ↓ to manage",
+        )
+        val t = agentThread(lines)
+        assertEquals("Orbiting", t.step)
+        assertEquals("1m 17s", t.elapsed)
+        assertEquals(
+            listOf(
+                ThreadBlock.Message("I will capture the output."),
+                ThreadBlock.Tool("Bash", "Capture the output", listOf("$ mkdir -p /tmp/cap && cat >", "/tmp/cap/a.txt")),
+            ),
+            t.blocks,
+        )
+    }
+
+    @Test
+    fun summaryNeedsACountAndNoSentenceEnd() {
+        val lines = listOf("● Done.", "", "  Waves 1 to 5 each passed.", "", "  Ran 20 tests and all passed.")
+        assertEquals(1, agentThread(lines).blocks.size)
+    }
+
+    @Test
+    fun aLineAtTheLeftEdgeContinuesTheHead() {
+        val lines = listOf("● Dynamic workflow \"Build the PRs\"", "completed · 7h 55m", "", "● Next.")
+        assertEquals(
+            listOf(ThreadBlock.Message("Dynamic workflow \"Build the PRs\"\ncompleted · 7h 55m"), ThreadBlock.Message("Next.")),
+            agentThread(lines).blocks,
+        )
+    }
+
+    @Test
+    fun messageSplitsIntoTextAndTables() {
+        val text = "The PRs are open:\n┌───┬────┐\n│ # │ PR │\n├───┼────┤\n│ 1 │ #9 │\n└───┴────┘\nMerge them in order."
+        assertEquals(
+            listOf(
+                MessagePart("The PRs are open:", false),
+                MessagePart("┌───┬────┐\n│ # │ PR │\n├───┼────┤\n│ 1 │ #9 │\n└───┴────┘", true),
+                MessagePart("Merge them in order.", false),
+            ),
+            messageParts(text),
+        )
+        assertEquals(listOf(MessagePart("│ is a bar", false)), messageParts("│ is a bar"))
+    }
+
+    @Test
+    fun tableGivesRowsOfCellsAndJoinsWrappedCells() {
+        val table = listOf(
+            "┌───┬──────┬────────────┐",
+            "│ # │  PR  │ Fixes      │",
+            "├───┼──────┼────────────┤",
+            "│ 1 │ #593 │ Keyless    │",
+            "│   │      │ REST reads │",
+            "├───┼──────┼────────────┤",
+            "│ 2 │ #601 │            │",
+            "└───┴──────┴────────────┘",
+        ).joinToString("\n")
+        assertEquals(listOf(listOf("#", "PR", "Fixes"), listOf("1", "#593", "Keyless REST reads"), listOf("2", "#601", "")), parseTable(table))
+        assertNull("rows with other counts of cells", parseTable("│ a │ b │\n├───┤\n│ c │"))
+    }
+
+    @Test
+    fun changeMarksOfEditResults() {
+        assertEquals('-', changeMark("      42 -<<<<<<< HEAD"))
+        assertEquals('+', changeMark("      43 +"))
+        assertEquals('+', changeMark("+ export function total() {"))
+        assertEquals('-', changeMark("    2 - export function total() {"))
+        assertNull(changeMark("      40  Operational"))
+        assertNull(changeMark("  context line"))
+    }
+
+    // ───────────────────────── opencode panels ─────────────────────────
+
+    @Test
+    fun opencodeTitledPanelsAreTools() {
+        val lines = listOf(
+            "┃",
+            "┃  Clean up the middleware",
+            "┃",
+            "",
+            "┃",
+            "┃  # Todos",
+            "┃",
+            "┃  [✓] Read the middleware.",
+            "┃  [•] Replace the body limit.",
+            "┃",
+            "",
+            "┃",
+            "┃  # Deleted api/body-limit.ts",
+            "┃",
+            "┃  -93 lines",
+            "┃",
+            "",
+            "┃",
+            "┃  # Created api/limit.ts",
+            "┃",
+            "┃                              1 + import { limit } from 'x';",
+            "┃                              2 + export default limit;",
+            "┃",
+            "",
+            "┃",
+            "┃  # Running in /tmp/review",
+            "┃",
+            "┃  $ npx vitest run src/pages/MySpotsPage.test.tsx src/",
+            "┃  pages/MapPage.tsx --",
+            "┃  workers=2",
+            "┃",
+            "┃  ok",
+            "┃  …",
+            "┃",
+            "┃  Click to expand",
+            "┃",
+            "",
+            "   ▣  Build · Big Pickle · 21.2s",
+        )
+        val t = agentThread(lines)
+        assertEquals(
+            listOf(
+                ThreadBlock.Prompt("Clean up the middleware"),
+                ThreadBlock.Tool("Todos", "1 of 2 done", listOf("[✓] Read the middleware.", "[•] Replace the body limit.")),
+                ThreadBlock.Changes(listOf(FileChange("api/body-limit.ts", 0, 93), FileChange("api/limit.ts", 2, 0))),
+                ThreadBlock.Tool("Bash", "npx vitest run src/pages/MySpotsPage.test.tsx src/pages/MapPage.tsx --workers=2", listOf("ok", "…")),
+            ),
+            t.blocks,
+        )
+    }
+
+    @Test
+    fun splitDiffBecomesUnified() {
+        val lines = listOf(
+            "    1   import { a } from                 1   import { a } from",
+            "        'x';                                  'x';",
+            "    2 - const b = 1;                     2 + const b = 2;",
+            "                                         3 + const c = 3;",
+            "    3   export { a }                     4   export { a }",
+        )
+        assertEquals(
+            listOf("  import { a } from 'x';", "- const b = 1;", "+ const b = 2;", "+ const c = 3;", "  export { a }"),
+            unifySplitDiff(lines),
+        )
+        // A unified diff of a narrow terminal stays as it is.
+        assertNull(unifySplitDiff(listOf("    1   import { a }", "    2 - const b = 1;", "    2 + const b = 2;")))
+    }
+
+    @Test
+    fun opencodeSplitEditCountsBothSides() {
+        val lines = listOf(
+            "┃",
+            "┃  ← Edit src/a.ts",
+            "┃",
+            "┃    1   import { a } from 'x';           1   import { a } from 'x';",
+            "┃    2 - const b = 1;                     2 + const b = 2;",
+            "┃                                         3 + const c = 3;",
+            "┃",
+            "",
+            "   ▣  Build · Big Pickle · 2.1s",
+        )
+        val edit = agentThread(lines).blocks.single() as ThreadBlock.Tool
+        assertEquals(FileChange("src/a.ts", 2, 1), edit.change)
+        assertEquals(listOf("  import { a } from 'x';", "- const b = 1;", "+ const b = 2;", "+ const c = 3;"), edit.result)
+    }
+
+    @Test
+    fun opencodeThoughtWithATitleAndCompactionDoNotShow() {
+        val lines = listOf(
+            "   + Thought: Planning the commit · 1.8s",
+            "   I will commit now.",
+            "    Pushed to main.",
+            "",
+            "   ─────────────── Compaction ───────────────",
+            "",
+            "   ▣  Build · Big Pickle · 2.1s",
+        )
+        assertEquals(listOf(ThreadBlock.Message("I will commit now.\nPushed to main.")), agentThread(lines).blocks)
+    }
+}

@@ -11,10 +11,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,12 +62,15 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.omarchy.flux.core.AgentAsk
@@ -76,6 +81,9 @@ import org.omarchy.flux.core.DiffLineKind
 import org.omarchy.flux.core.HerdrAgent
 import org.omarchy.flux.core.TermLine
 import org.omarchy.flux.core.ThreadBlock
+import org.omarchy.flux.core.changeMark
+import org.omarchy.flux.core.messageParts
+import org.omarchy.flux.core.parseTable
 
 /*
  * The parts of the agent thread design: the Inbox master of an agent and
@@ -395,9 +403,82 @@ internal fun statusWord(s: AgentStatus): String = when (s) {
 /** A token that looks like a file path or a file name, or code in backticks. */
 private val codeToken = Regex("""`[^`\n]+`|(?<![\w/.-])(?:[\w.-]+/)+[\w.-]*\w|(?<![\w/.-])[\w-]+(?:\.[\w-]+)*\.(?:sql|rb|ts|tsx|js|jsx|mjs|py|go|rs|kt|kts|swift|java|c|h|cpp|md|json|toml|yaml|yml|sh|css|scss|html|txt|lock|xml|qml)\b""")
 
-/** A message of the agent: body text, with paths and code in mono on a tile. */
+/** A message of the agent: body text, with paths and code in mono on a tile. A table shows in mono, see [ThreadTable]. */
 @Composable
 internal fun ThreadMessage(text: String) {
+    val parts = remember(text) { messageParts(text) }
+    if (parts.size == 1 && !parts[0].table) {
+        MessageText(parts[0].text)
+        return
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (p in parts) if (p.table) ThreadTable(p.text) else MessageText(p.text)
+    }
+}
+
+/** The widest column of a table of a message. A longer cell wraps. */
+private val TABLE_COL_MAX = 240.dp
+
+/** The narrowest column of a table of a message. */
+private val TABLE_COL_MIN = 36.dp
+
+/** The padding of a cell of a table of a message. */
+private val TABLE_CELL_PAD = PaddingValues(horizontal = 10.dp, vertical = 7.dp)
+
+/**
+ * A table of a message as a grid of cells, with the header row in bold on
+ * a tile. Each column is as wide as its widest cell, up to
+ * [TABLE_COL_MAX], and a table wider than the screen scrolls to the side.
+ * A table that does not parse shows its rows in mono.
+ */
+@Composable
+private fun ThreadTable(text: String) {
+    val shape = RoundedCornerShape(12.dp)
+    val rows = remember(text) { parseTable(text) }
+    val frame = Modifier.fillMaxWidth().clip(shape).background(Tn.offTile).border(1.dp, Tn.line, shape)
+    if (rows == null) {
+        Box(frame.horizontalScroll(rememberScrollState())) {
+            SelectionContainer {
+                BasicText(
+                    text, Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    style = TextStyle(color = Tn.text, fontSize = 11.sp, lineHeight = 15.sp, fontFamily = Mono, lineHeightStyle = FullLines),
+                    softWrap = false,
+                )
+            }
+        }
+        return
+    }
+    val style = TextStyle(color = Tn.text, fontSize = 13.sp, lineHeight = 18.sp, lineHeightStyle = FullLines)
+    val head = style.copy(fontWeight = FontWeight.SemiBold)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val pad = TABLE_CELL_PAD.calculateLeftPadding(LayoutDirection.Ltr) * 2
+    val widths = remember(rows, density) {
+        List(rows[0].size) { c ->
+            val widest = rows.withIndex().maxOf { (r, row) -> measurer.measure(row[c], if (r == 0) head else style, softWrap = false).size.width }
+            (with(density) { widest.toDp() } + pad + 1.dp).coerceIn(TABLE_COL_MIN, TABLE_COL_MAX)
+        }
+    }
+    Box(frame.horizontalScroll(rememberScrollState())) {
+        SelectionContainer {
+            Column {
+                rows.forEachIndexed { r, row ->
+                    if (r > 0) Box(Modifier.width(widths.fold(0.dp) { a, w -> a + w } + (widths.size - 1).dp).height(1.dp).background(Tn.line))
+                    Row(Modifier.height(IntrinsicSize.Min).then(if (r == 0) Modifier.background(Tn.tile) else Modifier)) {
+                        row.forEachIndexed { c, cell ->
+                            if (c > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(Tn.line))
+                            BasicText(cell, Modifier.width(widths[c]).padding(TABLE_CELL_PAD), style = if (r == 0) head else style)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The text of a message, with paths and code in mono on a tile. */
+@Composable
+private fun MessageText(text: String) {
     val tile = Tn.tile
     val styled = remember(text, tile) {
         buildAnnotatedString {
@@ -443,12 +524,31 @@ internal fun ThreadTool(b: ThreadBlock.Tool, running: Boolean, open: Boolean, on
             if (hasResult) Sym(if (open) Ic.collapse else Ic.expand, tint = Tn.sub, size = 18.dp)
         }
         if (open && hasResult) {
+            // The added and removed lines of an edit have the colors of a diff.
+            val edit = b.change != null || b.name in EDIT_NAMES
+            val green = Tn.green
+            val red = Tn.red
+            val result = remember(b.result, edit, green, red) {
+                buildAnnotatedString {
+                    b.result.forEachIndexed { i, l ->
+                        if (i > 0) append("\n")
+                        when (if (edit) changeMark(l) else null) {
+                            '+' -> withStyle(SpanStyle(color = green)) { append(l) }
+                            '-' -> withStyle(SpanStyle(color = red)) { append(l) }
+                            else -> append(l)
+                        }
+                    }
+                }
+            }
             SelectionContainer {
-                LineText(b.result.joinToString("\n"), Modifier.padding(start = 26.dp, bottom = 12.dp), size = 12f, lineHeight = 1.45f, color = Tn.sub, family = Mono)
+                LineText(result, Modifier.padding(start = 26.dp, bottom = 12.dp), size = 12f, lineHeight = 1.45f, color = Tn.sub, family = Mono)
             }
         }
     }
 }
+
+/** The names of the tools that change a file, for the colors of their result. */
+private val EDIT_NAMES = setOf("Edit", "Update", "Write", "MultiEdit", "Delete", "Edited", "Added", "Deleted")
 
 /** The summary of a run of file edits: the files with their counts. A tap opens the changes when [onReview] is set. */
 @Composable
@@ -529,6 +629,38 @@ internal fun ThreadRaw(lines: List<TermLine>) {
     BoxWithConstraints(Modifier.fillMaxWidth().clip(shape).background(Tn.offTile).border(1.dp, Tn.line, shape).padding(vertical = 10.dp)) {
         val width = maxWidth
         SelectionContainer { Column { TermLines(lines, width) } }
+    }
+}
+
+/** The most lines of a first raw block that show without a fold, see [ThreadEarlier]. */
+internal const val EARLIER_FOLD_LINES = 6
+
+/**
+ * The output at the start of the thread whose block started before the
+ * oldest line of the read, as a card that opens and closes with a tap.
+ */
+@Composable
+internal fun ThreadEarlier(lines: List<TermLine>, open: Boolean, onToggle: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(Tn.offTile).border(1.dp, Tn.line, shape)
+            .clickable(onClickLabel = if (open) "Hide the earlier output" else "Show the earlier output", role = Role.Button, onClick = onToggle),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 42.dp).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            T("Earlier output", size = 12, weight = FontWeight.Bold, family = Mono, maxLines = 1)
+            T("${lines.size} lines", Modifier.weight(1f), size = 12, color = Tn.sub, family = Mono, maxLines = 1)
+            Sym(if (open) Ic.collapse else Ic.expand, tint = Tn.sub, size = 18.dp)
+        }
+        if (open) {
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                val width = maxWidth
+                SelectionContainer { Column { TermLines(lines, width) } }
+            }
+        }
     }
 }
 

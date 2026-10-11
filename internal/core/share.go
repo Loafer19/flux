@@ -246,6 +246,7 @@ func (d *Daemon) handleShare(dev *Device, l *lan.Link, p *proto.Packet) {
 	case body.URL != "":
 		if link, ok := webURL(body.URL); ok {
 			d.openLink(dev, link)
+			d.logLink(dev, link)
 			return
 		}
 		// A path, a file: URL, or another scheme would start a local
@@ -828,7 +829,30 @@ func (d *Daemon) ShareText(dev *Device, key, value string) error {
 		}
 		value = u
 	}
-	return d.send(dev, proto.New(proto.TypeShare, map[string]any{key: value}))
+	if err := d.send(dev, proto.New(proto.TypeShare, map[string]any{key: value})); err != nil {
+		return err
+	}
+	// The history shows what this computer shared, so that the chat of the
+	// Flux window shows it too.
+	source := "share"
+	if key == "url" {
+		source = "link"
+	}
+	d.mu.Lock()
+	d.addClipLocked(ClipEntry{Text: value, Dir: "out", Device: dev.ID, DeviceName: "this pc", Source: source, Time: time.Now().Unix()})
+	d.mu.Unlock()
+	d.markDirty()
+	return nil
+}
+
+// logLink adds a web link from a device to the clipboard history. The link
+// does not go on the clipboard. The history shows it, so that the chat of
+// the Flux window shows it too.
+func (d *Daemon) logLink(dev *Device, link string) {
+	d.mu.Lock()
+	d.addClipLocked(ClipEntry{Text: link, Dir: "in", Device: dev.ID, DeviceName: dev.Name, Source: "link", Time: time.Now().Unix()})
+	d.mu.Unlock()
+	d.markDirty()
 }
 
 // maxSentText is the largest clipboard text and shared text that fluxd

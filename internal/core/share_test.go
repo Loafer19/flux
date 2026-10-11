@@ -143,6 +143,58 @@ func TestHandleShareURL(t *testing.T) {
 	if !slices.Equal(opened, []string{"https://omarchy.org"}) {
 		t.Fatalf("opened %q", opened)
 	}
+	// The history shows the link. The clipboard keeps its text.
+	if e := d.clipboard[0]; e.Text != "https://omarchy.org" || e.Dir != "in" || e.Device != "p1" || e.Source != "link" {
+		t.Fatalf("history %+v", e)
+	}
+	if clip.text != "-x" {
+		t.Fatalf("clipboard %q", clip.text)
+	}
+}
+
+// TestShareTextLogsTheSend checks that a text and a link that this
+// computer shares go to the history of the device after the send.
+func TestShareTextLogsTheSend(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	onDesk, onPhone, _, phoneID := linkPair(t, ctx)
+	got := make(chan *proto.Packet, 2)
+	go onPhone.Receive(func(p *proto.Packet) { got <- p })
+
+	d := testDaemon()
+	dev := &Device{ID: phoneID, Name: "Pixel 8", Paired: true, link: onDesk}
+	if err := d.ShareText(dev, "url", "https://omarchy.org/flux"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ShareText(dev, "text", "Gate B14"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		select {
+		case <-got:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the phone got no share within 5 seconds")
+		}
+	}
+	if len(d.clipboard) != 2 {
+		t.Fatalf("history %+v", d.clipboard)
+	}
+	text, link := d.clipboard[0], d.clipboard[1]
+	if link.Text != "https://omarchy.org/flux" || link.Dir != "out" || link.Device != phoneID || link.Source != "link" {
+		t.Errorf("link %+v", link)
+	}
+	if text.Text != "Gate B14" || text.Dir != "out" || text.Device != phoneID || text.Source != "share" {
+		t.Errorf("text %+v", text)
+	}
+
+	// A send that fails adds nothing.
+	dev.link = nil
+	if err := d.ShareText(dev, "text", "not sent"); err == nil {
+		t.Fatal("an offline device got the text")
+	}
+	if len(d.clipboard) != 2 {
+		t.Fatalf("history %+v", d.clipboard)
+	}
 }
 
 // TestShareTextURL checks that only a web URL goes to a device as a URL.

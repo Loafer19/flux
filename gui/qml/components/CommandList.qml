@@ -1,15 +1,13 @@
 import QtQuick
 import QtQuick.Layouts
 import ".."
-import "../components"
 
 // The commands that the phone lists under Run commands. The user adds and
 // removes them here. A tap on the phone runs the command on this computer.
-// This screen does not run commands.
+// This list does not run commands.
 Item {
   id: root
   property var view
-  property bool fillHeight: false
   readonly property var commands: view && view.backend ? (view.backend.commands || []) : []
   property bool adding: false
   property bool saving: false
@@ -64,13 +62,6 @@ Item {
     width: parent.width
     spacing: 18
 
-    Txt {
-      width: parent.width
-      text: "Your phone lists these commands under Run commands. A tap on the phone runs the command on this computer."
-      color: Theme.dim
-      wrapMode: Text.Wrap
-    }
-
     GridLayout {
       id: grid
       width: parent.width
@@ -95,24 +86,36 @@ Item {
           required property var modelData
           Layout.preferredWidth: grid.cell
           Layout.fillHeight: true
-          implicitHeight: cCol.implicitHeight + 34
+          implicitHeight: cCol.implicitHeight + 28
 
           Column {
             id: cCol
-            x: 17
-            y: 17
-            width: parent.width - 34
-            spacing: 8
-            Row {
+            x: 14
+            y: 14
+            width: parent.width - 28
+            spacing: 6
+            Item {
               width: parent.width
-              spacing: 8
-              Icon { id: cmdIcon; anchors.verticalCenter: parent.verticalCenter; name: "console"; size: 16; color: Theme.accent }
+              height: Math.max(cmdName.implicitHeight, removeButton.implicitHeight)
+              Icon { id: cmdIcon; anchors.verticalCenter: parent.verticalCenter; name: "console"; size: 15; color: Theme.accent }
               Txt {
+                id: cmdName
+                anchors.left: cmdIcon.right
+                anchors.leftMargin: 6
+                anchors.right: removeButton.left
+                anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - cmdIcon.width - 8
                 text: modelData.name
-                font.weight: Font.Bold
+                font.weight: Font.DemiBold
                 elide: Text.ElideRight
+              }
+              IconAction {
+                id: removeButton
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                icon: "trash"
+                tip: "Remove " + modelData.name
+                onClicked: root.remove(modelData)
               }
             }
             Txt {
@@ -122,19 +125,6 @@ Item {
               font.pixelSize: 11
               elide: Text.ElideRight
             }
-            Item {
-              width: removeButton.width
-              height: removeButton.height + 6
-              OutlineButton {
-                id: removeButton
-                y: 6
-                icon: "trash"
-                text: "Remove"
-                padX: 14
-                padY: 6
-                onClicked: root.remove(modelData)
-              }
-            }
           }
         }
       }
@@ -143,7 +133,7 @@ Item {
       Item {
         Layout.preferredWidth: grid.cell
         Layout.fillHeight: true
-        implicitHeight: root.adding ? form.implicitHeight + 34 : 60
+        implicitHeight: root.adding ? form.implicitHeight + 34 : 56
 
         DashedRect {
           anchors.fill: parent

@@ -136,15 +136,10 @@ Card {
     anchors.top: parent.top
     anchors.margins: 19
     spacing: 12
-    Row {
-      spacing: 8
-      Icon {
-        anchors.verticalCenter: parent.verticalCenter
-        name: "webcam"
-        size: 14
-        color: root.live ? Theme.err : Theme.dim
-      }
-      SectionLabel { anchors.verticalCenter: parent.verticalCenter; text: root.live ? "PHONE CAMERA · LIVE" : "PHONE CAMERA" }
+    CardTitle {
+      icon: "webcam"
+      text: "Phone camera"
+      live: root.live
     }
 
     Item {
@@ -161,7 +156,9 @@ Card {
           width: parent.width
           visible: root.live && !root.restarting
           text: (root.cam.fromName || "The phone") + " is live as " + (root.cam.label || "a webcam")
-          font.weight: Font.Bold
+          font.weight: Font.DemiBold
+          wrapMode: Text.Wrap
+          maximumLineCount: 2
           elide: Text.ElideRight
         }
         Txt {

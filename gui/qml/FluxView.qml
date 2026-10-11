@@ -16,14 +16,17 @@ Item {
   onThemeTextChanged: Theme.load(themeText)
   Component.onCompleted: Theme.load(themeText)
 
+  // The pages of a device. The last page has the name of the device type,
+  // for example Phone.
   readonly property var tabs: [
-    { key: "overview", label: "Overview", page: "Overview", icon: "dashboard" },
-    { key: "clipboard", label: "Clipboard", page: "Clipboard", icon: "clipboard" },
-    { key: "files", label: "Files", page: "Files", icon: "transfers" },
-    { key: "notifications", label: "Notifications", page: "Notifications", icon: "bell" },
+    { key: "chat", label: "Chat", page: "Chat", icon: "forum" },
     { key: "messages", label: "Messages", page: "Messages", icon: "message" },
-    { key: "commands", label: "Phone commands", page: "PhoneCommands", icon: "console" }
+    { key: "notifications", label: "Notifications", page: "Notifications", icon: "bell" },
+    { key: "device", label: Fmt.deviceWord(devType), page: "Device", icon: Fmt.kindIcon(devType) }
   ]
+  // The keys of the pages before Chat. showPage and tab accept them, so a
+  // host and flux-cli open keep working.
+  readonly property var tabAliases: ({ overview: "device", commands: "device", clipboard: "chat", files: "chat" })
 
   // The layout follows the width of the window. Wide shows the full
   // sidebar. Below 1000 px, a rail of icons takes its place. Below 680 px,
@@ -38,10 +41,11 @@ Item {
   readonly property int gutter: narrowLayout ? 16 : 28
   onWideLayoutChanged: if (wideLayout) drawerOpen = false
 
-  // The header shows icon buttons with no text when the window is narrow.
-  readonly property bool compactHeader: width - sidebarSpace < 760
+  // The header hides the name and the address of the device when the
+  // content is narrow.
+  readonly property bool compactHeader: width - sidebarSpace < 480
 
-  property string tab: "overview"
+  property string tab: "chat"
   onTabChanged: drawerOpen = false
   property string selectedId: ""
   property bool pairMode: false
@@ -52,9 +56,6 @@ Item {
   // The scrim takes the keyboard while the dialog is open, so give it back to
   // the shortcuts when it closes.
   onUnpairTargetChanged: if (!unpairTarget) forceActiveFocus()
-  // The device that the link dialog sends to. Null when it is closed.
-  property var linkTarget: null
-  onLinkTargetChanged: if (!linkTarget) forceActiveFocus()
 
   readonly property bool daemonUp: !!backend && backend.connected
   readonly property var allDevices: backend ? (backend.devices || []) : []
@@ -115,10 +116,13 @@ Item {
   }
   readonly property bool devOnline: !!dev && !!dev.online
   readonly property string devName: dev ? (dev.name || "device") : "device"
+  // A string, so that the tabs change only when the type changes.
+  readonly property string devType: dev ? (dev.type || "") : ""
   readonly property var visibleTabs: tabs.filter(t => tabAllowed(t.key))
   readonly property var currentTab: {
+    var key = tabKey(tab)
     for (var i = 0; i < visibleTabs.length; i++)
-      if (visibleTabs[i].key === tab) return visibleTabs[i]
+      if (visibleTabs[i].key === key) return visibleTabs[i]
     return visibleTabs[0]
   }
 
@@ -134,11 +138,19 @@ Item {
     return true
   }
 
+  // The key of a page, or of the page that took its place.
+  function tabKey(key) {
+    var alias = Fmt.lookup(tabAliases, key)
+    return alias !== undefined ? alias : key
+  }
+
   function go(key) {
+    key = tabKey(key)
     if (tabAllowed(key)) tab = key
   }
 
   function showPage(key) {
+    key = tabKey(key)
     for (var i = 0; i < tabs.length; i++) {
       if (tabs[i].key === key) {
         go(key)
@@ -190,8 +202,9 @@ Item {
     call("clipboard.send", { device: dev.id }, function () { toast("Clipboard sent to " + root.devName) })
   }
 
-  // Opens the link dialog for the selected device. The field starts with
-  // the newest clipboard entry when that entry is a web link.
+  // Opens Chat and puts the cursor in its draft. An empty draft gets the
+  // newest clipboard entry when that entry is a web link. Send then opens
+  // the link in a notification on the device.
   function openLink() {
     if (!dev) return
     if (!dev.online) {
@@ -199,21 +212,11 @@ Item {
       return
     }
     var clips = backend ? (backend.clipboard || []) : []
-    linkField.text = clips.length > 0 ? Fmt.webLink(clips[0].text) : ""
-    linkTarget = dev
-    linkField.input.selectAll()
-    linkField.input.forceActiveFocus()
-  }
-
-  // Sends the link in the dialog. The device shows it in a notification,
-  // and a tap there opens it in the browser.
-  function sendLink() {
-    var link = Fmt.webLink(linkField.text)
-    var target = linkTarget
-    if (link === "" || !target) return
-    linkTarget = null
-    var name = target.name || "the device"
-    call("share.url", { device: target.id, url: link }, function () { toast("Link sent. Open its notification on " + name + ".") })
+    var link = clips.length > 0 ? Fmt.webLink(clips[0].text) : ""
+    go("chat")
+    Qt.callLater(function () {
+      if (page.item && page.item.focusComposer) page.item.focusComposer(link)
+    })
   }
 
   // Opens the confirm dialog for the selected device.
@@ -799,7 +802,7 @@ Item {
       id: header
       anchors.left: parent.left
       anchors.right: parent.right
-      height: Math.max(title.implicitHeight, actions.implicitHeight) + 36 + 1
+      height: Math.max(title.implicitHeight, menuButton.visible ? menuButton.implicitHeight : 0) + 36 + 1
 
       // The narrow layout has no rail, so the header opens the drawer.
       OutlineButton {
@@ -815,7 +818,7 @@ Item {
       Txt {
         id: title
         x: root.narrowLayout ? menuButton.x + menuButton.width + 12 : root.gutter
-        width: Math.min(implicitWidth, (actions.visible ? actions.x - 14 : parent.width - root.gutter) - x)
+        width: Math.min(implicitWidth, parent.width - root.gutter - x)
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -0.5
         text: root.dev ? root.currentTab.label : "Get started"
@@ -827,45 +830,14 @@ Item {
         id: subtitle
         anchors.left: title.right
         anchors.leftMargin: 14
-        anchors.right: actions.left
-        anchors.rightMargin: 14
+        anchors.right: parent.right
+        anchors.rightMargin: root.gutter
         anchors.verticalCenter: title.verticalCenter
         visible: !!root.dev && !root.compactHeader
         text: root.dev ? root.devName + " · " + (root.dev.ip || "—") : ""
         color: Theme.dim
         font.pixelSize: 12
         elide: Text.ElideRight
-      }
-      Row {
-        id: actions
-        anchors.right: parent.right
-        anchors.rightMargin: root.gutter
-        anchors.verticalCenter: title.verticalCenter
-        spacing: 8
-        visible: !!root.dev
-        OutlineButton {
-          visible: root.has("findmyphone")
-          icon: "bell-ring"
-          text: root.compactHeader ? "" : "Ring " + Fmt.noun(root.dev ? root.dev.type : "")
-          active: root.devOnline
-          anchors.verticalCenter: parent.verticalCenter
-          onClicked: root.ring()
-        }
-        AccentButton {
-          icon: "paste"
-          text: root.compactHeader ? "" : "Send clipboard"
-          active: root.devOnline
-          anchors.verticalCenter: parent.verticalCenter
-          onClicked: root.sendClipboard()
-        }
-        OutlineButton {
-          icon: "unlink"
-          text: root.compactHeader ? "" : "Unpair"
-          textColor: Theme.err
-          iconColor: Theme.err
-          anchors.verticalCenter: parent.verticalCenter
-          onClicked: root.unpair()
-        }
       }
       Rectangle {
         anchors.bottom: parent.bottom
@@ -1080,94 +1052,6 @@ Item {
           OutlineButton {
             text: "Cancel"
             onClicked: root.unpairTarget = null
-          }
-        }
-      }
-    }
-  }
-
-  // The link dialog: a web link for the browser of the device. It uses the
-  // same scrim and card as the unpair dialog. Enter sends, and Escape
-  // closes the dialog.
-  Item {
-    id: linkScrim
-    objectName: "linkDialog"
-    anchors.fill: parent
-    z: 30
-    visible: !!root.linkTarget
-
-    Rectangle {
-      anchors.fill: parent
-      color: Theme.alpha(Theme.bg, 0.6)
-      MouseArea {
-        anchors.fill: parent
-        onClicked: root.linkTarget = null
-      }
-    }
-
-    Card {
-      anchors.centerIn: parent
-      width: Math.min(440, parent.width - 32)
-      height: linkCol.implicitHeight + 40
-
-      // A click on the card does not reach the scrim behind it and close.
-      MouseArea { anchors.fill: parent }
-
-      Column {
-        id: linkCol
-        x: 20
-        y: 20
-        width: parent.width - 40
-        spacing: 10
-
-        readonly property string targetName: root.linkTarget ? (root.linkTarget.name || "the device") : "the device"
-        readonly property bool valid: Fmt.webLink(linkField.text) !== ""
-
-        Txt {
-          width: parent.width
-          text: "Open a link on " + linkCol.targetName
-          font.pixelSize: 16
-          font.weight: Font.DemiBold
-          wrapMode: Text.Wrap
-        }
-        Txt {
-          width: parent.width
-          text: linkCol.targetName + " shows the link in a notification. Open the notification to show the page in the browser."
-          color: Theme.dim
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
-        }
-        Field {
-          id: linkField
-          width: parent.width
-          placeholder: "https://omarchy.org"
-          onAccepted: root.sendLink()
-          onEscaped: root.linkTarget = null
-        }
-        Txt {
-          width: parent.width
-          visible: linkField.text.trim() !== "" && !linkCol.valid
-          text: "Enter an http or https link."
-          color: Theme.err
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
-        }
-        Item { width: 1; height: 2 }
-        // RightToLeft puts Send on the right, the primary action.
-        Row {
-          width: parent.width
-          spacing: 8
-          layoutDirection: Qt.RightToLeft
-          AccentButton {
-            objectName: "linkSend"
-            icon: "send"
-            text: "Send"
-            active: linkCol.valid
-            onClicked: root.sendLink()
-          }
-          OutlineButton {
-            text: "Cancel"
-            onClicked: root.linkTarget = null
           }
         }
       }

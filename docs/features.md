@@ -90,7 +90,7 @@ Pair your devices again.
 
 The [workflow controls](workflows.md) add an offline desktop outbox, folder archives, and saved clipboard snippets.
 
-Use the Files and Clipboard pages in the desktop window, or run:
+Use **Chat** in the desktop window, or run:
 
 ```sh
 flux-cli send "$HOME/Downloads/report.txt"
@@ -99,12 +99,20 @@ flux-cli clip "Text from the desktop"
 flux-cli url https://omarchy.org
 ```
 
+**Chat** in the desktop window shows the clips, links, and files between the selected device and the computer, with the newest entry at the bottom.
+What the device sent is on the left. What the computer sent is on the right.
+To send a text or a link, type it in the field at the bottom and press Enter. Shift+Enter adds a line.
+To send files, drop them on the page or select **Attach files**.
+Press `i` to type a message and `/` to search the chat.
+**Saved** shows the saved clips of every device.
+
 On Android, share content to Flux from the system share sheet.
 Received files use `download_dir`.
 
-To show a web page on the phone, select **Open link on phone** on the Overview page of the desktop window, or press `o`.
-The field starts with the newest clipboard entry when that entry is a link.
+To show a web page on the phone, type the link in the field at the bottom of **Chat** in the desktop window, then press Enter.
+Press `o` to open **Chat** with the newest clipboard entry in the field, when that entry is a link.
 The phone shows the link in a notification. A tap on the notification opens the link in the browser.
+Other text goes to the clipboard of the phone.
 
 To show a web page on the desktop, type the link in the field at the bottom of **Chat** in Flux for Android, then tap the send key.
 The desktop opens a link that starts with `http://` or `https://` in its browser. Other text goes to the clipboard of the desktop.
@@ -184,7 +192,7 @@ To show the new files of the computer, select **Refresh** or pull the list down.
 The phone also lists the folder again when you return to Flux.
 
 While the phone browses, the desktop shows a notification with a **Stop** button until the session ends.
-The Overview page of the Flux window shows a **BROWSE PC** card with a **Stop** button too.
+The **Phone** page of the Flux window shows a **Browse PC** card with a **Stop** button too.
 To see and end the sessions from a terminal, run:
 
 ```sh
@@ -218,7 +226,7 @@ Both are on by default.
 
 A clip that you send with **Send**, the **Send clipboard** tile, or the notification action goes on the desktop clipboard also while `auto_clipboard` is off.
 The desktop then shows a notification with the start of the text, for example **Clipboard from Pixel 8**.
-The **Clipboard sync** switch of the device in **Device access** still applies.
+The **Clipboard sync** switch of the device in the **Access** card still applies.
 A link from the phone opens in the browser, and a notification names the phone.
 
 Android lets only the app on the screen read the clipboard.
@@ -235,8 +243,8 @@ Each device sends 1 image at a time. A newer image or text stops the image that 
 When you turn off `auto_clipboard` or unpair the phone, the desktop stops the image that it sends.
 An image that arrives after an unpair does not go into the history.
 
-The Clipboard page shows the last 10 images.
-Select **Copy** to put an image on the desktop clipboard again.
+**Chat** in the desktop window shows the last 10 images.
+Select the copy icon on an image to put it on the desktop clipboard again.
 `fluxd` keeps these images in `$XDG_RUNTIME_DIR/flux/clipboard`, which is in memory.
 It empties the folder when it starts and when it stops.
 
@@ -355,7 +363,7 @@ When a player reports album art at an `https` address, the phone loads the image
 Without album art, the controls move up.
 The desktop does not show or control the players on the phone.
 
-Add desktop commands in the Phone commands page or through the CLI:
+Add desktop commands in the **Commands** section of the **Phone** page or through the CLI:
 
 ```sh
 flux-cli commands add "Lock screen" omarchy-system-lock
@@ -458,7 +466,7 @@ See [herdr agents](herdr.md) for the replies, new agents, terminals, the live te
 ## Touchpad and keyboard
 
 The phone, the iPhone, or the Mac can be a touchpad and a keyboard for the computer.
-To allow it, turn on **Remote input** in the **Remote access** card of the Flux window, or run:
+To allow it, select **Turn on** under **Remote input** in the **Access** card on the **Phone** page of the Flux window, or run:
 
 ```sh
 flux-cli input on
@@ -470,7 +478,7 @@ See [Touchpad and keyboard](remote-input.md) for the gestures, the keys, and the
 ## Remote desktop
 
 The phone, the iPhone, or the Mac can show the screen of the computer and control it.
-To allow it, turn on **Remote desktop** and **Remote input** in the **Remote access** card of the Flux window, or run:
+To allow it, select **Turn on** under **Remote desktop** and under **Remote input** in the **Access** card on the **Phone** page of the Flux window, or run:
 
 ```sh
 flux-cli desktop on

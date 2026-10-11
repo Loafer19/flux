@@ -78,6 +78,13 @@ QtObject {
         return d
       })
     }
+    // Like fluxd, a sent text and a sent link go to the history.
+    else if (method === "clipboard.send" && params.text) setState(function (s) {
+      s.clipboard = [{ id: "s" + Date.now(), text: params.text, dir: "out", device: params.device, deviceName: "this pc", time: Math.floor(Date.now() / 1000) }].concat(s.clipboard || [])
+    })
+    else if (method === "share.url") setState(function (s) {
+      s.clipboard = [{ id: "s" + Date.now(), text: params.url, dir: "out", device: params.device, deviceName: "this pc", source: "link", time: Math.floor(Date.now() / 1000) }].concat(s.clipboard || [])
+    })
     else if (method === "clipboard.search") result = clipboard.filter(e => ((e.text || "") + " " + (e.deviceName || "")).toLowerCase().indexOf((params.text || "").toLowerCase()) >= 0)
     else if (method === "clipboard.pin" || method === "clipboard.unpin") setState(function(s) { s.clipboard.forEach(e => { if (e.id === params.id) e.pinned = method === "clipboard.pin" }) })
     else if (method === "clipboard.delete") setState(function(s) { s.clipboard = (s.clipboard || []).filter(e => e.id !== params.id) })

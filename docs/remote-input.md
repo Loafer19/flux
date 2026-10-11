@@ -9,8 +9,8 @@ Remote input is off by default, because the phone or the Mac can then type in an
 
 ## Turn on remote input
 
-1. Turn on **Remote input** in the **Remote access** card of the Flux window.
-   The card is on the **Overview** page.
+1. Select **Turn on** under **Remote input** in the **Access** card of the Flux window.
+   The card is on the page of the device, for example **Phone**.
    Or run this command:
 
    ```sh

@@ -121,9 +121,10 @@ Item {
 
           Item {
             width: parent.width
-            height: appLine.implicitHeight
+            height: Math.max(appLine.implicitHeight, meta.implicitHeight)
             Txt {
               id: appLine
+              anchors.verticalCenter: parent.verticalCenter
               anchors.left: parent.left
               anchors.right: meta.left
               anchors.rightMargin: 12
@@ -135,21 +136,15 @@ Item {
             Row {
               id: meta
               anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
               spacing: 10
-              Txt { text: Fmt.age(modelData.time); color: Theme.dim; font.pixelSize: 11 }
-              Txt {
+              Txt { anchors.verticalCenter: parent.verticalCenter; text: Fmt.age(modelData.time); color: Theme.dim; font.pixelSize: 11 }
+              IconAction {
                 visible: modelData.dismissable !== false
-                text: "×"
-                color: closeArea.containsMouse ? Theme.fg : Theme.dim
-                font.pixelSize: 11
-                MouseArea {
-                  id: closeArea
-                  anchors.fill: parent
-                  anchors.margins: -4
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.view.call("notification.dismiss", { device: root.dev.id, id: modelData.id })
-                }
+                anchors.verticalCenter: parent.verticalCenter
+                icon: "close"
+                tip: "Dismiss on the phone"
+                onClicked: root.view.call("notification.dismiss", { device: root.dev.id, id: modelData.id })
               }
             }
           }

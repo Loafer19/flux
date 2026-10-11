@@ -44,10 +44,11 @@ flux-cli status
 flux-cli status --json
 flux-cli off
 flux-cli on
-flux-cli open files
+flux-cli open messages
 ```
 
-Window pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+Window pages: `chat`, `messages`, `notifications`, and `device`.
+The earlier keys still open a page: `overview` and `commands` open `device`, and `clipboard` and `files` open `chat`.
 
 `flux-cli setup` returns 1 when a step fails, so a script can check it:
 
@@ -364,7 +365,7 @@ To take the access back, run `flux-cli desktop off` and `flux-cli input off`.
 `flux-cli input` without an argument shows whether remote input is on.
 
 `fluxd` saves the change in `config.toml` at once.
-The **Remote access** card on the **Overview** page of the Flux window has the same 2 switches.
+The **Access** card on the **Phone** page of the Flux window has the same 2 switches, as **Turn on** and **Turn off** under **Remote desktop** and **Remote input**.
 See [remote desktop](remote-desktop.md) and [touchpad and keyboard](remote-input.md).
 
 ## Watch state changes

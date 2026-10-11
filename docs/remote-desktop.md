@@ -9,8 +9,8 @@ The remote desktop is off by default, because the phone or the Mac can then see 
 
 ## Turn on the remote desktop
 
-1. Turn on **Remote desktop** and **Remote input** in the **Remote access** card of the Flux window.
-   The card is on the **Overview** page.
+1. Select **Turn on** under **Remote desktop** and under **Remote input** in the **Access** card of the Flux window.
+   The card is on the page of the device, for example **Phone**.
    Or run these commands:
 
    ```sh
@@ -256,7 +256,7 @@ The Mac saves the pinned shortcuts.
 
 When the stream starts, the computer shows a notification with a **Stop** button.
 
-The **Remote access** card of the Flux window shows the device and the monitor, with a **Stop** button.
+The **Remote desktop** card on the page of the device in the Flux window shows the monitor, with a **Stop** button.
 To see the state or to stop the stream from a terminal, run:
 
 ```sh

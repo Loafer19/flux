@@ -346,6 +346,18 @@ The text of an image entry is empty.
 The state holds only the first 1024 bytes of a longer text.
 Such an entry has `"truncated": true` and the full length in bytes in `size`.
 
+`dir` is `in` for an entry from a device and `out` for an entry of this computer.
+`device` names the device that sent the entry or that got it.
+A local copy that clipboard sync sent has an empty `device` and the IDs of the devices that got it in `to`.
+`source` tells where the entry came from:
+
+| `source` | Entry |
+| --- | --- |
+| empty | A clipboard copy, or a clip that Send clipboard sent. |
+| `share` | A text that a device shared, or a text from `share.text`. |
+| `scan` | A text that the phone camera scanned. |
+| `link` | A web link that a device opened on this computer, or a link from `share.url`. The link does not go on the clipboard. |
+
 To put an entry on the desktop clipboard again, call `clipboard.copy` with its `id`:
 
 ```json

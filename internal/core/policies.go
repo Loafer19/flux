@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"maps"
+	"slices"
 	"time"
 
 	"flux/internal/config"
@@ -19,6 +20,19 @@ func (d *Daemon) permitted(device, feature string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.permittedLocked(device, feature)
+}
+
+// featureDevicesLocked returns the IDs of the connected paired devices that
+// may use feature, in a stable order. The caller holds d.mu.
+func (d *Daemon) featureDevicesLocked(feature string) []string {
+	var ids []string
+	for _, dev := range d.devices {
+		if dev.Paired && dev.link != nil && d.permittedLocked(dev.ID, feature) {
+			ids = append(ids, dev.ID)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 func (d *Daemon) featureLinks(feature string) []*lan.Link {

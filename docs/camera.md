@@ -68,7 +68,7 @@ flux-cli webcam reset
 flux-cli webcam stop
 ```
 
-On the desktop, open the PHONE CAMERA card on Overview and select Settings.
+On the desktop, open the **Phone** page, then select **Settings** on the **Phone camera** card.
 On the phone, select **Settings** on the Webcam screen.
 The preview shows each change.
 Changes to `aspect` or `resolution` restart the stream.
@@ -168,7 +168,7 @@ flux-cli --device "Pixel 8" webcam start
 flux-cli mic start --device "Pixel 8"
 ```
 
-In the Flux window, open **Overview** and select **Start** on the **PHONE CAMERA** card or the **PHONE MICROPHONE** card.
+In the Flux window, open the **Phone** page and select **Start** on the **Phone camera** card or the **Phone microphone** card.
 The cards show **Start** while no stream of that kind runs and the selected device can take the request.
 After the request, the card shows `Confirm on Pixel 8.` for 60 seconds, or until the stream starts.
 

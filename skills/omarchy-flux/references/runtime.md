@@ -31,7 +31,7 @@ FLUX_GUI=plugin flux-cli open notifications
 `flux-cli on` removes the marker and starts the daemon.
 Prefer these commands when the user asks to turn Flux off or on.
 
-Pages: `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+Pages: `chat`, `messages`, `notifications`, and `device`. The earlier keys `overview`, `clipboard`, `files`, and `commands` still open a page.
 
 ## Devices and transfers
 
@@ -236,7 +236,7 @@ The phone shows the desktop screen only with `remote_desktop = true`.
 The phone can then see each window. Its touches also need `remote_input = true`.
 Do not turn on `remote_desktop` unless the user asks for it.
 `flux-cli desktop on` and `flux-cli desktop off` change the setting without a reload.
-The **Remote access** card on the **Overview** page of the Flux window has the same 2 switches.
+The **Access** card on the page of the device in the Flux window has the same 2 switches, as **Turn on** and **Turn off**.
 The stream needs `gpu-screen-recorder`.
 Read `docs/remote-desktop.md` for the gestures, the monitors, the lock screen, the Omarchy panel, and the stream format.
 The stream shows the lock screen. `fluxd` turns the displays on when they are off.

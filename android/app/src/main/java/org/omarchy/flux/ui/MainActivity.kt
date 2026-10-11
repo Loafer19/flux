@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
     /** The page of a stream that the Start action of a stream request notification opens. */
     val openStream = kotlinx.coroutines.flow.MutableStateFlow<StreamOpen?>(null)
 
-    /** What the Inbox shows about the notification permission. See [updateNotifyAsk]. */
+    /** What the chat shows about the notification permission. See [updateNotifyAsk]. */
     val notifyAsk = kotlinx.coroutines.flow.MutableStateFlow(NotifyAsk.None)
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { updateNotifyAsk() }
@@ -135,7 +135,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Shows the permission dialog of Android once, after the first pairing.
-     * The success state of the Inbox tells why before the dialog shows.
+     * The success state of the chat tells why before the dialog shows.
      * Nothing shows when the app asked before, or when Android needs no
      * permission.
      */
@@ -246,8 +246,9 @@ class MainActivity : ComponentActivity() {
         if (!org.omarchy.flux.BuildConfig.DEBUG) return
         if (intent?.getBooleanExtra("flux.debug.demo", false) == true) {
             org.omarchy.flux.core.DebugDemo.on = true
-            org.omarchy.flux.core.DebugDemo.agentOutput =
-                intent.getStringExtra("flux.debug.output")
+            org.omarchy.flux.core.DebugDemo.agentOutput = intent.getStringExtra("flux.debug.output")
+            org.omarchy.flux.core.DebugDemo.terminalSample = intent.getStringExtra("flux.debug.terminal")
+            org.omarchy.flux.core.DebugDemo.terminalGrid = intent.getStringExtra("flux.debug.terminal_grid")
             FluxCore.publish()
         }
         // A capture is too long for an extra, so it can also come from a file in the app folder.
@@ -293,7 +294,14 @@ internal fun isDemo(id: String?): Boolean =
     org.omarchy.flux.BuildConfig.DEBUG && org.omarchy.flux.core.DebugDemo.on && org.omarchy.flux.core.DebugDemo.isDemo(id) &&
         id in setOf(org.omarchy.flux.core.DebugDemo.PC, org.omarchy.flux.core.DebugDemo.OFFLINE, org.omarchy.flux.core.DebugDemo.NEW)
 
-/** What the Inbox shows about the notification permission. */
+/** Debug builds only: the first-run page that `flux.debug.page` asks for. */
+private fun debugFirstRunMode(request: String): DebugFirstRun.Mode = when (request) {
+    "firstrun" -> DebugFirstRun.Mode.FirstRun
+    "paired" -> DebugFirstRun.Mode.Paired
+    else -> DebugFirstRun.Mode.Off
+}
+
+/** What the chat shows about the notification permission. */
 enum class NotifyAsk {
     /** The notifications are on, or the user hid the question. */
     None,
@@ -319,9 +327,9 @@ private val NavSaver = listSaver<Nav, String>(save = { it.save() }, restore = { 
 private data class Outgoing(val deviceId: String, val timestamp: Long, val key: String, val sent: Boolean = false)
 
 /** The debug pages that need no computer: the destinations, the sync switches, and About Flux. */
-private val DestinationPages = setOf("inbox", "send", "control", "computers", "devices", SYNC_PAGE, ABOUT_PAGE)
+private val DestinationPages = setOf("chat", "inbox", "send", "control", "computers", "devices", SYNC_PAGE, ABOUT_PAGE)
 
-/** How long the Inbox shows that a new computer is paired, in milliseconds while the app is in the front. */
+/** How long the chat shows that a new computer is paired, in milliseconds while the app is in the front. */
 private const val WELCOME_MS = 6_000L
 
 /** The time between the success state of the first pairing and the notification dialog of Android, in milliseconds. */
@@ -351,13 +359,13 @@ fun FluxRoot(activity: MainActivity) {
         nav = nav.without { it !in pairedIds }
         if (scope != null && scope !in pairedIds) scope = null
     }
-    // Notifications carry the approvals and the agent alerts, so the Inbox asks for them after the first pairing.
+    // Notifications carry the approvals and the agent alerts, so the chat asks for them after the first pairing.
     // The sample computers of a debug build do not count, so that screenshots show no question.
     val anyPaired = state.devices.any { it.paired && !isDemo(it.id) }
     val notify by activity.notifyAsk.collectAsStateWithLifecycle()
     val wide = rememberWideWindow()
 
-    // A new pairing opens the Inbox of the new computer, with a short success state on top.
+    // A new pairing opens the chat of the new computer, with a short success state on top.
     // The state of the computer can come after the event, so the effect waits for it.
     val newPairing by FluxCore.newPairing.collectAsStateWithLifecycle()
     var welcome by rememberSaveable { mutableStateOf<String?>(null) }
@@ -404,13 +412,9 @@ fun FluxRoot(activity: MainActivity) {
         outgoing = null
         unpairing = null
         welcome = null
-        // With the demo, "firstrun" shows the Inbox before the first pairing, with the sample computer to pair.
-        // "paired" pairs that sample computer, so that the Inbox shows the success state of a new pairing.
-        val firstRun = when (request) {
-            "firstrun" -> DebugFirstRun.Mode.FirstRun
-            "paired" -> DebugFirstRun.Mode.Paired
-            else -> DebugFirstRun.Mode.Off
-        }
+        // With the demo, "firstrun" shows the chat before the first pairing, with the sample computer to pair.
+        // "paired" pairs that sample computer, so that the chat shows the success state of a new pairing.
+        val firstRun = debugFirstRunMode(request)
         if (firstRun != DebugFirstRun.mode) {
             DebugFirstRun.mode = firstRun
             FluxCore.publish()
@@ -469,7 +473,7 @@ fun FluxRoot(activity: MainActivity) {
         activity.debugPage.value = null
     }
 
-    // A tap on an agent notification opens the screen of the agent. Back goes to the Inbox.
+    // A tap on an agent notification opens the screen of the agent. Back goes to the chat.
     val openAgent by activity.openAgent.collectAsStateWithLifecycle()
     LaunchedEffect(openAgent, state.devices.size) {
         val (id, pane) = openAgent ?: return@LaunchedEffect

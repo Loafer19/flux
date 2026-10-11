@@ -101,12 +101,16 @@ data class DeviceUi(
     val herdrSupported: Boolean = false,
     /** The herdr agents, or null before the first agent list. */
     val herdr: HerdrState? = null,
+    /** The time that each agent got its status, by pane, in milliseconds since the epoch. See [AgentClock]. */
+    val agentSince: Map<String, Long> = emptyMap(),
     /** The output of the pane on the agent screen. */
     val herdrOutput: HerdrOutput? = null,
     /** The last reply from the agent screen. */
     val herdrReply: HerdrReply? = null,
     /** The last new agent, new terminal, or close from this phone. */
     val herdrAction: HerdrAction? = null,
+    /** The terminal session of the pane that this phone streams. */
+    val herdrTerminal: HerdrTerminalSession? = null,
     /** True when the computer can take the touchpad and the keyboard of this phone. */
     val inputSupported: Boolean = false,
     /** True when remote input is on at the computer, or null before it tells. */
@@ -157,6 +161,8 @@ data class UiState(
     val listeningUdp: Boolean = true,
     /** True while the phone looks for computers. See [FluxCore.scan]. */
     val scanning: Boolean = false,
+    /** The end time of the last scan in milliseconds since the epoch, or 0 before the first scan. */
+    val lastScan: Long = 0,
     /**
      * True for [CONNECT_GRACE_MS] after the network starts or the phone
      * sends its identity again. A paired computer that is not online then

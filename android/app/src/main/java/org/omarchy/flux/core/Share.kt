@@ -46,6 +46,19 @@ object WebUrl {
         val host = if (authority.startsWith("[")) authority.substringAfter('[').substringBefore(']') else authority.substringBefore(':')
         return t.takeIf { host.isNotEmpty() }
     }
+
+    /** A host name with a dot, an optional port, and an optional path, with no scheme. */
+    private val bareHost = Regex("^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+(:\\d+)?([/?#]\\S*)?$")
+
+    /**
+     * Returns the web link in [text] that the user typed, or null. A host
+     * name with a dot and no scheme gets https://, for example
+     * "omarchy.org/flux". The desktop window uses the same rule.
+     */
+    fun typed(text: String?): String? {
+        val t = text?.trim() ?: return null
+        return of(if (bareHost.matches(t)) "https://$t" else t)
+    }
 }
 
 /**
@@ -124,19 +137,23 @@ object Share {
         tls: org.omarchy.flux.net.Tls,
     ) {
         val mime = Android.mimeType(name)
-        val transfer = InboxFeed.transferStarted(d.id, from, name, incoming = true)
+        val entry = SendLog.fileStarted(d.id, from, name, p.payloadSize, incoming = true)
         val dl = runCatching { Android.createDownload(core.app, name, mime) }.getOrElse {
-            InboxFeed.transferEnded(transfer, false)
+            SendLog.fileEnded(entry, false)
             core.toast("Cannot save $name: ${it.message}")
             d.send(TunnelPackets.failed(token, "cannot save the file"))
             return
         }
         // The computer blocks incoming connections. This phone listens, and the computer connects.
-        val ok = runCatching { Tunnel.receive(tls, cert, token, p.payloadSize, dl.stream, announce = { d.send(it) }) }
+        val gate = ProgressGate(p.payloadSize)
+        val ok = runCatching {
+            Tunnel.receive(tls, cert, token, p.payloadSize, dl.stream, announce = { d.send(it) }) { if (gate.pass(it)) SendLog.fileProgress(entry, it) }
+        }
             .onFailure { Log.w(TAG, "receive $name failed", it) }
             .isSuccess
         Android.finishDownload(core.app, dl, ok)
-        InboxFeed.transferEnded(transfer, ok)
+        // The chat opens the file. An app only shows in Downloads, so that a computer cannot offer an app to install.
+        SendLog.fileEnded(entry, ok, if (ApkCheck.isApk(name, mime)) "" else dl.uri.toString())
         if (!ok) {
             core.toast("Receiving $name failed")
             return
@@ -188,7 +205,7 @@ object Share {
                 d.send(Packet(Types.SHARE_UPDATE, bodyOf("numberOfFiles" to files.size, "totalPayloadSize" to total)))
                 val sent = ArrayList<String>()
                 for ((uri, name, size) in files) {
-                    val transfer = InboxFeed.transferStarted(d.id, d.identity.deviceName, name, incoming = false)
+                    val entry = SendLog.fileStarted(d.id, d.identity.deviceName, name, size, incoming = false)
                     val ok = runCatching {
                         // The protocol needs the exact size before the transfer.
                         // A source without a size goes through a cache file.
@@ -211,13 +228,15 @@ object Share {
                                     "totalPayloadSize" to total,
                                 )
                                 d.send(Packet(Types.SHARE, body, payloadSize = length, payloadPort = server.localPort))
-                                Payload.send(tls, server, input, length, cert)
+                                val gate = ProgressGate(length)
+                                SendLog.fileProgress(entry, 0, length)
+                                Payload.send(tls, server, input, length, cert, progress = { if (gate.pass(it)) SendLog.fileProgress(entry, it) })
                             }
                         } finally {
                             temp?.delete()
                         }
                     }.onFailure { Log.w(TAG, "send $name failed", it) }.isSuccess
-                    InboxFeed.transferEnded(transfer, ok)
+                    SendLog.fileEnded(entry, ok)
                     if (ok) sent += name else core.toast("Sending $name to ${d.identity.deviceName} failed")
                 }
                 // The message names the computer, so that the user knows where the files went.
@@ -244,6 +263,7 @@ object Share {
             return
         }
         core.io.execute {
+            val entry = SendLog.fileStarted(d.id, d.identity.deviceName, name, 0, incoming = false)
             val result = runCatching {
                 val resolver = core.app.contentResolver
                 var length = -1L
@@ -270,12 +290,15 @@ object Share {
                             server.close()
                             error("Not connected")
                         }
-                        Payload.send(tls, server, input, length, cert)
+                        val gate = ProgressGate(length)
+                        SendLog.fileProgress(entry, 0, length)
+                        Payload.send(tls, server, input, length, cert, progress = { if (gate.pass(it)) SendLog.fileProgress(entry, it) })
                     }
                 } finally {
                     temp?.delete()
                 }
             }.onFailure { Log.w(TAG, "send $name failed", it) }
+            SendLog.fileEnded(entry, result.isSuccess)
             onResult(result)
         }
     }
@@ -292,15 +315,36 @@ object Share {
      */
     fun sendScan(core: FluxCore, id: String, text: String): Boolean {
         val d = core.device(id) ?: return false
-        return d.send(Packet(Types.SHARE, bodyOf("text" to text, "scan" to true)))
+        val sent = d.send(Packet(Types.SHARE, bodyOf("text" to text, "scan" to true)))
+        if (sent) SendLog.scan(d.id, d.identity.deviceName, text)
+        return sent
     }
 
-    /** Sends text or a link from the share sheet. Only a web link goes as a link, see [WebUrl]. */
+    /**
+     * Sends a web link from [WebUrl], and the computer opens it in its
+     * browser. It returns false when the device has no link.
+     */
+    fun sendLink(core: FluxCore, id: String, link: String): Boolean {
+        val d = core.device(id) ?: return false
+        val sent = d.send(Packet(Types.SHARE, bodyOf("url" to link)))
+        if (sent) SendLog.link(d.id, d.identity.deviceName, link)
+        return sent
+    }
+
+    /**
+     * Sends text or a link from the share sheet or the composer of Send.
+     * Only a web link goes as a link, see [WebUrl].
+     */
     fun sendText(core: FluxCore, id: String, text: String) {
         val d = core.device(id) ?: return
+        val name = d.identity.deviceName
         val url = WebUrl.of(text)
-        d.send(Packet(Types.SHARE, if (url != null) bodyOf("url" to url) else bodyOf("text" to text)))
-        core.toast(if (url != null) "Link sent to ${d.identity.deviceName}" else "Text sent to ${d.identity.deviceName}")
+        if (!d.send(Packet(Types.SHARE, if (url != null) bodyOf("url" to url) else bodyOf("text" to text)))) {
+            core.toast("$name is not reachable")
+            return
+        }
+        if (url != null) SendLog.link(d.id, name, url) else SendLog.text(d.id, name, text)
+        core.toast(if (url != null) "Link sent to $name" else "Text sent to $name")
     }
 
     /**

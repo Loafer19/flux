@@ -123,7 +123,7 @@ public final class ApprovePlugin: FluxPlugin, @unchecked Sendable {
         model.phase = .ask
         model.deadline = Date().addingTimeInterval(TimeInterval(r.timeoutSeconds))
         model.record(ApproveRecord(requestId: r.id, computerId: computerId, kind: r.kind, summary: ApproveMessage.question(r),
-                                   received: Date(), outcome: .open))
+                                   received: Date(), outcome: .open, request: r))
         // The computer stops waiting at its timeout, so the request ends too.
         expiry = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(r.timeoutSeconds))

@@ -12,9 +12,9 @@ enum TiledMetrics {
     /// The corner of the smaller parts in a tile: choice rows, badges, and the command block.
     static let smallCorner: CGFloat = 8
     static let chipCorner: CGFloat = 10
-    /// The widest column of the screens other than the Inbox.
+    /// The widest column of the screens.
     static let maxContentWidth: CGFloat = 840
-    /// The widest choice row and action row of the master tile.
+    /// The widest choice row and action row of a screen.
     static let maxActionWidth: CGFloat = 600
     /// The alpha of a tile, a tool, or a choice that takes no taps.
     static let disabledAlpha: Double = 0.55

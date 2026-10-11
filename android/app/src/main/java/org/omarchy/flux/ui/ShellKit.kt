@@ -194,11 +194,12 @@ fun linkText(d: DeviceUi): String = when {
 // ───────────────────────── Scope ─────────────────────────
 
 /**
- * The scope chip: "All computers" or 1 computer, with a link dot and a
- * battery dot for each computer in scope. A tap opens the menu of scopes.
+ * The scope chip: "All computers" or 1 computer, with a link dot for each
+ * computer in scope. A tap opens the menu of scopes. A [compact] chip is
+ * 36 dp high, for the end of a header.
  */
 @Composable
-fun ScopeChip(devices: List<DeviceUi>, scope: String?, onScope: (String?) -> Unit, modifier: Modifier = Modifier) {
+fun ScopeChip(devices: List<DeviceUi>, scope: String?, onScope: (String?) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     val paired = devices.filter { it.paired }
     val current = paired.firstOrNull { it.id == scope }
     var open by remember { mutableStateOf(false) }
@@ -208,25 +209,26 @@ fun ScopeChip(devices: List<DeviceUi>, scope: String?, onScope: (String?) -> Uni
     val shape = RoundedCornerShape(10.dp)
     Box(modifier) {
         // The clickable merges the description of the inner row. The inner row hides the dots from TalkBack.
+        // The chip is 40 dp high, or 36 dp when compact, and takes taps on 48 dp.
+        val height = if (compact) 36.dp else 40.dp
         Box(
-            Modifier.heightIn(min = 48.dp).clip(shape).background(Tn.tile).border(1.dp, Tn.line, shape)
-                .clickable(onClickLabel = "Change the scope", role = Role.DropdownList) { open = true },
+            Modifier.heightIn(min = 48.dp).clip(shape)
+                .clickable(onClickLabel = "Change the scope", role = Role.DropdownList) { open = true }
+                .padding(vertical = (48.dp - height) / 2).heightIn(min = height).clip(shape).background(Tn.tile).border(1.dp, Tn.line, shape),
             contentAlignment = Alignment.CenterStart,
         ) {
             Row(
-                Modifier.padding(start = 12.dp, end = 6.dp).clearAndSetSemantics { contentDescription = description },
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.padding(start = 12.dp, end = if (compact) 8.dp else 10.dp).clearAndSetSemantics { contentDescription = description },
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                T(name, Modifier.weight(1f, fill = false), size = 14, weight = FontWeight.SemiBold, maxLines = 1)
-                for (d in shown) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        LinkDot(d.online)
-                        val b = d.battery
-                        if (d.online && b != null) Dot(batteryColor(b, d.charging))
+                T(name, Modifier.weight(1f, fill = false), size = if (compact) 13 else 14, weight = FontWeight.SemiBold, maxLines = 1)
+                if (shown.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        for (d in shown) LinkDot(d.online, 7.dp)
                     }
                 }
-                Sym(Ic.expand, tint = Tn.sub, size = 20.dp)
+                Sym(Ic.expand, tint = Tn.sub, size = if (compact) 18.dp else 20.dp)
             }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -329,8 +331,11 @@ fun TargetPickerDialog(picker: TargetPicker) {
     )
 }
 
-/** The 2 most used actions: send the clipboard and send files, to the computer in scope. */
-class SendTools(val sendClipboard: () -> Unit, val sendFiles: () -> Unit)
+/** The most used actions on the computer in scope: send the clipboard, and send files. */
+class SendTools(
+    val sendClipboard: () -> Unit,
+    val sendFiles: () -> Unit,
+)
 
 @Composable
 fun rememberSendTools(devices: List<DeviceUi>, scope: String?, picker: TargetPicker): SendTools {

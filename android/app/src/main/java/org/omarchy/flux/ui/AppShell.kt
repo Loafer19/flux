@@ -22,6 +22,22 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,7 +50,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.BasicText
@@ -43,8 +58,6 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
@@ -53,13 +66,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.takeOrElse
@@ -81,7 +90,6 @@ import org.omarchy.flux.camera.CameraScreen
 import org.omarchy.flux.core.ApproveRequest
 import org.omarchy.flux.core.DeviceUi
 import org.omarchy.flux.core.FluxCore
-import org.omarchy.flux.core.InboxArrangement
 import org.omarchy.flux.core.UiState
 import org.omarchy.flux.core.inScope
 import org.omarchy.flux.core.inboxReach
@@ -90,15 +98,9 @@ import org.omarchy.flux.mic.MicScreen
 import org.omarchy.flux.stream.LiveStreams
 import org.omarchy.flux.webcam.WebcamScreen
 
-/** Keeps the order that the user gave the Inbox across a recreation: the pinned key, then the deferred keys. */
-private val ArrangementSaver = listSaver<InboxArrangement, String>(
-    save = { listOf(it.pinned.orEmpty()) + it.deferred },
-    restore = { InboxArrangement(pinned = it.firstOrNull()?.ifEmpty { null }, deferred = it.drop(1)) },
-)
-
 /**
- * The app structure: the destinations with the scope chip at the top and
- * the navigation bar at the bottom, and the feature screens above a
+ * The app structure: the destinations with the navigation bar at the
+ * bottom, and the feature screens above a
  * destination. A wide window shows a navigation rail at the side. The
  * destinations change with a fade through, and a feature screen moves in
  * and out on the horizontal axis with the bars of the destination. System
@@ -127,13 +129,10 @@ fun FluxShell(
     val current by rememberUpdatedState(nav)
     val go by rememberUpdatedState(onNav)
 
-    // The Inbox: the ranked items in scope, in the order that the user gave them.
+    // The agents, the approval, and the pair requests of the chat.
     // The badge counts the items of all computers, so that the scope hides nothing that needs the user.
-    var arrangement by rememberSaveable(stateSaver = ArrangementSaver) { mutableStateOf(InboxArrangement()) }
-    val all = rememberInboxItems(state)
+    val all = rememberChatEvents(state)
     val items = remember(all, scope) { all.inScope(scope) }
-    LaunchedEffect(items) { arrangement = arrangement.sync(items) }
-    val arranged = remember(items, arrangement) { arrangement.arrange(items) }
     val needs = all.needsYou()
     val reach = remember(scope, state.devices) { inboxReach(scope, state.devices) }
     val live by LiveStreams.live.collectAsStateWithLifecycle()
@@ -190,7 +189,7 @@ fun FluxShell(
             context.startActivity(Intent(context, ApproveActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
-    val actions = InboxActions(
+    val actions = ChatActions(
         open = ::open, approve = approve, showPair = onShowPair, pair = onPair, tools = tools,
         showAll = { onScope(null) }, allowNotifications = onNotify, hideNotifications = onNotifyHide,
     )
@@ -210,19 +209,14 @@ fun FluxShell(
                 }
             } else {
                 // The bars are part of the destination, so that the back gesture shows the destination as it is after Back.
-                ShellFrame(wide, nav.tab, needs, select, top = { ShellTopBar(state, scope, onScope) }) {
+                // Each destination draws its own header, so that the header fades with it.
+                ShellFrame(wide, nav.tab, needs, select) {
                     tabs.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = { fadeThrough(reduce) }) { tab ->
                         val active = settled && transition.settledVisible()
                         Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
                             when (tab) {
-                                Tab.Inbox -> InboxScreen(
-                                    state, arranged, active, notices, actions,
-                                    wide = wide,
-                                    onSwipe = { arrangement = arrangement.swipe(it) },
-                                    onPromote = { arrangement = arrangement.promote(it) },
-                                )
-                                Tab.Send -> SendScreen(state, scope, picker, tools, onOpen = ::open, onPair = toComputers)
-                                Tab.Control -> ControlScreen(state, scope, picker, onOpen = ::open, onPair = toComputers)
+                                Tab.Chat -> ChatScreen(state, all, active, notices, actions, scope, onScope, picker)
+                                Tab.Control -> ControlScreen(state, scope, onScope, picker, onOpen = ::open, onPair = toComputers)
                                 Tab.Computers -> ComputersScreen(state, scope, onScope, onPair, onUnpair, onSync = toSync, onAbout = toAbout)
                             }
                         }
@@ -239,9 +233,10 @@ private fun Transition<EnterExitState>.settledVisible(): Boolean =
     currentState == EnterExitState.Visible && targetState == EnterExitState.Visible
 
 /**
- * The frame of a destination: the top bar, the content, and the navigation
- * bar at the bottom. A wide window shows a navigation rail at the side in
- * the place of the navigation bar.
+ * The frame of a destination: the content, and the navigation bar at the
+ * bottom. A wide window shows a navigation rail at the side in the place
+ * of the navigation bar. The content draws its own header under the status
+ * bar.
  */
 @Composable
 private fun ShellFrame(
@@ -249,24 +244,22 @@ private fun ShellFrame(
     tab: Tab,
     needs: Int,
     onSelect: (Tab) -> Unit,
-    top: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
     if (wide) {
         Row(Modifier.fillMaxSize()) {
             ShellNavRail(tab, needs, onSelect)
-            Column(Modifier.weight(1f).fillMaxHeight()) {
-                top()
-                // No bar holds the bottom inset, so the content keeps clear of the gesture area.
-                Box(Modifier.weight(1f).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
-                    content()
-                }
+            // No bar holds the bottom inset, so the content keeps clear of the gesture area.
+            Box(Modifier.weight(1f).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
+                content()
             }
         }
     } else {
         Column(Modifier.fillMaxSize()) {
-            top()
-            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+            // The keyboard covers the navigation bar, so a field of the content moves up only by the rest of the keyboard.
+            val bar = WindowInsets.navigationBars.add(WindowInsets(bottom = NavBarHeight))
+            Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(bar)) { content() }
+            // Each destination ends with a dock, which meets the bar with no fade.
             ShellNavBar(tab, needs, onSelect)
         }
     }
@@ -296,29 +289,9 @@ private fun fadeThrough(reduce: Boolean): ContentTransform {
         fadeOut(tween(80, easing = ease))
 }
 
-/**
- * The top bar of the destinations: the Flux mark and the scope chip. In a
- * window of little height, for example a phone in landscape, it has less
- * space above and below the chip.
- */
-@Composable
-private fun ShellTopBar(state: UiState, scope: String?, onScope: (String?) -> Unit) {
-    val short = rememberShortWindow()
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding()
-            .padding(start = TiledGutter + 6.dp, end = TiledGutter, top = if (short) 0.dp else 6.dp, bottom = if (short) 4.dp else 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FluxMark(22.dp, fg = Tn.text, accent = Tn.blue)
-        ScopeChip(state.devices, scope, onScope, Modifier.weight(1f, fill = false))
-    }
-}
-
 @DrawableRes
 private fun tabIcon(t: Tab): Int = when (t) {
-    Tab.Inbox -> Ic.inbox
-    Tab.Send -> Ic.send
+    Tab.Chat -> Ic.chat
     Tab.Control -> Ic.tune
     Tab.Computers -> Ic.laptop
 }
@@ -358,10 +331,10 @@ private fun NavLabel(text: String) {
     }
 }
 
-/** The icon of a destination. The Inbox shows the number of items that need the user. */
+/** The icon of a destination. The chat shows the number of items that need the user. */
 @Composable
 private fun TabIcon(t: Tab, needs: Int) {
-    if (t != Tab.Inbox || needs == 0) {
+    if (t != Tab.Chat || needs == 0) {
         Sym(tabIcon(t))
         return
     }
@@ -376,13 +349,62 @@ private fun TabIcon(t: Tab, needs: Int) {
     ) { Sym(tabIcon(t)) }
 }
 
-/** The navigation bar of a compact window. */
+/** The height of the navigation bar of a compact window, without the gesture area. */
+private val NavBarHeight = 66.dp
+
+/**
+ * The navigation bar of a compact window: 3 destinations, each with an
+ * icon in a pill and a label. The pill of the open destination has a fill.
+ * The chat shows the number of items that need the user on its pill.
+ */
 @Composable
 private fun ShellNavBar(tab: Tab, needs: Int, onSelect: (Tab) -> Unit) {
-    NavigationBar {
-        for (t in Tab.entries) {
-            NavigationBarItem(selected = t == tab, onClick = { onSelect(t) }, icon = { TabIcon(t, needs) }, label = { NavLabel(t.label) })
+    Row(
+        Modifier.fillMaxWidth()
+            .background(Tn.bg)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .heightIn(min = NavBarHeight)
+            .padding(top = 6.dp)
+            .selectableGroup(),
+    ) {
+        for (t in Tab.entries) NavBarItem(t, t == tab, if (t == Tab.Chat) needs else 0, Modifier.weight(1f)) { onSelect(t) }
+    }
+}
+
+/** A destination of [ShellNavBar]. [badge] is the number on the pill, or 0 for none. */
+@Composable
+private fun NavBarItem(t: Tab, selected: Boolean, badge: Int, modifier: Modifier, onClick: () -> Unit) {
+    val ink = if (selected) Tn.text else Tn.sub
+    Column(
+        modifier.selectable(selected = selected, role = Role.Tab, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(Modifier.size(56.dp, 30.dp)) {
+            Box(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(15.dp)).background(if (selected) Tn.line else Color.Transparent),
+                contentAlignment = Alignment.Center,
+            ) { Sym(tabIcon(t), tint = ink, size = 22.dp) }
+            if (badge > 0) {
+                MaxFontScale(NAV_FONT_SCALE) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).offset(x = (-8).dp, y = (-4).dp).heightIn(min = 16.dp).widthIn(min = 16.dp)
+                            .clip(RoundedCornerShape(8.dp)).background(Tn.red).padding(horizontal = 4.dp)
+                            .clearAndSetSemantics { contentDescription = if (badge == 1) "1 item needs you" else "$badge items need you" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BasicText(
+                            if (badge > 9) "9+" else "$badge",
+                            style = TextStyle(color = Tn.onAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold, lineHeight = 16.sp),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
         }
+        CompositionLocalProvider(
+            LocalTextStyle provides TextStyle(color = ink, fontSize = 12.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium),
+        ) { NavLabel(t.label) }
     }
 }
 
@@ -428,7 +450,13 @@ private fun DetailScreen(route: Route, state: UiState, current: () -> Nav, go: (
             onOpenTerminal = { pane -> push(Route(id, "$TERMINAL_PAGE$pane")) },
             onNew = { push(Route(id, NEW_PANE_PAGE)) },
         )
-        page.startsWith(AGENT_PAGE) -> key(page) { TiledAgentScreen(device, page.removePrefix(AGENT_PAGE), pop) }
+        // Another agent of the strip replaces this page, so Back goes where this page came from.
+        page.startsWith(AGENT_PAGE) -> key(page) {
+            TiledAgentScreen(device, page.removePrefix(AGENT_PAGE), pop) { pane ->
+                val nav = current()
+                if (nav.stack.lastOrNull() == route) go(nav.replaceTop(Route(id, "$AGENT_PAGE$pane")))
+            }
+        }
         page.startsWith(TERMINAL_PAGE) -> key(page) { TiledTerminalScreen(device, page.removePrefix(TERMINAL_PAGE), pop) }
         // The new pane replaces this page, so Back skips it.
         page == NEW_PANE_PAGE -> TiledNewPaneScreen(device, pop) { what, pane ->

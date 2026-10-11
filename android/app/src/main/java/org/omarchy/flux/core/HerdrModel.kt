@@ -70,11 +70,29 @@ data class HerdrState(
     val workspaces: List<HerdrWorkspace> = emptyList(),
     val kinds: List<String> = emptyList(),
     val review: Boolean = false,
+    /** The terminal-session actions of the herdr bridge, such as "observe" and "control". */
+    val bridge: List<String> = emptyList(),
 ) {
     /** The agents with [AgentStatus.Blocked] first, then done, working, idle, and unknown. */
     val sorted: List<HerdrAgent> get() = sortAgents(agents)
 
     val blocked: Int get() = agents.count { it.status == AgentStatus.Blocked }
+
+    /**
+     * True when this phone can take control of the live terminal of a
+     * pane: the computer accepts replies from this phone, and its herdr
+     * bridge offers control.
+     */
+    val liveTerminal: Boolean get() = control && "control" in bridge
+
+    /** True when this computer also accepts typed text and keys in a live terminal. */
+    val terminalInput: Boolean get() = "input" in bridge
+
+    /** True when this computer also accepts a bracketed paste in a live terminal. */
+    val terminalPaste: Boolean get() = "paste" in bridge
+
+    /** True when this computer also accepts an image to paste in a live terminal. */
+    val terminalImage: Boolean get() = "image" in bridge
 
     fun agent(pane: String): HerdrAgent? = agents.firstOrNull { it.pane == pane }
 
@@ -99,8 +117,8 @@ data class HerdrOutput(
 ) {
     val text: String = lines.joinToString("\n") { it.text }
 
-    /** The numbered choices of the dialog at the end of the output. */
-    val choices: List<AgentChoice> by lazy { findChoices(lines.map { it.text }) }
+    /** The choices of the dialog at the end of the output: a numbered dialog, or a menu row, see [findMenuChoices]. */
+    val choices: List<AgentChoice> by lazy { findChoices(lines.map { it.text }).ifEmpty { findMenuChoices(lines) } }
 }
 
 /**
@@ -230,6 +248,7 @@ fun parseHerdrState(body: JsonObject): HerdrState? {
         HerdrWorkspace(id, o.str("label").orEmpty().ifEmpty { id }, o.str("cwd").orEmpty())
     }
     val kinds = (body["kinds"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { k -> k.isNotEmpty() } }
+    val bridge = (body["bridge"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { k -> k.isNotEmpty() } }
     val enabled = body.bool("enabled") ?: true
     val control = enabled && (body.bool("control") ?: false)
     val terminals = control && (body.bool("terminals") ?: false)
@@ -243,6 +262,7 @@ fun parseHerdrState(body: JsonObject): HerdrState? {
         workspaces = if (control) workspaces else emptyList(),
         kinds = if (control) kinds else emptyList(),
         review = enabled && (body.bool("review") ?: false),
+        bridge = bridge,
     )
 }
 
@@ -311,6 +331,269 @@ fun parseHerdrSent(body: JsonObject): HerdrSent? {
     )
 }
 
+/**
+ * One terminal-session stream of a pane: the live terminal of the pane
+ * on the computer. [mode] is "observe" for a stream that only shows the
+ * terminal, and "control" for one that also sends gestures and keys.
+ * [session] names the stream after the computer opened it, and [width]
+ * and [height] are its terminal cells, which are the cells that the pane
+ * has on the computer. [sending] is true while the open waits for its
+ * answer, [open] is true while the stream runs, and [error] is why the
+ * open failed. [retry] is true when the open failed for a short time: the
+ * computer was not reachable or did not answer, or the computer refused
+ * the open with its retry flag, for example while it still opens another
+ * terminal for this phone. A new open can then work. [code] and [reason]
+ * are how the stream ended, such as "released", "bridge", or
+ * "agent_ended". [closed] is true after the terminal_closed of the
+ * stream arrived.
+ */
+data class HerdrTerminalSession(
+    val pane: String,
+    val mode: String,
+    val request: Long = 0,
+    val sending: Boolean = true,
+    val session: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
+    val open: Boolean = false,
+    val error: String? = null,
+    val code: String = "",
+    val reason: String = "",
+    val closed: Boolean = false,
+    val retry: Boolean = false,
+    /** Why the last event did not reach the terminal, or null after the screen showed it. */
+    val inputError: String? = null,
+    /** Counts the input errors of the session, so the screen shows a repeated error too. */
+    val inputErrorSeq: Int = 0,
+)
+
+/**
+ * A change of the terminal slot of a device: the new [slot], and the
+ * session that the phone must release on the computer, or null.
+ */
+data class TerminalSlotChange(val slot: HerdrTerminalSession?, val release: String? = null)
+
+/**
+ * The change when this phone opens a stream of [mode] on [pane] with the
+ * number [request]. The new open replaces the slot. An open stream in the
+ * slot is released first, so that it does not run on the computer for
+ * nobody.
+ */
+fun terminalOpenChange(slot: HerdrTerminalSession?, pane: String, mode: String, request: Long): TerminalSlotChange =
+    TerminalSlotChange(
+        HerdrTerminalSession(pane = pane, mode = mode, request = request),
+        release = slot?.takeIf { it.open && it.session.isNotEmpty() }?.session,
+    )
+
+/**
+ * The change when the screen of [pane] releases its stream, or null when
+ * the slot belongs to another pane or does not change. An open stream
+ * waits for its terminal_closed. An open that waits for its answer goes
+ * away, and the phone then releases its late answer as stale. A stream
+ * that ended or an open that failed also goes away.
+ */
+fun terminalReleaseChange(slot: HerdrTerminalSession?, pane: String): TerminalSlotChange? {
+    if (slot == null || slot.pane != pane) return null
+    return when {
+        slot.open && slot.session.isNotEmpty() ->
+            TerminalSlotChange(slot.copy(open = false, code = "released"), release = slot.session)
+        terminalClosePending(slot) -> null
+        else -> TerminalSlotChange(null)
+    }
+}
+
+/**
+ * The slot after the open [request] got no answer in time, or null when
+ * the slot holds another open or the answer already arrived. The open then
+ * failed with [error], and a new open can work.
+ */
+fun terminalOpenTimeout(slot: HerdrTerminalSession?, request: Long, error: String): HerdrTerminalSession? =
+    slot?.takeIf { it.request == request && it.sending }?.copy(sending = false, error = error, retry = true)
+
+/** One event of a terminal session, in the order that the computer sent it. */
+sealed class HerdrTerminalEvent {
+    /** The stream opened with this grid of terminal cells. */
+    data class Opened(val session: String, val width: Int, val height: Int) : HerdrTerminalEvent()
+
+    /** One frame of the terminal screen: base64 ANSI bytes. */
+    data class Frame(
+        val session: String,
+        val seq: Long,
+        val width: Int,
+        val height: Int,
+        val bytes: String,
+        val full: Boolean = false,
+    ) : HerdrTerminalEvent()
+
+    /** The stream ended. */
+    data class Closed(val session: String, val code: String, val reason: String) : HerdrTerminalEvent()
+}
+
+/**
+ * True when a terminal_opened answers an open that the phone does not
+ * wait for any more: its screen is gone, watches another pane, or the
+ * answer is older than the current open. The caller releases such a
+ * session at once, so its stream never runs for nobody.
+ */
+fun staleTerminalAnswer(waiting: HerdrTerminalSession?, opened: HerdrTerminalSession): Boolean {
+    if (waiting == null || waiting.pane != opened.pane) return true
+    return waiting.request != 0L && opened.request != 0L && waiting.request != opened.request
+}
+
+/**
+ * Parses the body of a terminal_opened packet: the answer to a
+ * terminal_open. It returns null for another body. The answer with an
+ * [HerdrTerminalSession.error] refused the open. A refusal with the
+ * retry flag is short, so [HerdrTerminalSession.retry] is true and a new
+ * open can work.
+ */
+fun parseHerdrTerminalOpened(body: JsonObject): HerdrTerminalSession? {
+    if (body.str("kind") != "terminal_opened") return null
+    val pane = body.str("pane")?.takeIf { it.isNotEmpty() } ?: return null
+    val error = body.str("error")?.takeIf { it.isNotEmpty() }
+    val session = body.str("session").orEmpty()
+    return HerdrTerminalSession(
+        pane = pane,
+        mode = body.str("mode").orEmpty().ifEmpty { "observe" },
+        request = body.long("request") ?: 0,
+        sending = false,
+        session = session,
+        width = body.long("width")?.toInt() ?: 0,
+        height = body.long("height")?.toInt() ?: 0,
+        open = error == null && session.isNotEmpty(),
+        error = error,
+        retry = error != null && body.bool("retry") == true,
+    )
+}
+
+/**
+ * True while the terminal session that [opened] created still belongs to
+ * the current link. A stream belongs to the link that opened it: the
+ * computer ends it with that link, so a dropped or replaced link never
+ * keeps its session, whatever name the session has.
+ */
+fun terminalSurvivesLinkChange(opened: Any?, current: Any?): Boolean =
+    opened != null && opened === current
+
+/**
+ * True while [session] is a released session whose terminal_closed has not
+ * arrived. The phone waits for that event before it opens a new stream on
+ * the same pane, because the computer keeps one controller per pane. A
+ * session without an ID, one that is closed, or one that the lost link
+ * dropped does not wait.
+ */
+fun terminalClosePending(session: HerdrTerminalSession?): Boolean =
+    session != null && session.code == "released" &&
+        !session.closed && session.session.isNotEmpty()
+
+/** True for an authorized control stream whose own first screen finished drawing. Only such a stream shows. */
+fun terminalControlReady(
+    session: HerdrTerminalSession?, drawn: String, authorized: Boolean, active: Boolean,
+): Boolean = active && authorized && session != null && session.open && !session.sending &&
+    session.mode == "control" && session.session.isNotEmpty() && drawn == session.session
+
+/** The largest terminal grid in cells that a frame can have, as in fluxd. */
+const val HERDR_MAX_FRAME_CELLS = 1000
+
+/**
+ * Parses the body of a terminal_frame packet. It returns null for another
+ * body, and for a frame whose size or bytes are not valid. The bytes must
+ * be standard base64, because the terminal view puts them into its page
+ * as they are.
+ */
+fun parseHerdrTerminalFrame(body: JsonObject): HerdrTerminalEvent.Frame? {
+    if (body.str("kind") != "terminal_frame") return null
+    val session = body.str("session")?.takeIf { it.isNotEmpty() } ?: return null
+    val bytes = body.str("bytes")?.takeIf { isBase64(it) } ?: return null
+    val width = body.long("width")?.takeIf { it in 1..HERDR_MAX_FRAME_CELLS }?.toInt() ?: return null
+    val height = body.long("height")?.takeIf { it in 1..HERDR_MAX_FRAME_CELLS }?.toInt() ?: return null
+    return HerdrTerminalEvent.Frame(session, body.long("seq") ?: 0, width, height, bytes, body.bool("full") == true)
+}
+
+/** True when [s] is standard base64 with padding: only A to Z, a to z, 0 to 9, +, and /, and at most 2 = at the end. */
+internal fun isBase64(s: String): Boolean {
+    if (s.length % 4 != 0) return false
+    val data = s.trimEnd('=')
+    if (s.length - data.length > 2) return false
+    return data.all { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '+' || it == '/' }
+}
+
+/** Parses the body of a terminal_closed packet. It returns null for another body. */
+fun parseHerdrTerminalClosed(body: JsonObject): HerdrTerminalEvent.Closed? {
+    if (body.str("kind") != "terminal_closed") return null
+    val session = body.str("session")?.takeIf { it.isNotEmpty() } ?: return null
+    return HerdrTerminalEvent.Closed(
+        session, body.str("code").orEmpty(), body.str("reason").orEmpty(),
+    )
+}
+
+/**
+ * A refused input event. [code] is "invalid_input", "input_failed", or
+ * "paste_failed". [image] is true when the error is about an image paste.
+ */
+data class HerdrTerminalInputError(val session: String, val code: String, val error: String, val image: Boolean = false)
+
+/** Parses the body of a terminal_input_error packet. It returns null for another body. */
+fun parseHerdrTerminalInputError(body: JsonObject): HerdrTerminalInputError? {
+    if (body.str("kind") != "terminal_input_error") return null
+    val session = body.str("session")?.takeIf { it.isNotEmpty() } ?: return null
+    val image = body.bool("image") == true
+    return HerdrTerminalInputError(session, body.str("code").orEmpty(), body.str("error").orEmpty(), image)
+}
+
+/**
+ * The body of a terminal_open: a stream of [mode] on [pane]. A control
+ * stream can name the terminal size that it wants in cells. A size of 0
+ * keeps the size of the pane on the computer.
+ */
+fun herdrTerminalOpenBody(pane: String, mode: String, request: Long, cols: Int = 0, rows: Int = 0): JsonObject =
+    bodyOf(
+        "kind" to "terminal_open", "pane" to pane, "mode" to mode, "request" to request,
+        "cols" to cols, "rows" to rows,
+    )
+
+/** The body of a terminal_release of [session]. */
+fun herdrTerminalReleaseBody(session: String, request: Long): JsonObject =
+    bodyOf("kind" to "terminal_release", "session" to session, "request" to request)
+
+/** The body of one wheel step at the zero-based cell ([column], [row]). */
+fun herdrTerminalScrollBody(session: String, direction: String, column: Int, row: Int): JsonObject =
+    bodyOf(
+        "kind" to "terminal_scroll", "session" to session, "direction" to direction,
+        "column" to column, "row" to row,
+    )
+
+/** The body of one pointer event at the zero-based cell ([column], [row]). */
+fun herdrTerminalMouseBody(session: String, action: String, button: String, column: Int, row: Int): JsonObject =
+    bodyOf(
+        "kind" to "terminal_mouse", "session" to session, "action" to action, "button" to button,
+        "column" to column, "row" to row,
+    )
+
+/** The requested phone viewport of an active terminal controller. */
+fun herdrTerminalResizeBody(session: String, cols: Int, rows: Int): JsonObject =
+    bodyOf("kind" to "terminal_resize", "session" to session, "cols" to cols, "rows" to rows)
+
+/** The body of one typed text event in the controller session [session]. */
+fun herdrTerminalInputBody(session: String, text: String): JsonObject =
+    bodyOf("kind" to "terminal_input", "session" to session, "text" to text)
+
+/** The body of one named key in the controller session [session]. */
+fun herdrTerminalKeyBody(session: String, key: String): JsonObject =
+    bodyOf("kind" to "terminal_input", "session" to session, "key" to key)
+
+/** The body of one bracketed paste in the controller session [session]. */
+fun herdrTerminalPasteBody(session: String, text: String): JsonObject =
+    bodyOf("kind" to "terminal_paste", "session" to session, "text" to text)
+
+/**
+ * The body of one image paste in the controller session [session]. The
+ * image travels as the payload of the packet; fluxd detects its type and
+ * puts it on the clipboard of the computer.
+ */
+fun herdrTerminalPasteImageBody(session: String): JsonObject =
+    bodyOf("kind" to "terminal_paste_image", "session" to session)
+
 /** The key names that fluxd accepts in a keys packet. */
 val HERDR_KEYS: Set<String> = setOf("enter", "esc", "tab", "shift+tab", "up", "down", "left", "right", "backspace", "space", "y", "n") +
     (0..9).map { it.toString() }
@@ -318,6 +601,10 @@ val HERDR_KEYS: Set<String> = setOf("enter", "esc", "tab", "shift+tab", "up", "d
 /** The key names that fluxd accepts in an input packet for a terminal. */
 val HERDR_TERMINAL_KEYS: Set<String> = setOf("enter", "esc", "tab", "shift+tab", "up", "down", "left", "right", "backspace", "space") +
     ('a'..'z').map { "ctrl+$it" }
+
+/** The named keys that fluxd accepts in a live terminal_input packet. */
+val HERDR_TERMINAL_INPUT_KEYS: Set<String> =
+    setOf("enter", "tab", "shift+tab", "esc", "backspace", "up", "down", "left", "right")
 
 /** The most keys in 1 keys packet. */
 const val HERDR_MAX_KEYS = 8
@@ -341,6 +628,45 @@ sealed interface AgentAlert {
 
     /** The notification of the pane is no longer true. */
     data class Clear(override val pane: String) : AgentAlert
+}
+
+/**
+ * Keeps the time that each agent of 1 computer got its status, as this
+ * phone saw it. The first state after a connection only sets the start
+ * values, so the time of a status that started before is not known. An
+ * unknown status keeps the last known status and its time. The core lock
+ * guards it.
+ */
+class AgentClock {
+    private val since = HashMap<String, Pair<AgentStatus, Long>>()
+    private var fresh = true
+
+    /** Makes the next state set the start values. Call it when the computer connects. */
+    fun restart() {
+        fresh = true
+    }
+
+    /**
+     * Takes a new agent list at the time [now] and returns the start time of
+     * the status of each agent by pane, in milliseconds since the epoch. An
+     * agent whose start time is not known is not in the map.
+     */
+    fun update(agents: List<HerdrAgent>, now: Long): Map<String, Long> {
+        val seen = HashSet<String>()
+        for (a in agents) {
+            seen += a.pane
+            if (a.status == AgentStatus.Unknown) continue
+            val prev = since[a.pane]
+            when {
+                prev?.first == a.status -> Unit
+                prev == null && fresh -> since[a.pane] = a.status to 0L
+                else -> since[a.pane] = a.status to now
+            }
+        }
+        since.keys.retainAll(seen)
+        fresh = false
+        return since.filterValues { it.second > 0 }.mapValues { it.value.second }
+    }
 }
 
 /**

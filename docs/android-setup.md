@@ -175,7 +175,7 @@ The other permissions need no prompt.
 | --- | --- | --- |
 | `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`, `CHANGE_WIFI_MULTICAST_STATE`, `CHANGE_NETWORK_STATE` | Discovery and links on the local network | No prompt |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CONNECTED_DEVICE`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK` | The background service | No prompt |
-| `POST_NOTIFICATIONS` | The service notification, pair requests, and alerts | Once after the first pairing. The **Inbox** tells why. |
+| `POST_NOTIFICATIONS` | The service notification, pair requests, and alerts | Once after the first pairing. **Chat** tells why. |
 | `USE_FULL_SCREEN_INTENT`, `VIBRATE` | **Find my phone** and fingerprint approval requests | No prompt |
 | Notification listener | **Share notifications** | The switch opens the Android settings page |
 | `QUERY_ALL_PACKAGES` | App names on shared notifications | No prompt |
@@ -191,10 +191,10 @@ The other permissions need no prompt.
 
 Flux shows no permission dialog before the first pairing.
 Keep Flux open for the first pairing. Before you allow notifications, Android 13 and later show no notification for a pair request.
-After the first pairing, the **Inbox** tells why Flux needs notifications: **Allow notifications, so that Flux can show when an agent needs you.**
+After the first pairing, **Chat** tells why Flux needs notifications: **Allow notifications, so that Flux can show when an agent needs you.**
 1 second later, Android asks once for notifications.
-If you deny it, the **Inbox** keeps the question with **Allow**.
-After 2 denials, Android does not show its dialog again, so the **Inbox** shows **Open settings** in its place.
+If you deny it, **Chat** keeps the question with **Allow**.
+After 2 denials, Android does not show its dialog again, so **Chat** shows **Open settings** in its place.
 **Hide** removes the question. You can allow notifications in the settings of Android at any time.
 
 `READ_EXTERNAL_STORAGE` applies only to Android 12 and earlier.

@@ -6,11 +6,13 @@ Flux for Android and Flux for macOS show the coding agents that [herdr](https://
 You can see the status of each agent, read its recent output in color, and get a notification when an agent needs input or finishes.
 When you turn on control, you can also answer an agent with taps, send it text, start new agents, and close agents.
 When you also turn on terminals, Flux for Android opens herdr terminals and types commands in them.
+With control on, Flux for Android can also show the live terminal of an agent, and you can scroll and tap in it.
 
 The phone uses the Flux link that it already has.
 It needs no new port, no firewall rule, and no new pairing.
 This page describes the phone. A Mac works the same way, and [Use a Mac](#use-a-mac) describes where it differs.
 An iPhone with [Flux for iOS](ios.md) works like the Android phone. It dictates in the languages of the iPhone, and it gets agent notifications only while Flux runs.
+Flux for iOS and Flux for macOS do not show the live terminal.
 
 ```text
 herdr server ── Unix socket ── fluxd ── Flux TLS link ── Flux for Android
@@ -24,6 +26,7 @@ The phone never connects to the herdr socket.
 - herdr with API protocol 22 or newer. herdr 0.9.1 uses protocol 22.
 - herdr and `fluxd` run as the same desktop user. `fluxd` refuses a herdr socket that belongs to another user.
 - A `fluxd` and a Flux for Android or Flux for macOS that both include this feature.
+- For the [live terminal on Android](#live-terminal-on-android): herdr 0.9.3 or newer, `herdr_control = true`, and a screen lock on the phone. The herdr server and the `herdr` CLI in the `PATH` of `fluxd.service` both need herdr 0.9.3 or newer.
 
 To check the desktop side, run:
 
@@ -31,26 +34,58 @@ To check the desktop side, run:
 flux-cli doctor
 ```
 
-When herdr runs, `flux-cli doctor` prints this line:
+When herdr runs and `herdr_control = true`, `flux-cli doctor` prints these lines:
 
 ```text
-✓ herdr 0.9.1 runs, so the phone can show its agents
+✓ herdr 0.9.3 runs, so the phone can show its agents
+✓ herdr 0.9.3 runs, and fluxd runs /usr/bin/herdr 0.9.3, so the phone can show the live terminal
+```
+
+With herdr 0.9.1 or 0.9.2, the phone shows the agents, and the second line names the problem and the fix.
+
+The live terminal is optional.
+With `herdr_control = false`, the second line is a note and not a problem:
+
+```text
+- The live terminal on the phone needs herdr_control = true in config.toml
 ```
 
 ## See your agents
 
-The agent screen also has a **Changes** view for Git diffs and review feedback.
+Each app shows the output of an agent as a thread.
+Each app also shows the Git changes of the agent.
 See [Agent diff review](workflows.md#agent-diff-review).
 
 1. Start herdr on the computer.
-2. Open Flux for Android. An agent that waits for input shows first in the **Inbox**, with its question and its choices.
+2. Open Flux for Android. An agent that waits for input shows in **Chat**, with its question and its choices.
 3. To see all agents, open **Control** and select **Agents and terminals**.
 4. Select an agent to read its recent output.
+
+The agent screen of Flux for Android and Flux for iOS has these parts:
+
+- The top bar shows the task, the agent, the pane, and the computer. Its menu has **Refresh**, **Changes**, **Show keys**, and **Close the agent**.
+- A row of pills shows the agents of the computer. Select a pill to open that agent.
+- A thin bar moves under the pills while the agent works.
+- The thread shows the messages of the agent, its tool calls, the files that it changed, and your prompts. Select a tool call to show its result. Flux reads the transcripts of Claude Code, Codex, and opencode. Lines that it cannot read show as terminal lines.
+- The dock at the bottom shows the question and the choices of a blocked agent, the step of a working agent with **Interrupt**, or the end of a finished turn. The text field and the mic key are under it.
+
+Each app also reads these parts of the transcripts:
+
+- Claude Code 2.1 sums up tool calls in 1 line, for example `Read 2 files, ran 3 shell commands`. The thread shows each summary as a tool call. A shell command that runs shows its description, and its result shows the command.
+- A table that the agent draws with box characters shows as a grid of cells. A wide table scrolls to the side.
+- The result of an edit shows the added lines in green and the removed lines in red. A diff that opencode shows in 2 columns shows in 1 column.
+- The task list of opencode shows as **Todos** with the count of done tasks. A file that opencode creates or deletes counts in the changed files.
+- When the read starts inside a long block, the start of the thread shows that block as **Earlier output**. Select it to show its lines.
+
+The agents window of Flux for macOS keeps its agent list in the place of the pills. Its header has **Changes**, **Keys**, the copy button, and the refresh button. See [Use a Mac](#use-a-mac).
 
 The list puts blocked agents first, then done, working, idle, and unknown agents.
 A blocked agent waits for an approval or for the answer to a question.
 Idle and done agents are ready for new input.
 The **Agents and terminals** tile shows the number of blocked agents.
+
+On Android, the **Live** key in the top bar shows the live terminal of the agent in the place of the thread.
+See [Live terminal on Android](#live-terminal-on-android).
 
 The output screen of the phone shows up to 1000 lines of recent output.
 The screen part of the output has the colors and styles of the terminal.
@@ -62,7 +97,7 @@ Select refresh to read it at once.
 
 The screen opens at the newest lines.
 When you scroll up to read older lines, the screen stays there when new output comes.
-To go back to the newest lines, select the arrow at the bottom of the output.
+To go back to the newest lines, select the arrow at the bottom of the output. On Android, the arrow is a round key at the bottom right of the thread.
 
 Many agents, such as Claude Code, draw in the alternate screen of the terminal.
 herdr gets the older lines of such an agent only while the agent is idle, and only as plain text.
@@ -70,6 +105,12 @@ While the agent works, the phone shows the older lines from the last idle read a
 When the two parts do not meet, a dim line says that more lines show when the agent stops.
 The phone reads all lines again when the agent stops.
 herdr keeps only the recent part of the terminal for some agents, so the screen can show fewer lines.
+
+While a phone controls the agent in Live, `fluxd` does not read the older lines, because herdr scrolls the terminal to read them.
+Each device then shows the older lines of the last read above the current screen.
+When the two parts do not meet, a dim line says that older lines update when the phone releases this agent.
+When `fluxd` has no older lines of the agent yet, the dim line shows above the current screen.
+The screen part then has the size of the phone grid.
 
 The phone fits the output to its narrow screen.
 Claude Code, Codex, opencode, and other agents draw for the full width of the terminal, so a line from the computer is often wider than the screen:
@@ -81,7 +122,7 @@ Claude Code, Codex, opencode, and other agents draw for the full width of the te
 - A box that is wider than the screen loses its right side, so its rows wrap under the left side. A table keeps all its sides.
 - The phone removes the margin that all lines share, extra empty rows, scroll bars, and the half-block edges of boxes.
 - A panel, for example a message, a tool call, or a diff line in opencode, fills the width of the screen.
-- The phone removes the sidebar that opencode shows in a wide terminal, because its rows share the lines of the conversation. The status line at the bottom still shows the tokens and the cost.
+- `fluxd` removes the sidebar that opencode shows in a wide terminal, because its rows share the lines of the conversation. It reads each row of opencode apart, so that herdr does not join a row of the conversation with a row of the sidebar. The status line at the bottom still shows the tokens and the cost.
 - The phone also removes the expanded vertical session tabs of OpenCode V2 when their
   titles and **New session** row are visible. This keeps the conversation and
   prompt at the left without changing the tab layout on the computer. Horizontal tabs
@@ -100,6 +141,121 @@ To show each diff in 1 column, set `diff_style` in `~/.config/opencode/tui.json`
   "diff_style": "stacked"
 }
 ```
+
+### Live terminal on Android
+
+Flux for Android can show the live terminal of an agent in the place of the thread.
+The phone then controls the pane on the computer.
+The thread stays the default on Android.
+Flux for iOS and Flux for macOS show the thread and do not have Live.
+
+Live needs these items:
+
+- herdr 0.9.3 or newer for the herdr server.
+- herdr 0.9.3 or newer for the `herdr` CLI in the `PATH` of `fluxd.service`. `fluxd` runs this CLI for each live terminal.
+- `herdr_control = true`. See [Answer an agent](#answer-an-agent).
+- A `fluxd` and a Flux for Android that include Live.
+- A screen lock on the phone.
+
+The **Live** key shows in the top bar of an agent screen when the computer is online, the agent runs, and the computer offers control.
+With an older `fluxd`, an older herdr, or `herdr_control = false`, the key does not show, and the agent screen shows the output as before.
+To find the cause, run `flux-cli doctor` on the computer.
+It checks `herdr_control`, the herdr server, and the herdr CLI of `fluxd`. See [Requirements](#requirements) for its herdr lines.
+
+To show the live terminal:
+
+1. Open the screen of an agent.
+2. Select **Live** in the top bar.
+3. Unlock the phone with the fingerprint or the screen lock in the **Open the terminal** prompt.
+
+A valid unlock from the last 5 minutes opens Live with no prompt.
+The replies to agents use the same unlock.
+
+The live terminal then takes the place of the thread.
+With a computer that supports live input, a key row takes the place of the dock.
+A line above it tells that the keys go straight to the pane.
+The key row has the digits of the choices of a blocked agent, Esc, Tab, Up, Down, Enter, and a keyboard key.
+The keyboard key shows the phone keyboard.
+A tap on the terminal does not open the keyboard.
+The keyboard types directly into the agent, and Return sends Enter.
+To dictate, use the mic of the phone keyboard.
+Text from the keyboard with a line break or a tab, or of 256 characters or more, goes to the agent as one bracketed paste.
+The line breaks of a paste stay in the paste and do not submit the prompt.
+The agent applies its own paste handling.
+A shorter block, for example a swiped word, goes as typed text.
+An image that you paste with the keyboard goes to the clipboard of the computer, and then Ctrl+V lets the agent attach it.
+The phone turns the image upright and sends it as a PNG of at most 2048 pixels on its long side.
+Input waits for the first frame and the unlock.
+A reconnect does not send old input again.
+Live starts with the keyboard hidden.
+When the phone loses control, the keyboard hides, and a reconnect does not show it again.
+The thread without Live keeps the dock with the text field, **Send**, and the mic key.
+An older computer keeps the dock under the terminal in Live too.
+The text field keeps its draft while Live shows.
+When Live ends after you typed text with no Enter after it, a note above the text field tells you that the input of the agent can still hold that text.
+**Send** then adds the new text after it.
+**Refresh** does not show in the menu while Live is on.
+The phone then reads the output when Live opens, when the status changes, and after a tap on a choice, so the digits of the choices stay current.
+After a tap on a choice, the choices take no tap until the next output arrives.
+Until the first full screen draws, a cover shows **Opening the terminal…**.
+The cover shows **Reconnecting…** while Live opens the stream again.
+The terminal uses the colors of the computer theme for the default colors, and it keeps the colors that the agent sets.
+
+Live changes the pane on the computer:
+
+- herdr resizes the pane to the grid of the phone, about 60 columns. The agent draws its screen for that grid.
+- When the width of the view changes, for example after a rotation, the phone resizes the pane again and keeps control.
+- While the keyboard shows, the pane keeps its size, and the view shows the bottom rows.
+- When the phone releases control, herdr gives the pane the size of the desktop again when the desktop has an attached herdr client. Without such a client, the next herdr client that attaches sets the size.
+- One device controls a pane at a time. Another device cannot take control until the first device releases it.
+
+The gestures on the live terminal are:
+
+- One finger scrolls the agent on the computer. After a quick swipe, the scroll continues for a short time. A new touch stops it.
+- A short tap clicks the left mouse button at the cell under the finger, for example on a button of the agent. herdr sends the click only to an agent that uses the mouse. A drag, a long press, and a touch that stops a scroll do not click.
+- Two fingers zoom and pan the view on the phone. They send nothing to the computer.
+
+Typing in Live goes to the agent at once.
+A digit or Return can answer a dialog of the agent, for example an approval.
+The text field refuses a prompt while the agent waits for a choice, but Live has no such guard.
+When the keyboard replaces a word, for example with a correction or a completion, Live sends backspaces and the new word at once.
+A correction reaches only the text that you typed after the last key of the key row, Return, a tap, a choice, or an image.
+After such a key, the agent can change its line, so the keyboard starts again with an empty line.
+A hardware keyboard types too.
+It sends Enter, Tab, Shift+Tab, Esc, Backspace, and the arrows as keys.
+AltGr types its characters, for example `@` and `{`.
+A key with Ctrl does nothing.
+
+Live releases control when you select **Live** again, select **Changes** in the menu, leave the agent screen, or put the app in the background.
+When the app comes back while the unlock is valid, Live takes control again.
+The unlock stays valid for 5 minutes, and Live does not extend it.
+When the unlock ends, Live ends, also while the terminal shows.
+While the computer is not reachable, the agent screen says so, and the **Live** key stays on.
+When the computer connects again while the unlock is valid, Live opens again.
+When the link drops during the unlock prompt, the prompt shows again after the computer connects again.
+
+Live also ends by itself in these cases:
+
+- You cancel the unlock, or the phone has no screen lock.
+- The agent ends, or herdr closes the pane. The phone ends Live when the agent list of the computer no longer has the agent. A new agent in the same pane does not open Live. To open it, select **Live** again.
+- `fluxd` stops the stream, for example after a change of `herdr_control` or when herdr stops.
+- The computer refuses the open. The line at the top of the thread shows the error of `fluxd`. When `fluxd` marks the error as temporary, Live first tries again, as for a failed stream.
+- The stream fails, or the computer does not answer. Live first tries again 4 times, after 1, 2, 4, and 8 seconds. After a stream shows for 30 seconds, the count of tries starts again.
+- Android stops the page that draws the terminal, for example to free memory.
+
+When Live ends by itself, a line at the top of the thread tells why, for example `The unlock ended. Tap Live to open the terminal again.`
+When the agent ends or herdr closes the pane, the line shows above **The agent is gone**.
+Without `herdr_terminals`, the phone does not get the list of panes, so the line for a closed pane also says that the agent ended.
+TalkBack reads this line.
+The next tap on **Live** removes it.
+
+If TalkBack is on when Live opens, TalkBack can read the rows of the terminal.
+TalkBack does not read each new frame aloud.
+To read or copy the text of the agent, end Live and use the thread.
+
+Live shows the cells of the terminal with their colors and styles.
+It does not show images that a program draws in the terminal.
+Only an agent screen has Live. The screen of a terminal does not have it.
 
 ## Notifications
 
@@ -138,11 +294,14 @@ systemctl --user reload fluxd
 
 The output screen then shows the reply controls:
 
-- When the agent is blocked, the phone shows the numbered choices of the dialog as buttons. A tap sends the number of the choice.
-- The key bar sends Esc, Tab, Up, Down, and Enter.
+- When the agent is blocked, the phone shows the numbered choices of the dialog as buttons. A tap sends the number of the choice. opencode shows its choices in 1 row, for example **Allow once**, **Allow always**, and **Reject**. The phone numbers them, and a tap sends the arrow keys that select the choice, then Enter. On Android, the first choice has the accent fill. **Write** shows the text field in the place of the choices, and **Choices** shows the choices again.
+- The key bar sends Esc, Tab, Up, Down, and Enter. On Android, select **Keys** in the dock of a blocked agent, or **Show keys** in the menu, to show it. **Interrupt** on a working agent sends Esc.
 - The text field sends a prompt to the agent. The clear key empties the field. The expand key opens a large editor with **Send** for a long prompt.
 - When the agent waits for a choice, `fluxd` refuses the text with the message `The agent waits for a choice. Pick a choice first.` A digit or Enter in the text can select a choice of the dialog, for example an approval. Pick a choice with the buttons or the key bar first.
 - After this refusal, the message shows **Send as answer** next to it while the field holds the same text. Select it when the agent asks a question that needs free text, for example an answer that is not in the choices. The app sends the same text again with `"answer": true`. `fluxd` checks that the agent still waits, types the text on one line, and presses Enter. The iPhone and the Mac show the same action.
+
+With herdr 0.9.3 or newer, the same setting also turns on the **Live** key of Flux for Android.
+See [Live terminal on Android](#live-terminal-on-android).
 
 Before the first reply, the phone asks for its fingerprint or screen lock.
 The unlock stays valid for 5 minutes.
@@ -285,17 +444,17 @@ The mic key does not show when the phone has no speech recognizer.
 
 Flux for macOS shows the same agents and sends the same replies as the phone.
 It shows up to 1000 lines of output.
-It does not start agents, close them, or open terminals.
+It does not start agents, close them, open terminals, or show the live terminal.
 
 - **Control** has the **Agents and terminals** tool. Its line counts the agents and the terminals. Its badge shows the number of blocked agents.
-- The Inbox shows each agent that waits for input, works, or is done. See [Inbox and navigation](macos.md#inbox-and-navigation).
-- **Agents and terminals** opens a window with the agent list on the left and the output of the selected agent on the right. When more than 1 computer has agents, Flux asks which one.
-- **Reply** and **Open** on the master tile of the Inbox open the agent in that window. The menu of each computer in the menu bar panel has **Agents…** too.
+- **Chat** shows each agent that waits for input, works, or is done. An agent that waits shows its choices there. See [Chat and navigation](macos.md#chat-and-navigation).
+- **Agents and terminals** opens a window with the agent list on the left and the thread of the selected agent on the right. When more than 1 computer has agents, Flux asks which one.
+- **Open thread** on the card of an agent in **Chat** opens the agent in that window. The menu of each computer in the menu bar panel has **Agents…** too.
 - The output uses the colors of Tokyo Night in dark mode and Tokyo Night Day in light mode.
 - The Mac fits the output to the width of the window, as the phone does. See [See your agents](#see-your-agents).
-- When you scroll up to read older lines, the output stays there when new output comes. To go back to the newest lines, select the arrow at the bottom of the output.
-- Each output line selects its own text. To copy all the output, select the copy button above the output.
-- Press Command-R to read the output again.
+- When you scroll up to read older lines, the output stays there when new output comes. To go back to the newest lines, select the arrow at the bottom of the output. On Android, the arrow is a round key at the bottom right of the thread.
+- Each message and each output line selects its own text. To copy all the output, select the copy button above the thread.
+- Press Command-R to read the output again. Press Command-D to show the changes.
 - Return sends the text. Shift-Return adds a line break.
 - Before the first reply, the Mac asks for Touch ID or the Mac password. The unlock stays valid for 5 minutes, until the Mac sleeps or locks.
 - The **Agent needs input** and **Agent finished** switches are in **Settings > Features**. They apply to all computers. A click on a notification opens the agent in the agents window.
@@ -375,30 +534,43 @@ systemctl --user restart fluxd
 ## Access and privacy
 
 The phone can read the agent list and the recent output of an agent pane.
+`fluxd` also lets a paired device watch the live terminal of an agent pane, with no input. Flux for Android does not use this.
 With `herdr_control = true`, it can also send the keys in the list above and prompts to an agent, start agents, and close agent panes.
+It can also control the live terminal of an agent pane: type, paste text and images, click at any cell, scroll, and resize the pane to its grid.
+An image paste replaces the clipboard of the computer, also with `auto_clipboard = false`.
+A click can press each button of the agent, for example an approval.
 An agent runs commands, so a reply has the same power as a prompt that you type on the computer.
 `herdr_control` alone lets the phone run any command as your user, also when `herdr_terminals` is `false`.
 For example, the phone can start Claude Code in any folder and send a prompt that starts with `!`, which Claude Code runs as a shell command.
 `fluxd` reads and sends only to panes that hold an agent in the last agent list.
 herdr also checks that an agent is in the pane before it sends a key or a prompt.
+`fluxd` ends a live terminal when the agent leaves its pane.
+`fluxd` finds this in the agent list of herdr, so the stream can run for a short time after the agent ends.
 
 With `herdr_terminals = true` and `herdr_control = true`, the phone can also read, type in, open, and close each herdr pane that has no agent.
 These panes include the panes that you opened on the computer, for example a `sudo -i` shell or an SSH session.
 The phone can then run any command in them, also as root or on the remote host.
+A device needs `herdr_terminals` to watch or control the live terminal of a pane without an agent.
+Without this setting, `fluxd` answers the open as for a pane that it does not know.
 
 `herdr_control` and `herdr_terminals` apply to every paired device, for example a second phone, a tablet, or a Mac.
-Flux has no setting for each device.
-The app asks you to unlock it before the first reply, but `fluxd` cannot check that the app did.
+A [device restriction](workflows.md#per-device-access) can turn them off for one device.
+The app asks you to unlock it before the first reply and before Live, but `fluxd` cannot check that the app did.
 Turn the settings on only when you trust each paired device.
 Unpair the devices that you do not use.
 
 `fluxd` logs each reply with the device name, the pane, and the keys.
 For a prompt and a terminal command, it logs the number of characters, not the text.
 It also logs each new agent, new terminal, and closed pane.
+For a live terminal, it logs the start, each press of a mouse button with its cell, and the end.
+It also logs each Enter with the number of characters typed before it, each Esc, each paste with its number of characters, and each image with its size.
+While the agent waits for a choice, it logs each typed text with its number of characters, because a digit can select a choice.
+It does not log the typed text, the release of a button, a drag, a move, a scroll, or a resize.
+When the input to a live terminal fails, it logs only the first error of the stream.
 
 Terminal output can contain secrets.
-The output goes only to paired phones over the Flux TLS link.
-`fluxd` does not write the output to its log.
+The output and the live terminal go only to paired devices over the Flux TLS link.
+`fluxd` does not write the output or the frames of a live terminal to its log.
 
 ## How it works
 
@@ -419,11 +591,63 @@ When the phone opens the agent list, `fluxd` tries at once.
 - Up to 4 keys, prompt, input, and close requests run at a time for each device. A 5th request gets the error `fluxd is busy with earlier replies from this device. Try again.`
 - `fluxd` keeps the plain history of an idle agent for 3 seconds, so a new read in that time does not make herdr scroll the agent again. A new status of the agent, a reply to it, and a new agent in the pane end this time.
 - One start of an agent or a terminal runs at a time for each device.
+- One open of a live terminal runs at a time for each device. A second open gets the error `fluxd already opens a terminal for this device. Try again.` and `"retry": true`.
+- Each device has 1 live terminal at a time, and each pane has 1 controller at a time. Another device that asks for control gets the error `another device controls that terminal`.
 
 A read, a reply, and a start can take seconds.
 When you unpair the device during that time, `fluxd` does not send the answer.
 When you set `herdr = false` during a read, the answer has an error and no text.
 When you set `herdr_terminals = false` during the read of a terminal, the answer has an error and no text.
+When you set `herdr_control = false` during a live terminal, `fluxd` ends the stream with the code `stopped`.
+
+### Live terminal bridge
+
+For each live terminal of a phone, `fluxd` runs the `herdr` CLI from the `PATH` of `fluxd.service`:
+
+```sh
+herdr terminal session control PANE --cols COLS --rows ROWS
+```
+
+A stream that only watches the pane runs `observe` in place of `control`.
+
+`HERDR_SOCKET_PATH` in the environment of the CLI selects the herdr session.
+The CLI sends the frames of the terminal on its output, and `fluxd` sends them to the phone.
+The phone never connects to herdr.
+
+`fluxd` checks the version of the herdr server and of the CLI each time it connects to a herdr server.
+It runs `herdr --version` for this check, with a limit of 3 seconds.
+When one of the 2 is older than 0.9.3, or `fluxd` cannot run the CLI, the phone gets no live terminal.
+The log of `fluxd` and `flux-cli doctor` tell why.
+
+While the check fails, `fluxd` runs it again about once a minute.
+It asks the herdr server for its version again, and then it checks the CLI again.
+An update of herdr then turns on the live terminal with no restart of `fluxd`.
+The log then says that the live terminal on the phone is on, and the phones get the new state.
+`fluxd` keeps a check that passed until it connects to a herdr server again.
+
+`fluxd` reads the `PATH` of `fluxd.service` only when it starts.
+After a change of that `PATH`, restart `fluxd`:
+
+```sh
+systemctl --user restart fluxd
+```
+
+`fluxd` answers each open within 15 seconds.
+When the phone releases the terminal, `fluxd` sends `terminal.release` to the CLI and closes its input.
+herdr then gives the desktop its size back, as [Live terminal on Android](#live-terminal-on-android) describes.
+`fluxd` stops a CLI that does not exit within 5 seconds.
+The loss of the link, an unpair, and a change of a setting release the terminal in the same way.
+When `fluxd` stops a CLI, herdr can keep the pane at the size of the phone.
+The log of `fluxd` then says that the terminal session ended with SIGKILL, with the last error line of the CLI.
+
+After an update, `fluxd.service` does not restart into the new binary while a live terminal runs or opens.
+The journal then shows the line `the restart waits for the live terminal`.
+To let the restart run, stop Live on the phone.
+
+herdr scrolls the terminal to read the history, so `fluxd` does not read the history of a pane while a phone controls it.
+A read then gets the cached history and the current screen, as [See your agents](#see-your-agents) describes.
+When the phone releases the pane, the next read gets all lines again.
+A device that only watches a pane does not change the terminal, so the history stays current.
 
 ### Wire format
 
@@ -433,7 +657,7 @@ The `kind` field selects the message.
 
 | Kind | Sender | Body |
 | --- | --- | --- |
-| `state` | Computer | `enabled`, `running`, `control`, `terminals`, `agents`, `panes`, `workspaces`, and `kinds` |
+| `state` | Computer | `enabled`, `running`, `control`, `terminals`, `bridge`, `review`, `agents`, `panes`, `workspaces`, and `kinds` |
 | `output` | Computer | `pane` and `format`, then `text` and `truncated`, or `error` |
 | `sent` | Computer | `pane` and `action`. When the reply failed, also `error`, and `code` for some errors. |
 | `created` | Computer | `what`, then `pane` or `error` |
@@ -445,11 +669,63 @@ The `kind` field selects the message.
 | `input` | Phone | `pane` of a terminal, `text`, and 0 to 8 `keys`. The computer answers with `sent`. |
 | `create` | Phone | `what` is `agent` or `terminal`, then `agent`, `cwd`, and `workspace`. The computer answers with `created`. |
 | `close` | Phone | `pane`. The computer answers with `closed`. |
+| `terminal_open` | Phone | `request`, `pane`, and `mode`, `observe` or `control`. `control` can add `cols` and `rows` of the grid, from 1 to 1000. The computer answers with `terminal_opened`. |
+| `terminal_opened` | Computer | `request`, `pane`, and `mode`, then `session`, `width`, and `height`, or `error`. A temporary error also has `retry`. |
+| `terminal_frame` | Computer | `session`, `seq`, `encoding`, `full`, `width`, `height`, and `bytes` |
+| `terminal_scroll` | Phone | `session`, `direction`, and the zero-based `column` and `row` of a cell |
+| `terminal_mouse` | Phone | `session`, `action`, `button`, and the zero-based `column` and `row` of a cell |
+| `terminal_resize` | Phone | `session`, `cols`, and `rows`, from 1 to 1000 |
+| `terminal_release` | Phone | `session` and `request`. The computer answers with `terminal_closed`. |
+| `terminal_closed` | Computer | `session`, `code`, and `reason`. After a release, also the `request` of the release. |
+| `terminal_input` | Phone | `session`, and `text` or `key`, but not both |
+| `terminal_paste` | Phone | `session` and `text`. `fluxd` sends the text as one bracketed paste. |
+| `terminal_paste_image` | Phone | `session`, and a PNG image as the payload |
+| `terminal_input_error` | Computer | `session`, `code`, and `error`. The error of an image paste also has `image`. |
+
+The optional `bridge` list of `state` names the actions of the live terminal: `observe`, `control`, `scroll`, `mouse`, `input`, `paste`, and `image`.
+A phone sends `terminal_input` only with `input`, `terminal_paste` only with `paste`, and `terminal_paste_image` only with `image`.
+Thus a phone finds an older computer and keeps the text field.
+An older app ignores the new kinds.
+
+A `terminal_input` types one event in the control stream of the phone.
+`text` goes as it is, on one line, with no Enter after it, and it can have up to 16 KB.
+`key` is `enter`, `tab`, `shift+tab`, `esc`, `backspace`, `up`, `down`, `left`, or `right`.
+`fluxd` encodes each key, and a text cannot hold a control character, so one event cannot hold an escape sequence.
+`fluxd` refuses an empty text, a text with a key, a control or directional character, and an unknown key with the code `invalid_input`.
+A bridge failure gets the code `input_failed` and ends the stream, so the phone does not type into a stream that stopped.
+A session that is unknown, released, or of another device gets no input and no answer, also for an invalid event.
+The events keep their order, so a character, a Tab, and an Enter arrive in the order that the phone sent them.
+
+A `terminal_paste` sends text as one bracketed paste.
+`fluxd` puts the text between `ESC [ 200 ~` and `ESC [ 201 ~`.
+It keeps the line breaks and the tabs, and it drops each other control character and each directional character.
+Thus a paste cannot end its own paste or type a key.
+herdr removes the markers for a program that did not turn on bracketed paste.
+A paste can have up to 64 KB, because a paste is often a code block.
+The clipboard of the computer does not change.
+
+A `terminal_paste_image` pastes an image that the phone keyboard took from its clipboard.
+The image is the payload of the packet, so the paste does not need clipboard sync.
+The phone sends a PNG of at most 2048 pixels on its long side.
+`fluxd` accepts only a PNG of up to 16 MiB, 8192 pixels on each side, and 40 million pixels, and it reads only the header.
+It refuses a JPEG or another image type with the code `invalid_input`, so an older phone gets a reason.
+`fluxd` pastes an image only into an agent, not into a terminal without an agent.
+It puts the PNG on the clipboard of the computer and then sends Ctrl+V to the agent.
+opencode, Claude Code, and Codex then read the image as an attachment.
+The clipboard of the computer then holds the image, as after a copy.
+The phone holds the typed events while it makes the PNG, and it sends them after the image packet.
+`fluxd` holds the typed events during the transfer and for 500 ms after Ctrl+V, so that the agent can attach the image.
+Thus Enter does not submit the prompt before the image.
+When more than 96 events wait, `fluxd` refuses the next ones, and the phone gets one `paste_failed`.
+One image paste runs at a time on the computer, for all devices.
+A second paste during that time gets the code `paste_failed`.
+A failed transfer or clipboard write also gets `paste_failed`, and the stream stays open.
 
 When `fluxd` cannot finish an answer because of an internal error, it sends the answer with an `error`, for example `fluxd could not read the pane`.
 
-A `keys`, `prompt`, `input`, `create`, or `close` packet can have `request`, a number.
-The answer `sent`, `created`, or `closed` has the same `request`, so the phone can match a late answer to its packet.
+A `keys`, `prompt`, `input`, `create`, `close`, `terminal_open`, or `terminal_release` packet can have `request`, a number.
+The answer `sent`, `created`, `closed`, `terminal_opened`, or `terminal_closed` has the same `request`, so the phone can match a late answer to its packet.
+`terminal_closed` has a `request` only when the phone released the stream.
 An answer to a packet without `request` has no `request` field.
 
 The computer sends `state` when the phone connects, after each change, and as the answer to `request`.
@@ -519,7 +795,79 @@ To answer a question that needs free text, the app sends the prompt with `"answe
 `fluxd` then checks that the agent still waits, changes the line breaks to spaces, types the text, and presses Enter.
 An app sends `answer` only after the user selects an action to type an answer.
 
+`bridge` in `state` lists the live terminal actions that the device can use:
+
+- An empty list when herdr does not run. The list is also empty when the herdr server or the `herdr` CLI of `fluxd` is older than 0.9.3, or `fluxd` cannot run that CLI.
+- `["observe"]` without `herdr_control`.
+- `["observe","control","scroll","mouse"]` with `herdr_control`.
+
+Flux for Android shows **Live** only when `control` is `true` and `bridge` has `control`.
+An older `fluxd` sends no `bridge`, so a new phone shows no **Live** key.
+An older app ignores `bridge` and the `terminal_` kinds, and it reads the output as before.
+
+A `terminal_open` with `"mode":"observe"` watches the pane at its size on the computer.
+With `"mode":"control"`, the device controls the pane, and `cols` and `rows` set the grid of the pane.
+Without `cols` and `rows`, the pane keeps its size.
+`session` in `terminal_opened` names the stream.
+Only the device and the link that opened a stream can send events to it or release it.
+The computer sends `terminal_opened` before the first frame:
+
+```json
+{"kind":"terminal_open","pane":"w5:p1","mode":"control","cols":60,"rows":38,"request":12}
+{"kind":"terminal_opened","pane":"w5:p1","mode":"control","session":"ts3","width":60,"height":38,"request":12}
+```
+
+When `fluxd` refuses an open, `terminal_opened` has an `error`, for example:
+
+- `fluxd does not know that pane`. A pane that the device cannot see gets the same error.
+- `replies are off on this computer`, for `control` without `herdr_control`.
+- `another device controls that terminal`.
+- `fluxd already streams a terminal to this device`.
+- `fluxd already opens a terminal for this device. Try again.`
+- `fluxd could not open the terminal in time. Try again.`
+- `The live terminal needs herdr 0.9.3 or newer on this computer.`
+
+The 2 errors that end with `Try again.` are temporary, and so is `fluxd already streams a terminal to this device`. Their answer also has `"retry": true`:
+
+```json
+{"kind":"terminal_opened","pane":"w5:p1","mode":"control","error":"fluxd already opens a terminal for this device. Try again.","retry":true,"request":13}
+```
+
+The phone can send the open again after a short wait, and it does not have to compare the text of the error.
+`fluxd already streams a terminal to this device` shows while the release of the last stream of the device is still in progress.
+The answer with another error has no `retry` field.
+
+`bytes` in `terminal_frame` has the ANSI bytes of the terminal in standard base64, and `encoding` is `ansi`.
+A frame can change only a part of the screen, so the phone applies each frame in the order of `seq`.
+A frame with `"full":true` draws the whole screen.
+Flux for Android shows the terminal and sends gestures only after the first full frame of the stream draws.
+`seq` does not acknowledge a scroll or a click.
+
+The input events need a `control` stream:
+
+- `terminal_scroll` sends one wheel step. `direction` is `up` or `down`. `fluxd` sends 1 line with the source `wheel` to herdr, so a device cannot change a scroll into another key.
+- `terminal_mouse` sends one mouse event. `action` is `down`, `up`, `drag`, or `move`. `button` is `left`, `right`, or `middle`. Flux for Android sends a left `down` and a left `up` for a tap.
+- `terminal_resize` changes the grid of the pane and keeps the stream.
+
+`column` and `row` are zero-based cells of the grid of the stream.
+`fluxd` ignores an event for a session that the device and the link did not open.
+
+`terminal_closed` comes after the last frame of the stream.
+`code` tells why the stream ended:
+
+| Code | Meaning |
+| --- | --- |
+| `released` | The phone released the stream. |
+| `bridge` | The herdr CLI ended the stream. |
+| `agent_ended` | The agent left the pane. |
+| `pane_closed` | The pane closed or moved. |
+| `stopped` | `fluxd` stopped the stream, for example because herdr stopped, a setting changed, or the link failed. |
+
+`reason` has the text of the end, and it is never empty.
+When `fluxd` stopped a herdr CLI that did not exit, `reason` can be `herdr: the terminal session ended with SIGKILL`.
+
 `flux-cli status --json` includes the same agent state in its `herdr` field.
+It also has `cli` with the `path`, the `version`, and the `error` of the version check of the herdr CLI. The phone does not get `cli`.
 
 ## Troubleshoot
 
@@ -535,6 +883,13 @@ An app sends `answer` only after the user selects an action to type an answer.
 | An agent kind is missing from the list | Run the agent once in a terminal, so that mise installs it. Then wait 1 minute. The command must also be in the `PATH` of `fluxd`. Run `systemctl --user show-environment` to see that `PATH`. |
 | A new agent says that it did not start | Read the last line in the error. Run the agent command in a terminal on the computer to see the problem. |
 | The output shows a dim line about more lines | The agent works, and more lines came than one screen. The phone reads them when the agent stops. |
+| The output shows a dim line about the release of the phone | A phone controls the agent in Live. The older lines update when the phone releases the agent. |
+| The **Live** key is missing on the agent screen | Run `flux-cli doctor` on the computer. Live needs herdr 0.9.3 or newer for the server and for the herdr CLI of `fluxd`, and `herdr_control = true`. Update `fluxd` and Flux for Android. |
+| Live says that the live terminal did not open | Read the error in the line above the output. Then read the herdr messages of the daemon, as the end of this page shows. |
+| Live says `The live terminal stopped. Tap Live to try again.` | Live tried again 4 times, and each try failed. Or Android stopped the page of the terminal. Select **Live** to try again. If Live stops again, read the herdr messages of the daemon. |
+| Live says that the computer stopped the live terminal | `fluxd` stopped the stream. A change of `herdr_control`, `herdr_terminals`, or the access of the device does this. A herdr server that stops also does this. Check the settings, then select **Live** again. |
+| Live says to set a screen lock | Set a PIN, a pattern, or a password on the phone. |
+| The pane on the computer keeps the size of the phone after Live | At the release, the desktop had no attached herdr client. The next herdr client that attaches sets the size. When the log of `fluxd` says that the terminal session ended with SIGKILL, the herdr CLI did not exit after the release. Attach a herdr client on the desktop again to set the size. |
 | A reply says that the agent is not ready for input | herdr accepts input only for an agent that it detected. Run `herdr agent get PANE` on the computer. |
 | A reply says that the agent waits for a choice | The agent shows a dialog. Pick a choice with the choice buttons or the key bar, then send the text again. |
 | The log says that the herdr socket belongs to another user | Another user listens on the herdr socket path. Set `HERDR_SOCKET_PATH` to a socket in a folder that only you can write to. |

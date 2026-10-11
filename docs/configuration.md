@@ -46,13 +46,13 @@ command = "omarchy-system-lock"
 | `download_dir` | Destination for received files. Defaults to the XDG Downloads directory, then `~/Downloads`. |
 | `scan_dir` | Destination for scanned text and documents. Defaults to `flux/scanned` inside the XDG Documents directory. |
 | `photo_dir` | Destination for camera photos. Defaults to `flux` inside the XDG Pictures directory. Screenshots and signatures use its `screenshots` and `signatures` folders. |
-| `auto_clipboard` | Sync clipboard text and images in both directions. Defaults to `true`. |
+| `auto_clipboard` | Sync clipboard text and images in both directions. Defaults to `true`. A clip that you send by hand from the phone goes on the clipboard also while it is `false`. |
 | `notifications` | Show phone notifications on the desktop. Defaults to `true`. |
 | `share_home` | Let each paired device read the home folder, `download_dir`, and the Documents, Pictures, Music, and Videos folders. Names that start with a dot, such as `~/.ssh`, and the Flux folders stay hidden. Defaults to `true`. Turning it off ends each session at once. See [Browse PC](features.md#browse-pc). |
 | `pause_media_on_call` | Pause desktop media during calls. Defaults to `true`. |
 | `sync_dnd` | Sync Do Not Disturb. Defaults to `true`. |
 | `herdr` | Show the [herdr agents](herdr.md) of this computer on the phone. Defaults to `true`. |
-| `herdr_control` | Let each paired device send keys and prompts to the herdr agents, start agents, and close them. An agent runs commands, so a paired device can then run any command as your user through an agent, also with `herdr_terminals = false`. Defaults to `false`. See [Answer an agent](herdr.md#answer-an-agent). |
+| `herdr_control` | Let each paired device send keys and prompts to the herdr agents, start agents, and close them. It also lets a device click, scroll, and resize in the live terminal of an agent. An agent runs commands, so a paired device can then run any command as your user through an agent, also with `herdr_terminals = false`. Defaults to `false`. See [Answer an agent](herdr.md#answer-an-agent). |
 | `herdr_terminals` | Let each paired device open herdr terminals, read them, and type commands in them. The terminals include the herdr panes that you opened, for example a `sudo -i` shell. Needs `herdr_control`. Defaults to `false`. See [Use terminals](herdr.md#use-terminals). |
 | `remote_input` | Let the phone or the Mac move the pointer and type on this computer. Defaults to `false`. `flux-cli input on` and `flux-cli input off` change it. Turning it off drops the input that waits and releases a held button. See [Touchpad and keyboard](remote-input.md). |
 | `remote_desktop` | Let the phone or the Mac show the screen of this computer. Defaults to `false`. The touches and the mouse on the screen also need `remote_input`. `flux-cli desktop on` and `flux-cli desktop off` change it. Turning it off stops each stream, also a stream that still starts. See [Remote desktop](remote-desktop.md). |
@@ -99,6 +99,7 @@ The [workflow controls](workflows.md) describe `[devices]`, `[[notification_rule
 | `~/Pictures/flux/signatures/` | Signatures from the camera by default |
 | `~/.cache/flux/release.json` | The last answer of the [release check](#release-check) |
 | `~/.cache/flux/update/` | The package that `flux-cli update` downloads, until pacman installs it |
+| `~/.cache/flux/icons/` | The app icons of the phone notifications |
 | `$XDG_RUNTIME_DIR/flux/fluxd.sock` | Local IPC socket. Without `XDG_RUNTIME_DIR`, `/run/user/<uid>/flux/fluxd.sock` |
 | `/etc/flux/approve/<user>.pub` | Root-owned phone approval public key |
 | `/etc/flux/approve/pam-backup/` | Original PAM files from approval setup |

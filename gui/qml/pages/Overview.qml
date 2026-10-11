@@ -485,6 +485,16 @@ Item {
         label: "Send file"
         onClicked: root.view.go("files")
       }
+      Tile {
+        objectName: "linkTile"
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.columnSpan: 2
+        icon: "web"
+        label: "Open link on " + Fmt.noun(root.dev ? root.dev.type : "")
+        active: root.online
+        onClicked: root.view.openLink()
+      }
     }
 
     // Notifications, streams, and waiting agents. Switches sit under this group.

@@ -102,6 +102,20 @@ flux-cli url https://omarchy.org
 
 On Android, share content to Flux from the system share sheet.
 Received files use `download_dir`.
+
+To show a web page on the phone, select **Open link on phone** on the Overview page of the desktop window, or press `o`.
+The field starts with the newest clipboard entry when that entry is a link.
+The phone shows the link in a notification. A tap on the notification opens the link in the browser.
+
+To show a web page on the desktop, type the link in the field at the bottom of **Chat** in Flux for Android, then tap the send key.
+The desktop opens a link that starts with `http://` or `https://` in its browser. Other text goes to the clipboard of the desktop.
+The field of the desktop window adds `https://` to a host name without a scheme, for example `omarchy.org/flux`.
+
+**Chat** shows what the phone sent in this session as a thread: links, text, clips, and files.
+The desktop writes in the same thread: received files with their progress, the last clip, herdr agents, sudo approvals, and pair requests.
+An agent that waits shows its choices in the thread, and an approval shows **Approve** and **Deny**.
+Flux keeps the thread in memory only, with at most 400 characters of each text.
+The dock under the thread shows the phone clipboard with **Send**, and the tools for files, the camera, and QR codes.
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).
 The tunnel carries SSH traffic without an inbound SSH firewall rule.
 
@@ -166,6 +180,9 @@ To find a file by its name, type in the search field at the top of **Get files**
 - The search stops after 10 seconds. To find more, open a folder and search there.
 
 A tap on a file downloads it. A tap on a folder opens it.
+Back goes up 1 folder.
+To show the new files of the computer, select **Refresh** or pull the list down.
+The phone also lists the folder again when you return to Flux.
 
 While the phone browses, the desktop shows a notification with a **Stop** button until the session ends.
 The Overview page of the Flux window shows a **BROWSE PC** card with a **Stop** button too.
@@ -198,7 +215,12 @@ Turn on `auto_clipboard` on the desktop and **Sync clipboard** on the phone.
 Both are on by default.
 
 - Copy an image on the desktop, for example a screenshot. Then paste it in an app on the phone.
-- Copy an image on the phone, open Flux, and tap **Send clipboard**. Then paste it on the desktop.
+- Copy an image on the phone, open **Chat** in Flux, and tap **Send** next to the clipboard. Then paste it on the desktop.
+
+A clip that you send with **Send**, the **Send clipboard** tile, or the notification action goes on the desktop clipboard also while `auto_clipboard` is off.
+The desktop then shows a notification with the start of the text, for example **Clipboard from Pixel 8**.
+The **Clipboard sync** switch of the device in **Device access** still applies.
+A link from the phone opens in the browser, and a notification names the phone.
 
 Android lets only the app on the screen read the clipboard.
 Flux sends a phone copy by itself while Flux is on the screen.
@@ -249,6 +271,7 @@ On a Samsung phone, the setting is **Alert when clipboard accessed**.
 
 Enable notification access on the phone to show its notifications on the desktop.
 **Share notifications** on the phone sends them to each connected paired computer.
+The desktop notification shows the icon of the app on the phone.
 
 Some notifications stay on the phone:
 
@@ -322,7 +345,7 @@ Chat messages that an app keeps in its own database, for example RCS chats, do n
 ## Media and desktop commands
 
 The phone controls the media players on the desktop.
-Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume. The **Inbox** also shows what plays now, with play and pause.
+Open **Media** in **Control** on the phone to play, pause, skip, seek, and set the volume.
 The controls show when a desktop player publishes its state over MPRIS.
 The phone selects the player that plays.
 If more than one player runs, select another player at the top of the screen.
@@ -417,7 +440,7 @@ See [camera and streams](camera.md) for direct capture and live media.
 
 ## herdr agents
 
-When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows first in the phone's **Inbox**. To see all agents, select **Agents and terminals** in **Control**.
+When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows its choices in **Chat**. To see all agents and terminals, open **Control**.
 The phone shows the status and the colored output of each coding agent, and posts a notification when an agent needs input or finishes.
 
 To answer agents from the phone, set:
@@ -428,9 +451,10 @@ herdr_control = true
 
 Reload with `systemctl --user reload fluxd`.
 The same key lets the phone start new agents and close agents.
+With herdr 0.9.3 or newer, it also adds **Live** to the agent screen of Flux for Android. **Live** shows the live terminal of the agent.
 To talk to an agent, use the mic key next to **Send**. The phone changes your speech to text on the device.
 To also open herdr terminals and type commands in them, set `herdr_terminals = true`.
-See [herdr agents](herdr.md) for the replies, new agents, terminals, dictation, the notifications, and the access rules.
+See [herdr agents](herdr.md) for the replies, new agents, terminals, the live terminal, dictation, the notifications, and the access rules.
 
 ## Touchpad and keyboard
 

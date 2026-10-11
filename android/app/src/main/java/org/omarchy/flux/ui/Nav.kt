@@ -2,15 +2,15 @@ package org.omarchy.flux.ui
 
 import org.omarchy.flux.core.StreamKind
 
-/** The 4 destinations of the navigation bar. [key] is also the debug page name. */
+/** The 3 destinations of the navigation bar. [key] is also the debug page name. */
 enum class Tab(val key: String, val label: String) {
-    Inbox("inbox", "Inbox"),
-    Send("send", "Send"),
+    Chat("chat", "Chat"),
     Control("control", "Control"),
     Computers("computers", "Computers");
 
     companion object {
-        fun fromKey(key: String?): Tab = entries.firstOrNull { it.key == key } ?: Inbox
+        /** The destination of [key]. The Inbox and Send of older versions are now the chat. */
+        fun fromKey(key: String?): Tab = entries.firstOrNull { it.key == key } ?: Chat
     }
 }
 
@@ -76,9 +76,9 @@ const val ABOUT_PAGE = "about"
 
 /**
  * The navigation state: the destination [tab] and the screens above it.
- * System Back pops a screen, then goes to the Inbox, then leaves the app.
+ * System Back pops a screen, then goes to the chat, then leaves the app.
  */
-data class Nav(val tab: Tab = Tab.Inbox, val stack: List<Route> = emptyList()) {
+data class Nav(val tab: Tab = Tab.Chat, val stack: List<Route> = emptyList()) {
     val dest: Dest get() = stack.lastOrNull()?.let { Dest.Detail(it, stack.size, tab) } ?: Dest.Root(tab)
 
     fun push(r: Route): Nav = copy(stack = stack + r)
@@ -95,7 +95,7 @@ data class Nav(val tab: Tab = Tab.Inbox, val stack: List<Route> = emptyList()) {
     /** The state after Back, or null when Back leaves the app. */
     fun back(): Nav? = when {
         stack.isNotEmpty() -> copy(stack = stack.dropLast(1))
-        tab != Tab.Inbox -> Nav(Tab.Inbox)
+        tab != Tab.Chat -> Nav(Tab.Chat)
         else -> null
     }
 
@@ -117,12 +117,12 @@ data class Nav(val tab: Tab = Tab.Inbox, val stack: List<Route> = emptyList()) {
 
         /** The destination that holds a page of a computer, so that Back goes there. */
         fun tabOf(page: String): Tab = when {
-            page == "browse" || page.startsWith("camera") && !page.endsWith(":webcam") -> Tab.Send
+            page == "browse" || page.startsWith("camera") && !page.endsWith(":webcam") -> Tab.Chat
             else -> Tab.Control
         }
 
-        /** The navigation of a notification that opens an agent. Back goes to the Inbox. */
-        fun agent(deviceId: String, pane: String): Nav = Nav(Tab.Inbox, listOf(Route(deviceId, "$AGENT_PAGE$pane")))
+        /** The navigation of a notification that opens an agent. Back goes to the chat. */
+        fun agent(deviceId: String, pane: String): Nav = Nav(Tab.Chat, listOf(Route(deviceId, "$AGENT_PAGE$pane")))
 
         /**
          * The navigation for a debug page name, see the Test section of
@@ -130,15 +130,15 @@ data class Nav(val tab: Tab = Tab.Inbox, val stack: List<Route> = emptyList()) {
          * computer. It returns the state and the computer for the scope.
          */
         fun debug(page: String, deviceId: String): Pair<Nav, String?> = when (page) {
-            "inbox", "ring" -> Nav(Tab.Inbox) to null
-            "send" -> Nav(Tab.Send) to null
+            // The Inbox and Send of older versions are now the chat.
+            "chat", "inbox", "send", "ring" -> Nav(Tab.Chat) to null
             "control" -> Nav(Tab.Control) to null
             "computers", "devices", "pair", "unpair" -> Nav(Tab.Computers) to null
             SYNC_PAGE, ABOUT_PAGE -> Nav(Tab.Computers, listOf(Route(null, page))) to null
             // The old computer page is now the Control destination of 1 computer.
             "home" -> Nav(Tab.Control) to deviceId
-            // The prompt of a stream request shows over the Inbox. The notification shows in the shade.
-            else -> if (page.startsWith(ASK_PAGE) || page.startsWith(NOTIFY_PAGE)) Nav(Tab.Inbox) to null else {
+            // The prompt of a stream request shows over the chat. The notification shows in the shade.
+            else -> if (page.startsWith(ASK_PAGE) || page.startsWith(NOTIFY_PAGE)) Nav(Tab.Chat) to null else {
                 val agents = Route(deviceId, AGENTS_PAGE)
                 val stack = when {
                     page.startsWith(AGENT_PAGE) || page.startsWith(TERMINAL_PAGE) || page == NEW_PANE_PAGE -> listOf(agents, Route(deviceId, page))

@@ -6,10 +6,9 @@ struct PairSheetItem: Identifiable {
     let id: String
 }
 
-/// The 4 destinations in a tab bar: Inbox, Send, Control, and Computers.
-/// Each tab has its own navigation stack. A tap on the open tab goes back
-/// to its root. The Inbox badge counts the items of all computers that
-/// need the user.
+/// The 3 destinations in a tab bar: Chat, Control, and Computers. Each
+/// tab has its own navigation stack. A tap on the open tab goes back to its
+/// root. The Chat badge counts the items of all computers that need the user.
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -17,19 +16,13 @@ struct ContentView: View {
     var body: some View {
         @Bindable var model = model
         TabView(selection: Binding(get: { model.tab }, set: { model.select($0) })) {
-            NavigationStack(path: $model.inboxPath) {
-                InboxView().routeDestinations()
+            NavigationStack(path: $model.chatPath) {
+                ChatView().routeDestinations()
             }
             .modifier(ThemedTabBar())
-            .tabItem { Label("Inbox", systemImage: "tray") }
+            .tabItem { Label("Chat", systemImage: "text.bubble") }
             .badge(badgeText)
-            .tag(AppTab.inbox)
-            NavigationStack(path: $model.sendPath) {
-                SendView().routeDestinations()
-            }
-            .modifier(ThemedTabBar())
-            .tabItem { Label("Send", systemImage: "paperplane") }
-            .tag(AppTab.send)
+            .tag(AppTab.chat)
             NavigationStack(path: $model.controlPath) {
                 ControlView().routeDestinations()
             }
@@ -67,7 +60,7 @@ struct ContentView: View {
 
     /// The number of items that need the user on all computers: 1 to 9, then 9+.
     private var badgeText: Text? {
-        let n = Inbox.needsYou(model.inboxItems(now: Date()))
+        let n = Inbox.needsYou(model.inboxItems())
         guard n > 0 else { return nil }
         return Text(verbatim: n > 9 ? "9+" : String(n))
     }

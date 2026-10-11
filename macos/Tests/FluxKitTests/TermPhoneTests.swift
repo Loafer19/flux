@@ -352,4 +352,16 @@ final class TermPhoneTests: XCTestCase {
         XCTAssertEqual(TermText.invertLightness(0xA3A3A3), 0x5C5C5C)
         XCTAssertEqual(TermText.invertLightness(0xFFCEAD), 0x522100, "a light orange becomes a dark orange")
     }
+
+    func testARowThatBrokeInAWordJoinsWithoutABlank() {
+        XCTAssertTrue(TermText.wrapsInWord("run src/", "pages/a.ts"))
+        XCTAssertTrue(TermText.wrapsInWord("CI (https:", "//github.com/a"))
+        XCTAssertTrue(TermText.wrapsInWord("--workers=2 --", "retries=0"))
+        XCTAssertTrue(TermText.wrapsInWord("src/lib/share.test.", "ts"))
+        XCTAssertFalse(TermText.wrapsInWord("the same view.", "pushed"), "a sentence ends with a dot")
+        XCTAssertFalse(TermText.wrapsInWord("the fix -", "and"), "a dash between words")
+        XCTAssertFalse(TermText.wrapsInWord("a /", "b"), "a slash alone")
+        XCTAssertEqual(TermText.joinWrapped(TermText.joinWrapped("src/", "pages/a.ts --"), "workers=2"), "src/pages/a.ts --workers=2")
+        XCTAssertEqual(TermText.joinWrapped("the end.", "Next"), "the end. Next")
+    }
 }

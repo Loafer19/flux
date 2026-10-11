@@ -13,9 +13,23 @@ enum Route: Hashable {
     case feature(FeatureRoute)
 }
 
-/// The 4 destinations of the tab bar, in order.
+/// The 3 destinations of the tab bar, in order.
 enum AppTab: Hashable, CaseIterable {
-    case inbox, send, control, computers
+    case chat, control, computers
+}
+
+/// A reply that the dock of the chat writes to the agent in `pane`, in the
+/// place of the `choice` that rejects its action, such as "No, and tell
+/// Codex what to do differently".
+struct ChatReply: Equatable {
+    let deviceId: String
+    let pane: String
+    let agent: String
+    let project: String
+    let computer: String
+    let choice: AgentChoice
+    /// The lines of the question that the user read. The reply goes out only while the question is the same.
+    let lines: [TermLine]
 }
 
 /// A short message for the user. Each one has its own id, so that the same
@@ -35,20 +49,19 @@ final class AppModel {
     let demo: Bool
     private(set) var state = CoreState()
     private(set) var toast: Toast?
-    var tab: AppTab = .inbox
-    var inboxPath: [Route] = []
-    var sendPath: [Route] = []
+    var tab: AppTab = .chat
+    var chatPath: [Route] = []
     var controlPath: [Route] = []
     var computersPath: [Route] = []
     /// The computer in scope, or nil for all computers. A new start begins
     /// with all computers.
     var scope: String?
-    /// The order that the user gave the Inbox.
-    var arrangement = InboxArrangement()
-    /// The last time that the player of each computer played, so that a
-    /// paused player stays in the Inbox for a time.
-    var playedAt: [String: Date] = [:]
-    /// True for 3 seconds after a connection attempt starts. The Inbox then
+    /// The reply that the dock of the chat writes to an agent, or nil.
+    var chatReply: ChatReply?
+    /// The first time that the chat showed each item whose start is not
+    /// known. The chat reads it while it draws, so SwiftUI does not track it.
+    @ObservationIgnored private var seenClock = SeenClock()
+    /// True for 3 seconds after a connection attempt starts. The chat then
     /// says that it connects, not that a computer is not reachable.
     private(set) var connecting = false
     /// The computer that paired last, for 6 seconds.
@@ -67,16 +80,14 @@ final class AppModel {
     var path: [Route] {
         get {
             switch tab {
-            case .inbox: return inboxPath
-            case .send: return sendPath
+            case .chat: return chatPath
             case .control: return controlPath
             case .computers: return computersPath
             }
         }
         set {
             switch tab {
-            case .inbox: inboxPath = newValue
-            case .send: sendPath = newValue
+            case .chat: chatPath = newValue
             case .control: controlPath = newValue
             case .computers: computersPath = newValue
             }
@@ -163,7 +174,7 @@ final class AppModel {
         core.plugin(ApprovePlugin.self)?.removeKey(id)
     }
 
-    // MARK: Theme and Inbox
+    // MARK: Theme and chat
 
     /// The theme of the computer in scope, or the last theme without a scope.
     var computerTheme: ComputerTheme? {
@@ -181,44 +192,53 @@ final class AppModel {
         themeMode.nightMode(computer: computerTheme?.palette)
     }
 
-    /// The Inbox items of all computers at the time `now`, ranked.
-    func inboxItems(now: Date) -> [InboxItem] {
-        if demo { return DemoMode.inboxItems(now: now) }
-        return Inbox.items(core: core, devices: state.devices, now: now, playedAt: playedAt)
+    /// The agents, the approval, and the pair requests of all computers.
+    func inboxItems() -> [InboxItem] {
+        if demo { return DemoMode.inboxItems() }
+        return Inbox.items(core: core, devices: state.devices)
+    }
+
+    /// The entries of the chat in scope, oldest first. `all` are the Inbox
+    /// items of all computers, so that a change of the scope does not move an item.
+    func chatEntries(all: [InboxItem]) -> [ChatEntry] {
+        let seen = seenClock.update(all.map(\.key), now: Date())
+        if demo {
+            return Chat.entries(sent: DemoMode.sent, transfers: DemoMode.sendTransfers, clip: DemoMode.clip, answers: [],
+                                items: all, since: { _, pane in DemoMode.since(pane: pane) }, seen: seen, scope: scope)
+        }
+        let since = core.plugin(HerdrPlugin.self)?.model.since ?? [:]
+        return Chat.entries(sent: core.plugin(SharePlugin.self)?.model.sent ?? [],
+                            transfers: core.plugin(SharePlugin.self)?.model.transfers ?? [],
+                            clip: core.plugin(ClipboardPlugin.self)?.model.last,
+                            answers: core.plugin(ApprovePlugin.self)?.model.history ?? [],
+                            items: all, since: { id, pane in since[id]?[pane] },
+                            seen: seen, scope: scope)
     }
 
     /// Sets the computer in scope, or all computers with nil. The scope
-    /// filters the Inbox, Send, and Control, and it picks the computer theme.
+    /// filters the chat and Control, and it picks the computer theme.
     func setScope(_ id: String?) {
         scope = id
     }
 
-    /// The Inbox items changed. The arrangement forgets the items that are
-    /// gone, and the herdr plugin drops the prompts of the agents that no
-    /// longer wait.
-    func inboxChanged(all: [InboxItem], scoped: [InboxItem]) {
-        let next = arrangement.sync(scoped)
-        if next != arrangement { arrangement = next }
+    /// The Inbox items changed. The herdr plugin drops the prompts of the
+    /// agents that no longer wait or work, and the reply of the dock ends
+    /// when its agent no longer waits.
+    func inboxChanged(all: [InboxItem]) {
         var keys = Set<String>()
+        var waits = Set<String>()
         for item in all {
-            if case .agent(let deviceId, let agent, _) = item.content, agent.status == .blocked {
+            // A working agent shows its step in the chat, so its prompt stays too.
+            if case .agent(let deviceId, let agent, _) = item.content, agent.status == .blocked || agent.status == .working {
                 keys.insert(HerdrModel.promptKey(deviceId, pane: agent.pane))
+                if agent.status == .blocked { waits.insert(HerdrModel.promptKey(deviceId, pane: agent.pane)) }
             }
         }
         core.plugin(HerdrPlugin.self)?.keepPrompts(keys)
+        if let r = chatReply, !waits.contains(HerdrModel.promptKey(r.deviceId, pane: r.pane)) { chatReply = nil }
     }
 
-    /// Moves the master item to the end of the stack.
-    func showNext(_ key: String) {
-        arrangement = arrangement.swipe(key)
-    }
-
-    /// Moves a stack item to the master tile.
-    func showFirst(_ key: String) {
-        arrangement = arrangement.promote(key)
-    }
-
-    /// The links connect for 3 seconds before the Inbox says that a
+    /// The links connect for 3 seconds before the chat says that a
     /// computer is not reachable.
     func startConnectGrace() {
         connecting = true
@@ -242,7 +262,7 @@ final class AppModel {
         self.tab = tab
     }
 
-    /// Shows the new pairing in the Inbox for 6 seconds.
+    /// Shows the new pairing in the chat for 6 seconds.
     private func notePaired(_ id: String) {
         newlyPairedId = id
         pairedTask?.cancel()
@@ -283,13 +303,13 @@ final class AppModel {
         FeatureHooks.stateChanged(s, model: self)
         // A computer that is no longer paired leaves the scope.
         if let id = scope, !s.devices.contains(where: { $0.id == id && $0.paired }) { scope = nil }
-        // A new pairing opens the Inbox of the new computer. Flux asks for
+        // A new pairing opens the chat of the new computer. Flux asks for
         // notifications here, so that the question comes with a reason.
         if let id = Self.newlyPaired(old: old.devices.map { ($0.id, $0.paired) }, new: s.devices.map { ($0.id, $0.paired) }).first {
             pairingSheet = nil
             scope = id
-            tab = .inbox
-            inboxPath = []
+            tab = .chat
+            chatPath = []
             notePaired(id)
             NotificationAccess.shared.ask()
         }

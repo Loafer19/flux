@@ -142,6 +142,11 @@ To use the panel without the video, select **Omarchy panel** in **Control**.
 
 The active workspace is blue. A workspace with windows has a dot.
 The panel reads the workspaces again every 3 seconds.
+
+The **Omarchy panel** screen of **Control** in Flux for Android also lists the windows of the active workspace, with the app name and the window title.
+Tap a window to focus it. The focused window is blue.
+The dock at the bottom has the arrows and the window actions. Hold an arrow to swap the window in that direction.
+The list needs a `fluxd` that sends the windows. While the computer is locked, the list keeps the last windows that it got.
 The panel pins the Omarchy menu, the Apps menu, the terminal, the browser, the file manager, and the screenshot until you pin others.
 
 The panel needs `remote_input = true` and Hyprland with a Lua configuration, as in Omarchy.
@@ -279,6 +284,10 @@ To stop the stream of a phone that you do not trust, unpair the phone.
 4. `fluxd` reads each FLV tag and writes its frame to the phone.
 5. `fluxd` sends `flux.desktop` with `{"state": "live"}`, the monitor, the monitor names, and the stream size.
 6. The phone decodes the frames with the hardware decoder of the phone and shows each frame at once.
+   When the decoder cannot show the stream size, the phone asks for a smaller stream.
+   For example, a decoder of H.264 level 4.2 shows 1920 × 1080, but not 1920 × 1200.
+   The phone also asks for a smaller stream when the decoder shows no frame in 3 seconds.
+   It tries the size of 1920 × 1080 first, then 1280 × 720.
 
 `fluxd` runs 1 stream at a time.
 A new start stops the stream that runs, and the new recorder starts after the old recorder stopped.
@@ -331,10 +340,15 @@ The Omarchy panel uses `flux.shortcuts`. Each packet needs `remote_input = true`
 | `{"action": "moveToWorkspace", "workspace": 3}` | Move the focused window to the workspace |
 | `{"action": "focus", "direction": "l"}` | Focus the window at the left. The directions are `l`, `r`, `u`, and `d`. |
 | `{"action": "swap", "direction": "l"}` | Swap the window with the window at the left |
+| `{"action": "focusWindow", "address": "0x5f6b3fd55b00"}` | Focus the window with that Hyprland address |
 | `{"action": "close"}` | Also `fullscreen`, `float`, `split`, `scratchpad`, `nextWindow`, `nextWorkspace`, and `previousWorkspace` |
 
-`fluxd` answers with `{"shortcuts": [{"ref", "keys", "description"}], "workspaces": [{"id", "windows"}], "active": 3}`, or with `{"error": "..."}`.
+`fluxd` answers with `{"shortcuts": [{"ref", "keys", "description"}], "workspaces": [{"id", "windows"}], "active": 3, "windows": [...]}`, or with `{"error": "..."}`.
 An answer to an action has no `shortcuts`.
+
+Each entry of `windows` is `{"address", "workspace", "app", "class", "title", "focused"}`, in the order of the workspaces and then from the top left.
+`app` is the `Name` of the desktop entry whose `StartupWMClass` or file name is the class, else the last part of the class.
+`fluxd` sends `windows` only while the computer is unlocked, so that the lock screen keeps the window titles private.
 
 While the computer is locked, `fluxd` answers each body except `{}` with `{"error": "Unlock the computer first"}`.
 It finds the lock in 3 ways: the `LockedHint` of the logind session, a running `hyprlock`, or a Hyprland session lock on a monitor.
@@ -365,6 +379,7 @@ A binding to a key code, such as `SUPER + code:10` for workspace 1, does not mat
 | The Mac shows **View only** | Run `flux-cli input on`, or turn on **Remote input** in the Flux window. |
 | The Mac shows no **Remote desktop** tool in **Control** | Connect the Mac to the computer. The tool shows only when a computer in the scope has a `fluxd` that lists `flux.desktop`. |
 | A Command shortcut goes to the Mac | Move the pointer over the video, then press the shortcut again. |
+| The phone stays black, or says that it cannot show a stream of a size | The decoder of the phone cannot show the stream. Update Flux for Android, which asks for a smaller stream. |
 | The screen capture stops | Run `journalctl --user -u fluxd --no-pager \| grep "remote desktop"` for the error of `gpu-screen-recorder`. |
 | The Mac or the phone says `list the monitors: exit status 22` | `gpu-screen-recorder` does not support the GPU. Install `wf-recorder`, then start the remote desktop again. |
 | `gpu-screen-recorder` cannot capture the monitor | Run `getcap /usr/bin/gsr-kms-server`. The result must show `cap_sys_admin`. Install the package again to restore it. |

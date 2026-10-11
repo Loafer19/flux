@@ -192,11 +192,25 @@ func GetSnapshot(ctx context.Context, path string) (Snapshot, error) {
 	return r.Snapshot, err
 }
 
+// The sources of a read. With SourceUnwrapped, herdr joins the rows that
+// the terminal wrapped. With SourceRows, each row of the terminal stays a
+// line.
+const (
+	SourceUnwrapped = "recent_unwrapped"
+	SourceRows      = "recent"
+)
+
 // ReadAgent returns up to lines rows of recent output from the agent in
 // the pane. herdr joins soft-wrapped rows. With ansi, the text keeps the
 // ANSI codes of colors and styles. Without it, herdr removes them.
 func ReadAgent(ctx context.Context, path, pane string, lines int, ansi bool) (Read, error) {
-	params := map[string]any{"target": pane, "source": "recent_unwrapped", "lines": lines}
+	return ReadAgentFrom(ctx, path, pane, SourceUnwrapped, lines, ansi)
+}
+
+// ReadAgentFrom is ReadAgent with the source of the read, SourceUnwrapped
+// or SourceRows.
+func ReadAgentFrom(ctx context.Context, path, pane, source string, lines int, ansi bool) (Read, error) {
+	params := map[string]any{"target": pane, "source": source, "lines": lines}
 	if ansi {
 		params["format"], params["strip_ansi"] = "ansi", false
 	}
@@ -229,6 +243,38 @@ func GetAgent(ctx context.Context, path, pane string) (Agent, error) {
 	}
 	err := Call(ctx, path, "agent.get", map[string]any{"target": pane}, &r)
 	return r.Agent, err
+}
+
+// PaneLayout is the size of one pane in its tab, in terminal cells.
+type PaneLayout struct {
+	Width  int
+	Height int
+}
+
+// GetLayout returns the size of the pane in its tab. fluxd opens a
+// terminal session at this size, so watching a pane does not resize the
+// terminal that the desktop shows.
+func GetLayout(ctx context.Context, path, pane string) (PaneLayout, error) {
+	var r struct {
+		Layout struct {
+			Panes []struct {
+				PaneID string `json:"pane_id"`
+				Rect   struct {
+					Width  int `json:"width"`
+					Height int `json:"height"`
+				} `json:"rect"`
+			} `json:"panes"`
+		} `json:"layout"`
+	}
+	if err := Call(ctx, path, "pane.layout", map[string]any{"pane_id": pane}, &r); err != nil {
+		return PaneLayout{}, err
+	}
+	for _, p := range r.Layout.Panes {
+		if p.PaneID == pane {
+			return PaneLayout{Width: p.Rect.Width, Height: p.Rect.Height}, nil
+		}
+	}
+	return PaneLayout{}, fmt.Errorf("herdr: pane %s has no layout", pane)
 }
 
 // AgentKinds returns the agent kinds that herdr can detect and start.
@@ -447,7 +493,7 @@ var errLineTooLong = errors.New("herdr: reply line is too long")
 func readReply(r *bufio.Reader) (response, error) {
 	var resp response
 	for {
-		line, err := readLine(r)
+		line, err := readLine(r, maxLine)
 		if err != nil {
 			return resp, err
 		}
@@ -461,12 +507,12 @@ func readReply(r *bufio.Reader) (response, error) {
 	}
 }
 
-// readLine reads one line of at most maxLine bytes.
-func readLine(r *bufio.Reader) ([]byte, error) {
+// readLine reads one line of at most max bytes.
+func readLine(r *bufio.Reader, max int) ([]byte, error) {
 	var line []byte
 	for {
 		chunk, err := r.ReadSlice('\n')
-		if len(line)+len(chunk) > maxLine {
+		if len(line)+len(chunk) > max {
 			return nil, errLineTooLong
 		}
 		line = append(line, chunk...)

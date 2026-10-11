@@ -189,6 +189,7 @@ object Plugins {
     fun sendClipboard(core: FluxCore, id: String): Boolean {
         val d = core.device(id) ?: return false
         val name = d.identity.deviceName
+        val stamp = Android.clipTimestamp(core.app)
         Android.clipboardImage(core.app)?.let { (uri, mime) ->
             if (Types.FLUX_CLIPBOARD_IMAGE !in d.identity.incoming) {
                 core.toast("Update Flux on $name to send images")
@@ -196,7 +197,10 @@ object Plugins {
             }
             core.settings.clipboardTimestamp = System.currentTimeMillis()
             ClipImage.send(core, listOf(d), uri, mime, manual = true) { sent ->
-                if (sent > 0) InboxFeed.clipSent(listOf(d.id to name), null)
+                if (sent > 0) {
+                    InboxFeed.clipSent(listOf(d.id to name), null)
+                    SendLog.clip(d.id, name, null, stamp)
+                }
                 core.toast(
                     when {
                         sent > 0 -> "Image sent to $name"
@@ -213,9 +217,13 @@ object Plugins {
             return false
         }
         core.settings.clipboardTimestamp = System.currentTimeMillis()
-        d.send(Packet(Types.CLIPBOARD, bodyOf("content" to text)))
+        if (!d.send(manualClip(text))) {
+            core.toast("$name is not reachable")
+            return false
+        }
         InboxFeed.clipSent(listOf(d.id to name), text)
-        core.toast("Clipboard sent to ${d.identity.deviceName}")
+        SendLog.clip(d.id, name, text, stamp)
+        core.toast("Clipboard sent to $name")
         return true
     }
 
@@ -296,7 +304,7 @@ object Plugins {
         }
         lastSentStamp = stamp
         core.settings.clipboardTimestamp = System.currentTimeMillis()
-        computers.forEach { it.send(Packet(Types.CLIPBOARD, bodyOf("content" to text))) }
+        computers.forEach { it.send(if (manual) manualClip(text) else Packet(Types.CLIPBOARD, bodyOf("content" to text))) }
         InboxFeed.clipSent(computers.map { it.id to it.identity.deviceName }, text)
         if (manual) {
             notify(if (computers.size == 1) "Clipboard sent to ${computers[0].identity.deviceName}" else "Clipboard sent to ${computers.size} computers")
@@ -346,9 +354,16 @@ object Plugins {
         pendingNotify = null
         if (SystemClock.elapsedRealtime() > pendingUntil || !d.paired || !core.settings.syncClipboard) return
         core.settings.clipboardTimestamp = System.currentTimeMillis()
-        d.send(Packet(Types.CLIPBOARD, bodyOf("content" to text)))
+        d.send(manualClip(text))
         notify?.invoke("Clipboard sent to ${d.identity.deviceName}")
     }
+
+    /**
+     * The clipboard packet of a clip that the user sent. The manual flag
+     * puts the clip on the clipboard of the computer also while its
+     * automatic sync is off, and the computer shows a notification.
+     */
+    internal fun manualClip(text: String) = Packet(Types.CLIPBOARD, bodyOf("content" to text, "manual" to true))
 
     // --------------------------------------------------------- run commands
 

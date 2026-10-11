@@ -1,8 +1,8 @@
 import FluxKit
 import SwiftUI
 
-/// The page of 1 feature card for a computer, from Send, Control, or the
-/// Inbox. The card keeps its own layout and colors.
+/// The page of 1 feature card for a computer, from Control. The card keeps
+/// its own layout and colors.
 struct FeaturePage: View {
     @Environment(AppModel.self) private var model
     let card: MacCard

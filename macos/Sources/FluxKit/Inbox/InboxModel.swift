@@ -26,28 +26,18 @@ public enum ActionTarget: Sendable, Equatable {
     case unavailable(DeviceSnapshot?)
 }
 
-/// The Inbox model: it collects the items of all computers and ranks them.
-/// It is a port of InboxModel.kt of the Android app.
+/// The Inbox model: it collects the items of all computers that have a
+/// state now. The chat puts them in time order, see `Chat.entries`. It is
+/// a port of InboxModel.kt of the Android app.
 public enum Inbox {
-    /// How long a finished transfer, the last clip, and a paused player stay, in seconds.
-    public static let keep: TimeInterval = 30 * 60
-
     /// How far from the end of the output the question can start, in lines.
     static let promptScanLines = 40
 
-    /// Collects the Inbox items of all computers and ranks them. The order
-    /// is the order of `InboxKind`. Inside a kind, the computers keep their
-    /// order, running transfers come before the newest finished ones, and a
-    /// player that plays comes before a paused one.
-    ///
-    /// A finished transfer and the clip stay for `keep` after they end. A
-    /// paused player stays for `keep` after the time in `playedAt`, which
-    /// maps a device ID to the last time that its player played. Each key
-    /// shows once.
-    public static func items(devices: [DeviceSnapshot], herdr: [String: HerdrState], media: [String: RemoteMedia],
-                             approval: ApproveRequest?, transfers: [FileTransfer], clip: ClipEvent?,
-                             now: Date, playedAt: [String: Date]) -> [InboxItem] {
-        func recent(_ at: Date) -> Bool { now.timeIntervalSince(at) <= keep }
+    /// Collects the Inbox items of all computers: the agents that wait, are
+    /// done, or work, the open `approval`, and the pair requests. A computer
+    /// that is not reachable adds no agents. Each key shows once, because a
+    /// computer can report 2 agents on 1 pane.
+    public static func items(devices: [DeviceSnapshot], herdr: [String: HerdrState], approval: ApproveRequest?) -> [InboxItem] {
         var out: [InboxItem] = []
         for d in devices {
             if !d.paired {
@@ -60,82 +50,17 @@ public enum Inbox {
             }
         }
         if let approval { out.append(InboxItem(.approval(approval), computer: approval.computerName)) }
-
-        let names = Dictionary(devices.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        let shown = recentTransfers(transfers).filter { $0.state == .running || recent($0.ended ?? $0.started) }
-        // Running first, then the newest start. The offset keeps the sort stable.
-        let ranked = shown.enumerated().sorted { a, b in
-            let ar = a.element.state == .running
-            let br = b.element.state == .running
-            if ar != br { return ar }
-            if a.element.started != b.element.started { return a.element.started > b.element.started }
-            return a.offset < b.offset
-        }
-        for entry in ranked {
-            out.append(InboxItem(.transfer(entry.element), computer: names[entry.element.deviceId] ?? "a computer"))
-        }
-
-        if let clip, recent(clip.at) { out.append(InboxItem(.clip(clip), computer: clip.computer)) }
-
-        var players: [(playing: Bool, offset: Int, item: InboxItem)] = []
-        for (offset, d) in devices.enumerated() where d.paired && d.online {
-            guard let p = media[d.id]?.player else { continue }
-            let played = playedAt[d.id].map { recent($0) } ?? false
-            guard p.playing || (!p.title.isEmpty && played) else { continue }
-            players.append((playing: p.playing, offset: offset,
-                            item: InboxItem(.media(deviceId: d.id, player: p), computer: d.name)))
-        }
-        players.sort { a, b in
-            if a.playing != b.playing { return a.playing }
-            return a.offset < b.offset
-        }
-        out += players.map { $0.item }
-
-        // The sort is stable through the offset, so the order above stays
-        // inside each kind. A computer can report 2 agents on 1 pane, and
-        // the Inbox needs each key once.
         var seen = Set<String>()
-        return out.enumerated()
-            .sorted { a, b in
-                let ak = a.element.kind.rawValue
-                let bk = b.element.kind.rawValue
-                return ak != bk ? ak < bk : a.offset < b.offset
-            }
-            .map { $0.element }
-            .filter { seen.insert($0.key).inserted }
+        return out.filter { seen.insert($0.key).inserted }
     }
 
     /// The items from the plugin models of `core`. `devices` is the device
     /// list that the app shows. SwiftUI tracks each model that it reads.
     @MainActor
-    public static func items(core: FluxCore, devices: [DeviceSnapshot], now: Date, playedAt: [String: Date]) -> [InboxItem] {
+    public static func items(core: FluxCore, devices: [DeviceSnapshot]) -> [InboxItem] {
         items(devices: devices,
               herdr: core.plugin(HerdrPlugin.self)?.model.states ?? [:],
-              media: core.plugin(MprisPlugin.self)?.model.devices ?? [:],
-              approval: core.plugin(ApprovePlugin.self)?.model.current,
-              transfers: core.plugin(SharePlugin.self)?.model.transfers ?? [],
-              clip: core.plugin(ClipboardPlugin.self)?.model.last,
-              now: now, playedAt: playedAt)
-    }
-
-    /// All running transfers, and the newest finished ones up to `limit`
-    /// in total. `transfers` is newest first, and the result keeps its order.
-    public static func recentTransfers(_ transfers: [FileTransfer], limit: Int = 4) -> [FileTransfer] {
-        let running = transfers.filter { $0.state == .running }
-        let done = transfers.filter { $0.state != .running }.prefix(Swift.max(0, limit - running.count))
-        let kept = Set(running.map { $0.id } + done.map { $0.id })
-        return transfers.filter { kept.contains($0.id) }
-    }
-
-    /// Records `now` as the last play time of each paired, online computer
-    /// whose player plays. It returns `playedAt` when no player plays.
-    public static func notePlaying(_ playedAt: [String: Date], devices: [DeviceSnapshot],
-                                   media: [String: RemoteMedia], now: Date) -> [String: Date] {
-        let playing = devices.filter { $0.paired && $0.online && media[$0.id]?.player?.playing == true }
-        if playing.isEmpty { return playedAt }
-        var out = playedAt
-        for d in playing { out[d.id] = now }
-        return out
+              approval: core.plugin(ApprovePlugin.self)?.model.current)
     }
 
     /// The number of items that need the user.

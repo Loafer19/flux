@@ -66,7 +66,7 @@ private struct TargetPicker: ViewModifier {
     }
 }
 
-/// The line at the top of Send and Control: the computer that the tools
+/// The line at the top of Control: the computer that the tools
 /// act on, or why no computer can take them.
 struct TargetLine: View {
     /// "Sends to" or "Acts on".

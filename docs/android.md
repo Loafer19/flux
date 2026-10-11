@@ -116,7 +116,7 @@ Each link opens the browser. The page makes no network request.
 On Android 12 and later, the system splash screen shows the Flux mark until the first screen is ready.
 Flux shows no permission dialog before the first pairing.
 
-Before the first pairing, the **Inbox** shows a pairing guide in the place of the master tile:
+Before the first pairing, **Chat** shows a pairing guide:
 
 - 1 line that tells what Flux does.
 - **Set up Flux on the computer**: the setup command and **Read the install guide**, which opens [Install Flux](install.md) on GitHub.
@@ -131,14 +131,14 @@ To start `fluxd` on the computer, run this command as your desktop user after yo
 flux-cli setup
 ```
 
-When the pairing ends, Flux opens the **Inbox** of the new computer.
-For 6 seconds, the **Inbox** shows **COMPUTER is paired**.
+When the pairing ends, Flux opens **Chat** of the new computer.
+For 6 seconds, **Chat** shows **COMPUTER is paired**.
 After the first pairing, the success state also tells why Flux needs notifications.
 1 second later, Android asks once for the permission.
 See [permissions](android-setup.md#permissions).
 
-After a start, the **Inbox** shows **Connecting to COMPUTER** for up to 3 seconds while the links connect.
-If no computer in scope connects in this time, the **Inbox** shows **COMPUTER is not reachable** with **Retry**.
+After a start, **Chat** shows **Connecting to COMPUTER** for up to 3 seconds while the links connect.
+If no computer in scope connects in this time, **Chat** shows **COMPUTER is not reachable** with **Retry**.
 **Retry** shows **Connecting to COMPUTER** again while Flux looks for the computer.
 
 ## Pairing and connections
@@ -288,7 +288,7 @@ A contrast guard maps the theme to the colors of the app. It moves only the ligh
 - The selected tile `accentTile` takes the hue of the accent at the luminance of `tileHi`, so it does not change a contrast.
 - Red means "needs you" or an error. When the theme accent looks like red, the theme blue, cyan, or magenta takes its place as the primary color. The border gradient keeps the theme accent.
 - ANSI blue in the agent output uses the theme blue, as in the terminal on the computer.
-- The master tile takes the gradient of `hyprland_active_border`, at 3:1 or more.
+- The pairing guide takes the gradient of `hyprland_active_border`, at 3:1 or more. A card of **Chat** that needs you has a red border.
 
 The theme engine is in `app/src/main/java/org/omarchy/flux/theme`.
 
@@ -315,7 +315,7 @@ To send an Omarchy theme from the test peer, give it a `colors.toml` file:
 python3 tools/test_peer.py --theme ~/.local/state/omarchy/current/theme/colors.toml
 ```
 
-To test the remote desktop, add `--desktop`. The peer streams the first monitor of this computer with `gpu-screen-recorder`, like `fluxd`, and prints the touches. It also answers the Omarchy panel with sample shortcuts and workspaces. It does not run the touches or the shortcuts:
+To test the remote desktop, add `--desktop`. The peer streams the first monitor of this computer with `gpu-screen-recorder`, like `fluxd`, and prints the touches. It also answers the Omarchy panel with sample shortcuts, workspaces, and windows. It does not run the touches or the shortcuts:
 
 ```bash
 python3 tools/test_peer.py --desktop
@@ -330,31 +330,31 @@ tools/shot.sh media /tmp/media.png
 To render the pages on an emulator with no computer, turn on the sample computers with `FLUX_DEMO=1`. Set `ANDROID_SERIAL` when a phone is also connected:
 
 ```bash
-ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 tools/shot.sh inbox /tmp/inbox.png
+ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 tools/shot.sh chat /tmp/chat.png
 ```
 
 The pages are:
 
-- `inbox`, `send`, `control`, and `computers` for the 4 destinations of the navigation bar. `devices` is the same as `computers`.
+- `chat`, `control`, and `computers` for the 3 destinations of the navigation bar. `inbox` and `send` open **Chat**. `devices` is the same as `computers`.
 - `sync` for the sync switches.
 - `about` for **About Flux**.
 - `home` for **Control** with the first paired computer in scope.
 - `media`, `commands`, `browse`, `mic`, `webcam`, `touchpad`, `desktop`, `omarchy`, `agents`, and `camera`.
-- `agent:<pane>` for the output of one herdr agent. The sample blocked agent is `agent:w2:p1`.
+- `agent:<pane>` for the thread of one herdr agent. The sample agents are `agent:w2:p1` (blocked), `agent:w1:p1` (working), and `agent:w3:p1` (done).
 - `newpane` for the screen that starts a herdr agent or opens a terminal.
 - `terminal:<pane>` for one herdr terminal. The sample terminals are `terminal:w1:p2` and `terminal:w3:p3`.
 - `camera:<mode>` for a camera mode: `text`, `qr`, `photo`, `document`, or `signature`. `camera:webcam` opens the `webcam` page.
 - `ring`, `pair`, and `unpair` for the ring overlay, the pairing sheet, and the unpair dialog.
-- `ask:webcam` and `ask:mic` for the prompt of a stream request from the first paired computer, over the Inbox. With `FLUX_DEMO=1`, Start on the prompt of the sample computer opens the page and does not start the stream.
+- `ask:webcam` and `ask:mic` for the prompt of a stream request from the first paired computer, over **Chat**. With `FLUX_DEMO=1`, Start on the prompt of the sample computer opens the page and does not start the stream.
 - `notify:webcam` and `notify:mic` for the notification of a stream request from the first paired computer. The notification shows also while Flux is on the screen, so open the notification shade to see it.
 - `<page>@offline` for the page of a paired computer that is not reachable. A destination with `@offline` shows that computer as the scope.
-- `<page>@connecting` for the same page while that computer still connects. For example, `inbox@connecting` shows the Inbox in the connecting state.
+- `<page>@connecting` for the same page while that computer still connects. For example, `chat@connecting` shows **Chat** in the connecting state.
 - `empty` for the app with no computers.
-- `firstrun` for the pairing guide of the **Inbox** before the first pairing, with the sample computer to pair. It needs `FLUX_DEMO=1`.
+- `firstrun` for the pairing guide of **Chat** before the first pairing, with the sample computer to pair. It needs `FLUX_DEMO=1`.
 - `paired` for the success state of a new pairing on the sample computer to pair. It needs `FLUX_DEMO=1`. The success state shows for 6 seconds.
 - `icon` for the launcher and notification icons.
 
-With `FLUX_DEMO=1`, the Inbox also shows a sample approval, 2 sample transfers, and a sample clip, and the sample computer shows the Omarchy panel. A tap on the sample approval does not open the approval screen.
+With `FLUX_DEMO=1`, **Chat** shows a sample thread: a link, a photo, a done agent, a clip from the computer, a working agent, a file that comes in, a blocked agent, and a sample approval. The sample computer shows the Omarchy panel with windows. **Approve** and **Deny** on the sample approval send nothing.
 
 To show the prompt of a webcam request on an emulator, run:
 
@@ -365,10 +365,18 @@ ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 tools/shot.sh ask:webcam /tmp/ask-webca
 To draw the sample computer in a sample theme, set `FLUX_THEME` to `neon`, `tokyo-night`, `tokyo-night-day`, `catppuccin-latte`, `cotton-candy`, `futurism`, or `low-contrast`. The value `none` removes the theme:
 
 ```bash
-ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 FLUX_THEME=catppuccin-latte tools/shot.sh inbox /tmp/inbox-latte.png
+ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 FLUX_THEME=catppuccin-latte tools/shot.sh chat /tmp/chat-latte.png
 ```
 
 Release builds ignore these extras.
+
+The agent screen of `agent:<pane>` shows the output of the agent as a thread.
+When the computer offers diff review, the menu and the changes card open the **Changes** sheet. The sample agents have a sample diff.
+When the computer allows replies, the dock has the choices, **Write**, **Keys**, and the text field with **Send** and the mic key.
+When the computer offers terminal control, the top bar also has **Live**.
+**Live** shows the live terminal of the pane in the place of the thread.
+With a computer that supports live input, a key row and the phone keyboard take the place of the dock.
+See [Live terminal on Android](herdr.md#live-terminal-on-android).
 
 To reproduce terminal layout bugs without pairing the emulator, a debug build also
 accepts an ANSI sample in `flux.debug.output` while demo mode is on:
@@ -394,9 +402,27 @@ adb -s emulator-5554 shell am start -n org.omarchy.flux/.ui.MainActivity \
 
 To capture the screen of an agent, send `agent.read` on the herdr socket with
 `"source": "recent_unwrapped"`, `"format": "ansi"`, and `"strip_ansi": false`, as `fluxd` does.
+For opencode, `fluxd` uses `"source": "recent"` and removes the sidebar, see `internal/core/herdr_sidebar.go`.
 
 Use a small, non-private sample. This only changes the demo output; it sends no
 keys or prompts to a real agent. Omit the output extra to restore the default sample.
+
+**Live** on an agent screen takes a sample of its own in `flux.debug.terminal`.
+`flux.debug.terminal_grid` sets the grid of the sample. The default grid is `100x30`:
+
+```bash
+sample=$(< /path/to/sample.ansi)
+sample=${sample//\'/\'\\\'\'}
+adb -s emulator-5554 shell am start -n org.omarchy.flux/.ui.MainActivity \
+  --ez flux.debug.demo true --es flux.debug.page agent:w2:p1 \
+  --es flux.debug.terminal "'$sample'" --es flux.debug.terminal_grid "120x40"
+```
+
+The sample is one ANSI screen, for example a frame of `herdr terminal session observe`.
+With a terminal sample, the agent screen shows **Live** in its top bar.
+Select **Live** to draw the sample in the place of the output.
+The sample needs no unlock, and it sends no scroll and no click.
+Without a terminal sample, a demo agent screen has no **Live**, so the screenshots of the site and the videos do not change.
 
 ## Icons
 
@@ -417,6 +443,7 @@ python3 tools/fetch_icons.py
 | `app/src/main/java/org/omarchy/flux/stream` | The stream connection, and the foreground service that keeps the webcam and the mic running in the background |
 | `app/src/main/java/org/omarchy/flux/theme` | The computer theme, the contrast guard, and the palettes. Plain Kotlin with JVM tests. |
 | `app/src/main/java/org/omarchy/flux/ui` | The Compose screens |
+| `app/src/main/assets/terminal` | The page of the live terminal, with xterm.js and its license. See [Update xterm.js](development.md#update-xtermjs). |
 | `tools` | The test peer, the screenshot helper, and the icon script |
 
 Continue with [phone pairing](features.md#pair-a-phone).

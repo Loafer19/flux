@@ -1,10 +1,10 @@
 import FluxKit
 import SwiftUI
 
-/// The scope chip in the navigation bar of each tab root: "All computers"
-/// or 1 computer, with a link dot and a battery dot for each computer in
-/// scope, at most 4. A tap opens the menu of scopes. The scope filters the
-/// Inbox, Send, and Control, and it picks the computer theme.
+/// The scope chip at the end of the navigation bar of the chat: "All
+/// computers" or 1 computer, with a link dot for each computer in scope, at
+/// most 4. A tap opens the menu of scopes. The scope filters the chat and
+/// Control, and it picks the computer theme.
 struct ScopeChip: View {
     @Environment(AppModel.self) private var model
     @Environment(\.tn) private var tn
@@ -31,21 +31,16 @@ struct ScopeChip: View {
                 }
             }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text(name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(tn.text)
                     .lineLimit(1)
-                ForEach(shown) { d in
-                    HStack(spacing: 3) {
-                        LinkDot(online: d.online)
-                        if d.online, let battery = batteries[d.id] {
-                            BatteryDot(battery)
-                        }
-                    }
+                HStack(spacing: 4) {
+                    ForEach(shown) { d in LinkDot(online: d.online, size: 7) }
                 }
                 Image(systemName: "chevron.down")
-                    .font(.footnote.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(tn.sub)
             }
             .padding(.leading, 12)

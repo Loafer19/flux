@@ -43,6 +43,10 @@ public struct ApproveRecord: Sendable, Identifiable, Equatable {
     public var summary: String
     public var received: Date
     public var outcome: ApproveOutcome
+    /// The request, for the chat. It is nil for a request that is not valid.
+    public var request: ApproveRequest? = nil
+    /// When the request ended, or nil while it is open.
+    public var resolved: Date? = nil
 }
 
 /// Whether this device can approve.
@@ -98,5 +102,6 @@ public final class ApproveModel {
     func resolve(_ requestId: String, _ outcome: ApproveOutcome) {
         guard let i = history.firstIndex(where: { $0.requestId == requestId && $0.outcome == .open }) else { return }
         history[i].outcome = outcome
+        history[i].resolved = Date()
     }
 }

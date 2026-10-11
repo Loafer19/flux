@@ -161,7 +161,9 @@ extension TermText {
                     var gap = last.style
                     gap.underline = false
                     gap.strike = false
-                    out[out.count - 1] = TermLine(prev.spans + [TermSpan(" ", gap)] + dropColumns(line, hang).spans, fill: prev.fill)
+                    let rest = dropColumns(line, hang)
+                    let blank = wrapsInWord(prev.text, rest.text) ? [] : [TermSpan(" ", gap)]
+                    out[out.count - 1] = TermLine(prev.spans + blank + rest.spans, fill: prev.fill)
                     end = canContinue(text) ? text.count : 0
                     continue
                 }
@@ -172,6 +174,29 @@ extension TermText {
             hang = hangingIndent(line.text)
         }
         return out
+    }
+
+    /// True when a wrapped line broke inside a word, so that the rows join
+    /// without a blank. opencode can break a path or a link after a slash, a
+    /// word after a hyphen, and a path after a dot, for example "src/" and
+    /// "pages/a.ts", "--" and "workers=2", or "share.test." and "ts". A colon
+    /// before 2 slashes is a link, for example "https:" and "//github.com".
+    public static func wrapsInWord(_ prev: String, _ next: String) -> Bool {
+        let token = prev.split(separator: " ", omittingEmptySubsequences: false).last.map(String.init) ?? prev
+        guard let first = next.first, token.count >= 2, first != " " else { return false }
+        let alnum = first.isLetter || first.isNumber
+        let stem = token.dropLast()
+        if token.hasSuffix("/") { return true }
+        if token.hasSuffix(":") && next.hasPrefix("//") { return true }
+        if token.hasSuffix("-") || token.hasSuffix("_") { return alnum }
+        if token.hasSuffix(".") && (stem.contains("/") || stem.contains(".")) { return alnum }
+        return false
+    }
+
+    /// Joins 2 rows of a wrapped line, with a blank between them unless the
+    /// line broke inside a word, see `wrapsInWord`.
+    public static func joinWrapped(_ prev: String, _ next: String) -> String {
+        wrapsInWord(prev, next) ? prev + next : prev + " " + next
     }
 
     /// True when the next row can continue a line that ends with `row`: the

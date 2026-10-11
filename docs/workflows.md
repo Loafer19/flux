@@ -190,14 +190,14 @@ Flux passes event data through the environment, without inserting it into the co
 
 ## Agent diff review
 
-Open an agent and select **Changes** on Android, iOS, or macOS.
-The view shows changed file names, tracked changes, and previews of new text files.
-Enter a repository-relative file path and submit the field to review that file only.
-Leave the field empty to review all changes.
-Select **Output** to return to the terminal output.
+On Android, open an agent and select **Changes** in the menu, **Review changes** on a changes card, or **Review changes** in the dock of a finished agent.
+A sheet shows each changed file with its counts, tracked changes, and previews of new text files.
+Close the sheet to return to the thread.
 
-Replies from Changes include the selected review path.
-They use the existing agent reply permission and phone or Mac unlock.
+On iOS, open an agent and select **Changes** in the menu, **Review changes** on a changes card, or **Review changes** in the dock of a finished agent.
+On macOS, select **Changes** in the header of the agent, or press Command-D.
+The sheet shows the same files as on Android.
+Close the sheet to return to the thread.
 The view shows the working tree, including changes made by other tools or the user.
 It does not attribute each change to the agent.
 

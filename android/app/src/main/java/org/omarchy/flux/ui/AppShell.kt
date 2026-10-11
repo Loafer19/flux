@@ -97,15 +97,23 @@ import org.omarchy.flux.core.needsYou
 import org.omarchy.flux.mic.MicScreen
 import org.omarchy.flux.stream.LiveStreams
 import org.omarchy.flux.webcam.WebcamScreen
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.snapshotFlow
 
 /**
  * The app structure: the destinations with the navigation bar at the
  * bottom, and the feature screens above a
- * destination. A wide window shows a navigation rail at the side. The
- * destinations change with a fade through, and a feature screen moves in
- * and out on the horizontal axis with the bars of the destination. System
- * Back follows the predictive back gesture. The Remove animations setting
- * turns the motion off.
+ * destination. A wide window shows a navigation rail at the side. A swipe
+ * moves between the destinations, and a tap on the bar moves to one. Chat
+ * hides the bar, so its thread and its dock take the height. A feature
+ * screen moves in and out on the horizontal axis with the bars of the
+ * destination. System Back follows the predictive back gesture. The Remove
+ * animations setting turns the motion off.
  */
 @OptIn(ExperimentalTransitionApi::class)
 @Composable
@@ -159,7 +167,6 @@ fun FluxShell(
     val screens = rememberTransition(seek, label = "screens")
     // 2 parts of 1 transition: the feature screen on top, or null for a destination, and the destination under it.
     val layers = screens.createChildTransition(label = "layers") { it as? Dest.Detail }
-    val tabs = screens.createChildTransition(label = "tabs") { it.tab }
     LaunchedEffect(dest, reduce) {
         if (reduce) seek.snapTo(dest) else seek.animateTo(dest)
     }
@@ -192,6 +199,7 @@ fun FluxShell(
     val actions = ChatActions(
         open = ::open, approve = approve, showPair = onShowPair, pair = onPair, tools = tools,
         showAll = { onScope(null) }, allowNotifications = onNotify, hideNotifications = onNotifyHide,
+        go = { t -> go(current.select(t)) },
     )
     val select = { t: Tab -> go(current.select(t)) }
 
@@ -208,11 +216,28 @@ fun FluxShell(
                     DetailScreen(detail.route, state, current = { current }, go = { go(it) })
                 }
             } else {
+                // The destinations lie side by side, so a swipe moves between them. Each draws its own header.
+                val pager = rememberPagerState(initialPage = nav.tab.ordinal) { Tab.entries.size }
+                // A tap on the bar, Back, or a link moves the pager to the destination.
+                LaunchedEffect(nav.tab) {
+                    val to = nav.tab.ordinal
+                    if (pager.targetPage != to) if (reduce) pager.scrollToPage(to) else pager.animateScrollToPage(to)
+                }
+                // A swipe selects the destination where the pager stops.
+                LaunchedEffect(pager) {
+                    snapshotFlow { pager.settledPage }.collect { page ->
+                        val t = Tab.entries[page]
+                        if (current.stack.isEmpty() && current.tab != t) go(current.select(t))
+                    }
+                }
                 // The bars are part of the destination, so that the back gesture shows the destination as it is after Back.
-                // Each destination draws its own header, so that the header fades with it.
-                ShellFrame(wide, nav.tab, needs, select) {
-                    tabs.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = { fadeThrough(reduce) }) { tab ->
-                        val active = settled && transition.settledVisible()
+                // The bar follows the destination nearest the middle, so it shows while a swipe leaves Chat.
+                val shown = Tab.entries[pager.currentPage]
+                ShellFrame(wide, shown, needs, select, bar = shown != Tab.Chat) {
+                    HorizontalPager(pager, Modifier.fillMaxSize(), key = { Tab.entries[it] }) { page ->
+                        val tab = Tab.entries[page]
+                        // Only the destination where the pager stops reads its data.
+                        val active = settled && pager.settledPage == page
                         Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
                             when (tab) {
                                 Tab.Chat -> ChatScreen(state, all, active, notices, actions, scope, onScope, picker)
@@ -234,9 +259,9 @@ private fun Transition<EnterExitState>.settledVisible(): Boolean =
 
 /**
  * The frame of a destination: the content, and the navigation bar at the
- * bottom. A wide window shows a navigation rail at the side in the place
- * of the navigation bar. The content draws its own header under the status
- * bar.
+ * bottom while [bar] is true. A wide window shows a navigation rail at the
+ * side in the place of the navigation bar. The content draws its own
+ * header under the status bar.
  */
 @Composable
 private fun ShellFrame(
@@ -244,6 +269,7 @@ private fun ShellFrame(
     tab: Tab,
     needs: Int,
     onSelect: (Tab) -> Unit,
+    bar: Boolean,
     content: @Composable () -> Unit,
 ) {
     if (wide) {
@@ -257,10 +283,17 @@ private fun ShellFrame(
     } else {
         Column(Modifier.fillMaxSize()) {
             // The keyboard covers the navigation bar, so a field of the content moves up only by the rest of the keyboard.
-            val bar = WindowInsets.navigationBars.add(WindowInsets(bottom = NavBarHeight))
-            Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(bar)) { content() }
+            // Without the bar, the content keeps clear of the gesture area itself.
+            val inset = WindowInsets.navigationBars.add(WindowInsets(bottom = NavBarHeight))
+            Box(Modifier.weight(1f).fillMaxWidth().then(if (bar) Modifier.consumeWindowInsets(inset) else Modifier.navigationBarsPadding())) {
+                content()
+            }
             // Each destination ends with a dock, which meets the bar with no fade.
-            ShellNavBar(tab, needs, onSelect)
+            AnimatedVisibility(
+                bar,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+            ) { ShellNavBar(tab, needs, onSelect) }
         }
     }
 }

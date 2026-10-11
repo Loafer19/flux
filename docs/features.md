@@ -122,7 +122,11 @@ The field of the desktop window adds `https://` to a host name without a scheme,
 The desktop writes in the same thread: received files with their progress, the last clip, herdr agents, sudo approvals, and pair requests.
 An agent that waits shows its choices in the thread, and an approval shows **Approve** and **Deny**.
 Flux keeps the thread in memory only, with at most 400 characters of each text.
-The dock under the thread shows the phone clipboard with **Send**, and the tools for files, the camera, and QR codes.
+The dock under the thread shows the phone clipboard with **Send**, and a field for text or a link with a mic key and **Send**.
+On Android, the **+** key at the left of the field opens a menu over the chat: **Send files**, **Get files**, **Photo**, **Scan**, **Text**, and **QR**, and under them **Control** and **Computers**.
+Chat has no navigation bar, so this menu and a swipe to the side lead to the other screens.
+Tap **+**, then tap an item. Or hold **+**, slide the thumb to an item, and release it there. A release on no item keeps the menu open.
+A tap on the field hides the **+** key, so the field takes its width and grows to 6 lines. The expand key in the field opens the large editor.
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).
 The tunnel carries SSH traffic without an inbound SSH firewall rule.
 

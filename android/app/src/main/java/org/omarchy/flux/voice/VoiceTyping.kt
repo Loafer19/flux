@@ -148,6 +148,8 @@ fun LanguagePicker(v: VoiceTyping) {
  * dictation failed. With [languages] off, the panel does not open the
  * language picker, for the search of the picker itself. While [enabled]
  * is off, the mic key hides, unless a dictation runs.
+ * With [round], the mic key is a circle of 48 dp, as next to a round
+ * send key.
  */
 @Composable
 fun VoiceField(
@@ -155,6 +157,7 @@ fun VoiceField(
     modifier: Modifier = Modifier,
     languages: Boolean = true,
     enabled: Boolean = true,
+    round: Boolean = false,
     send: (@Composable () -> Unit)? = null,
     field: @Composable (Modifier) -> Unit,
 ) {
@@ -166,6 +169,7 @@ fun VoiceField(
             field = field,
             send = send,
             onLanguage = if (languages) v::pickLanguage else null,
+            round = round,
         )
         val problem = v.error ?: v.dictation.error
         if (problem != null) {

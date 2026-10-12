@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
 
 /*
  * The thumb menu of the chat: the + key at the left of the field opens it
@@ -100,6 +101,9 @@ class ThumbMenu {
 
     /** The top of the + key in the root. The menu ends above it. */
     internal var keyTop by mutableStateOf(0f)
+
+    /** The place of the dock in the root. The menu takes its width, for example at the side of a wide window. */
+    internal var dock by mutableStateOf(Rect.Zero)
 
     /** The items by their labels, and their places in the root. */
     internal var items: Map<String, ThumbItem> = emptyMap()
@@ -182,6 +186,9 @@ internal fun Modifier.thumbMenuKey(menu: ThumbMenu, enabled: Boolean, label: Str
         }
 }
 
+/** Gives [menu] the place of the dock that holds the + key. */
+internal fun Modifier.thumbMenuDock(menu: ThumbMenu): Modifier = onGloballyPositioned { menu.dock = it.boundsInRoot() }
+
 /** The columns of the items of a section that is not wide. */
 private const val THUMB_COLUMNS = 3
 
@@ -201,20 +208,23 @@ fun ThumbMenuOverlay(menu: ThumbMenu, sections: List<ThumbSection>) {
     shown.targetState = menu.open
     if (!shown.currentState && !shown.targetState) return
     val density = LocalDensity.current
-    var top by remember { mutableStateOf(0f) }
-    var height by remember { mutableStateOf(0) }
-    Box(Modifier.fillMaxSize().onGloballyPositioned { top = it.positionInRoot().y; height = it.size.height }) {
+    var place by remember { mutableStateOf(Rect.Zero) }
+    Box(Modifier.fillMaxSize().onGloballyPositioned { place = Rect(it.positionInRoot(), it.size.toSize()) }) {
         AnimatedVisibility(shown, enter = fadeIn(tween(120)), exit = fadeOut(tween(120))) {
             Box(
                 Modifier.fillMaxSize().background(ThumbScrim)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close the menu") { menu.close() },
             )
         }
-        // The card ends 10 dp above the + key, at the left edge of the dock.
-        val bottom = with(density) { (top + height - menu.keyTop).coerceAtLeast(0f).toDp() } + 10.dp
+        // The card ends 10 dp above the + key and takes the width of the dock, so it stays near the thumb also in a wide window.
+        // The gutter stays free at the edges of the screen.
+        val dock = menu.dock.takeIf { it.width > 0f } ?: place
+        val bottom = with(density) { (place.bottom - menu.keyTop).coerceAtLeast(0f).toDp() } + 10.dp
+        val start = with(density) { (dock.left - place.left).coerceAtLeast(0f).toDp() }.coerceAtLeast(TiledGutter)
+        val end = with(density) { (place.right - dock.right).coerceAtLeast(0f).toDp() }.coerceAtLeast(TiledGutter)
         AnimatedVisibility(
             shown,
-            Modifier.align(Alignment.BottomStart).padding(start = TiledGutter, end = TiledGutter, bottom = bottom),
+            Modifier.align(Alignment.BottomStart).padding(start = start, end = end, bottom = bottom),
             // A slide moves the layout, so the places of the items follow it. A scale would leave them old.
             enter = fadeIn(tween(140)) + slideInVertically(spring(dampingRatio = 0.8f, stiffness = 600f)) { it / 6 },
             exit = fadeOut(tween(100)) + slideOutVertically(tween(100)) { it / 10 },

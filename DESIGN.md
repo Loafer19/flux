@@ -330,7 +330,7 @@ Each app shows **Chat** as its first destination.
 
 - **Gaps and gutter:** Tiles keep an 8 dp gap. The screen gutter is 10 dp. The shell top bar starts 5 dp further in, to align the Flux mark.
 - **Phone in portrait:** **Chat** is 1 thread with the newest entry at the bottom, and the dock under it. Cards of a computer sit on the left at 88% of the width. A card that needs the user takes the full width. What the phone sent sits on the right.
-- **Wide window, 600 dp and more:** A navigation rail replaces the navigation bar. The dock of **Chat** becomes a tile at the bottom of a column on the right.
+- **Wide window, 600 dp and more:** A navigation rail replaces the navigation bar. The dock of each screen becomes a tile at the bottom of a column on the right, at thumb height. The thumb menu opens above the dock and takes its width. **Live** keeps the dock in that column, and the terminal takes the full height. The arrow of **Waiting for you** points to the dock at the side.
 - **Short window:** The dock of **Chat** takes at most 70% of the height, and it scrolls inside that part.
 - **Content width:** Screens other than **Chat** scroll in `CappedScrollColumn`. The content is at most 840 dp wide and stays in the center.
 - **Destinations:** Chat, Control, and Computers. Control opens with 1 master tool, then groups of tool rows under section labels. In Control, the agent rows come right after the master tool, because the user needs them most often.

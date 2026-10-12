@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -188,80 +189,83 @@ fun BrowseScreen(d: DeviceUi, browse: BrowseState?, onBack: () -> Unit) {
         return (r.first + "/" + path.removePrefix(r.second).trim('/')).trimEnd('/')
     }
     val shown = browse?.path?.takeIf { it.isNotEmpty() }?.let { shownPath(it) }
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(horizontal = TiledGutter)) {
-            TiledTopBar("Get files", onBack = { if (searching) query = "" else up() }, context = if (d.online) shown ?: d.name else d.name) {
-                if (d.online && !searching && shown != null) SquareButton(Ic.refresh, "Refresh", { Browse.refresh(FluxCore) }, enabled = browse?.loading != true)
+    // A wide window shows the files in the center, as wide as the other lists.
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = ContentMaxWidth).fillMaxSize()) {
+            Box(Modifier.padding(horizontal = TiledGutter)) {
+                TiledTopBar("Get files", onBack = { if (searching) query = "" else up() }, context = if (d.online) shown ?: d.name else d.name) {
+                    if (d.online && !searching && shown != null) SquareButton(Ic.refresh, "Refresh", { Browse.refresh(FluxCore) }, enabled = browse?.loading != true)
+                }
             }
-        }
-        if (!d.online) {
-            Box(Modifier.padding(horizontal = TiledGutter)) { NotReachable(d, "The files") }
-            return@Column
-        }
-        if (canSearch) {
-            BrowseSearchField(
-                query,
-                if (searchFrom.isEmpty()) "Search all shared folders" else "Search in ${shownPath(searchFrom).substringAfterLast('/')}",
-                Modifier.padding(horizontal = TiledGutter, vertical = 4.dp),
-                onDone = { focus.clearFocus() },
-            ) { query = it.take(200) }
-        }
-        val search = browse?.search?.takeIf { searching }
-        val searchBusy = search != null && search.loading && search.results.isNotEmpty()
-        if ((browse != null && browse.loading && browse.entries.isNotEmpty() && !searching && !refreshing) || searchBusy) {
-            LinearProgressIndicator(Modifier.fillMaxWidth(), color = Tn.blue, trackColor = Tn.line)
-        } else {
-            Spacer(Modifier.height(4.dp))
-        }
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = { pulled = Browse.refresh(FluxCore) }, modifier = Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                if (searching) {
-                    BrowseResults(d, query, search, searchFrom.isEmpty(), ::shownPath) { e ->
-                        if (e.dir) {
-                            query = ""
-                            focus.clearFocus()
-                            Browse.list(FluxCore, e.path)
-                        } else {
-                            Browse.download(FluxCore, e)
+            if (!d.online) {
+                Box(Modifier.padding(horizontal = TiledGutter)) { NotReachable(d, "The files") }
+                return@Column
+            }
+            if (canSearch) {
+                BrowseSearchField(
+                    query,
+                    if (searchFrom.isEmpty()) "Search all shared folders" else "Search in ${shownPath(searchFrom).substringAfterLast('/')}",
+                    Modifier.padding(horizontal = TiledGutter, vertical = 4.dp),
+                    onDone = { focus.clearFocus() },
+                ) { query = it.take(200) }
+            }
+            val search = browse?.search?.takeIf { searching }
+            val searchBusy = search != null && search.loading && search.results.isNotEmpty()
+            if ((browse != null && browse.loading && browse.entries.isNotEmpty() && !searching && !refreshing) || searchBusy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = Tn.blue, trackColor = Tn.line)
+            } else {
+                Spacer(Modifier.height(4.dp))
+            }
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = { pulled = Browse.refresh(FluxCore) }, modifier = Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    if (searching) {
+                        BrowseResults(d, query, search, searchFrom.isEmpty(), ::shownPath) { e ->
+                            if (e.dir) {
+                                query = ""
+                                focus.clearFocus()
+                                Browse.list(FluxCore, e.path)
+                            } else {
+                                Browse.download(FluxCore, e)
+                            }
+                        }
+                        Spacer(Modifier.height(96.dp))
+                        return@Column
+                    }
+                    if (browse != null && browse.roots.size > 1) {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup().padding(horizontal = Gutter, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            for ((name, path) in browse.roots) {
+                                ChoiceChip(
+                                    name, selected = path == root, onClick = { Browse.list(FluxCore, path) },
+                                    leading = { Sym(if (name.equals("Home", ignoreCase = true)) Ic.home else Ic.drive, tint = if (path == root) Tn.blue else Tn.sub, size = 18.dp) },
+                                )
+                            }
+                        }
+                    }
+                    when {
+                        browse?.error != null -> EmptyState(
+                            Ic.error,
+                            "Cannot open the files",
+                            browse.error,
+                            Modifier.padding(top = 32.dp),
+                            action = { FluxButton("Try again", ::open, kind = ButtonKind.Tonal, icon = Ic.refresh) },
+                        )
+                        browse == null || (browse.loading && browse.entries.isEmpty()) -> LineSkeleton(
+                            "Opening the files of ${d.name}",
+                            Modifier.padding(horizontal = Gutter, vertical = 16.dp),
+                            lines = listOf(0.6f, 0.45f, 0.7f, 0.5f, 0.65f, 0.4f),
+                        )
+                        browse.entries.isEmpty() -> EmptyState(Ic.folderOpen, "This folder is empty", "Go back to open another folder.", Modifier.padding(top = 32.dp))
+                    }
+                    for (e in browse?.entries.orEmpty()) {
+                        BrowseRow(e, if (e.dir) "Folder" else bytes(e.size)) {
+                            if (e.dir) Browse.list(FluxCore, e.path) else Browse.download(FluxCore, e)
                         }
                     }
                     Spacer(Modifier.height(96.dp))
-                    return@Column
                 }
-                if (browse != null && browse.roots.size > 1) {
-                    Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup().padding(horizontal = Gutter, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        for ((name, path) in browse.roots) {
-                            ChoiceChip(
-                                name, selected = path == root, onClick = { Browse.list(FluxCore, path) },
-                                leading = { Sym(if (name.equals("Home", ignoreCase = true)) Ic.home else Ic.drive, tint = if (path == root) Tn.blue else Tn.sub, size = 18.dp) },
-                            )
-                        }
-                    }
-                }
-                when {
-                    browse?.error != null -> EmptyState(
-                        Ic.error,
-                        "Cannot open the files",
-                        browse.error,
-                        Modifier.padding(top = 32.dp),
-                        action = { FluxButton("Try again", ::open, kind = ButtonKind.Tonal, icon = Ic.refresh) },
-                    )
-                    browse == null || (browse.loading && browse.entries.isEmpty()) -> LineSkeleton(
-                        "Opening the files of ${d.name}",
-                        Modifier.padding(horizontal = Gutter, vertical = 16.dp),
-                        lines = listOf(0.6f, 0.45f, 0.7f, 0.5f, 0.65f, 0.4f),
-                    )
-                    browse.entries.isEmpty() -> EmptyState(Ic.folderOpen, "This folder is empty", "Go back to open another folder.", Modifier.padding(top = 32.dp))
-                }
-                for (e in browse?.entries.orEmpty()) {
-                    BrowseRow(e, if (e.dir) "Folder" else bytes(e.size)) {
-                        if (e.dir) Browse.list(FluxCore, e.path) else Browse.download(FluxCore, e)
-                    }
-                }
-                Spacer(Modifier.height(96.dp))
             }
         }
     }

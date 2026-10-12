@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -226,7 +225,8 @@ fun TiledAgentsScreen(
 ) {
     LaunchedEffect(d.id, d.online) { if (d.online) HerdrSync.request(FluxCore, d.id) }
     val herdr = d.herdr
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = TiledGutter)) {
+    // A wide window shows the list in the center, as wide as the other lists.
+    CappedScrollColumn(bottom = 96.dp) {
         TiledTopBar("Agents", onBack, context = d.name) {
             if (d.online && herdr?.running == true && herdr.control) SquareButton(Ic.add, "New agent or terminal", onNew)
             if (d.online) SquareButton(Ic.refresh, "Refresh", { HerdrSync.request(FluxCore, d.id) })
@@ -264,7 +264,6 @@ fun TiledAgentsScreen(
                 }
             }
         }
-        Spacer(Modifier.height(96.dp))
     }
 }
 
@@ -473,6 +472,7 @@ fun TiledAgentScreen(d: DeviceUi, pane: String, onBack: () -> Unit, onSwitch: (S
         live = false
         review = true
     }
+    val wide = rememberWideWindow()
     Column(Modifier.fillMaxSize().imePadding()) {
         AgentTopBar(task, context, onBack) {
             // The key stays while Live is on, so that Live can always stop.
@@ -515,10 +515,19 @@ fun TiledAgentScreen(d: DeviceUi, pane: String, onBack: () -> Unit, onSwitch: (S
                     Modifier.padding(top = 48.dp),
                 )
             }
+            // In a wide window, the dock keeps its place at the side, and the terminal takes the full height.
+            // The key row of live input stays under the terminal, next to the phone keyboard.
+            terminal != null && control && !direct && wide -> DockLayout(
+                Modifier.weight(1f).fillMaxWidth(),
+                thread = { LivePane(terminal, d, pane, sample, terminalInput, Modifier.fillMaxSize()) },
+                dock = { shape ->
+                    replyState.SaveableStateProvider("reply") {
+                        AgentDock(d, agent, out, thread, ask, reply, draft, dictation, keysOpen, { keysOpen = !keysOpen }, null, shape) { sent = it }
+                    }
+                },
+            )
             terminal != null -> Column(Modifier.weight(1f).fillMaxWidth()) {
-                Box(Modifier.weight(1f).fillMaxWidth().background(Tn.offTile).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    LiveTerminalView(terminal, d, pane, sample, Modifier.fillMaxSize(), terminalInput)
-                }
+                LivePane(terminal, d, pane, sample, terminalInput, Modifier.weight(1f).fillMaxWidth())
                 if (control && direct) {
                     LiveControls(d, agent, out, terminalInput)
                 } else if (control) {
@@ -609,6 +618,14 @@ private fun AgentMenu(refresh: (() -> Unit)?, review: (() -> Unit)?, keys: Boole
     }
 }
 
+/** The live terminal on its background, in the place of the thread. */
+@Composable
+private fun LivePane(t: LiveTerminal, d: DeviceUi, pane: String, sample: TerminalSample?, input: TerminalInput, modifier: Modifier) {
+    Box(modifier.background(Tn.offTile).padding(horizontal = 14.dp, vertical = 12.dp)) {
+        LiveTerminalView(t, d, pane, sample, Modifier.fillMaxSize(), input)
+    }
+}
+
 /** The line that tells why Live ended by itself. TalkBack reads it when it shows. */
 @Composable
 private fun LiveNote(text: String) {
@@ -664,8 +681,8 @@ internal fun DockLayout(
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f).fillMaxHeight()) { thread(16.dp) }
                 // The dock sits at the bottom of its column, at thumb height, and scrolls when it is taller.
-                Column(Modifier.width(side).fillMaxHeight().padding(end = TiledGutter, bottom = ControlsEnd)) {
-                    Spacer(Modifier.weight(1f))
+                // A spacer with a weight would take half of the free height and put a short dock in the middle.
+                Column(Modifier.width(side).fillMaxHeight().padding(end = TiledGutter, bottom = ControlsEnd), verticalArrangement = Arrangement.Bottom) {
                     Box(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { dock(DockShape.Tile) }
                 }
             }

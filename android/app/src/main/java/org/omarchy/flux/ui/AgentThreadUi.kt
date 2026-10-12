@@ -71,6 +71,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.omarchy.flux.core.AgentAsk
@@ -592,9 +594,18 @@ internal fun ThreadYou(text: String, meta: String?) {
     }
 }
 
-/** The line at the end of the thread of an agent that waits for the user. */
+/**
+ * The line at the end of the thread of an agent that waits for the user.
+ * The arrow points to the dock: down on a phone, and to the side in a wide
+ * window, where the dock is at the end of the screen.
+ */
 @Composable
 internal fun ThreadWaiting() {
+    val turn = when {
+        !rememberWideWindow() -> 0f
+        LocalLayoutDirection.current == LayoutDirection.Ltr -> -90f
+        else -> 90f
+    }
     Row(
         Modifier.fillMaxWidth().padding(top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -602,7 +613,7 @@ internal fun ThreadWaiting() {
     ) {
         PulseDot(Tn.red)
         T("Waiting for you", size = 12, color = Tn.red)
-        Box(Modifier.height(20.dp), contentAlignment = Alignment.Center) { Sym(Ic.south, tint = Tn.red, size = 16.dp) }
+        Box(Modifier.height(20.dp), contentAlignment = Alignment.Center) { Sym(Ic.south, tint = Tn.red, size = 16.dp, modifier = Modifier.rotate(turn)) }
     }
 }
 

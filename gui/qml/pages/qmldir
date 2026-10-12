@@ -1,9 +1,10 @@
+Chat 1.0 Chat.qml
 Clipboard 1.0 Clipboard.qml
 Computer 1.0 Computer.qml
+Device 1.0 Device.qml
 Empty 1.0 Empty.qml
 Files 1.0 Files.qml
 Messages 1.0 Messages.qml
 Network 1.0 Network.qml
 Notifications 1.0 Notifications.qml
 Overview 1.0 Overview.qml
-PhoneCommands 1.0 PhoneCommands.qml

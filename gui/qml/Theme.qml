@@ -14,6 +14,8 @@ import QtQuick
 //   a fill with 18% of their own color. accent also reaches 4.5:1 on its
 //   selection fill, which has 18% of the accent on bg2.
 // - edge reaches 3:1 on bg and bg2. It is the border of a control.
+// - sent is the fill of an entry that this computer sent. fg, accent, ok,
+//   warn, and err reach 4.5:1 on it. sentDim is dim with 4.5:1 on it.
 // The guard moves only the lightness of a color, toward fg first, so the
 // hue of the theme stays. A color that meets its needs stays as it is.
 QtObject {
@@ -32,6 +34,12 @@ QtObject {
   // The border of a field, a button, a chip, a switch, and a dashed
   // button. bg3 is a surface and the border of a card.
   property color edge: "#292e42"
+  // The fill and the border of an entry that this computer sent, in the
+  // chat, and the second ink on that fill. The fill is bg2 with at most 14%
+  // of the accent, see sentFill().
+  property color sent: "#1c1f2e"
+  property color sentEdge: "#3b4a73"
+  property color sentDim: "#8189b3"
 
   readonly property string font: "monospace"
   readonly property int size: 13
@@ -120,6 +128,23 @@ QtObject {
     err = fill(t.err, t, dark, false)
     alt = fill(t.alt, t, dark, false)
     edge = guard(t.bg3, needs(nonTextContrast, [t.bg, t.bg2]), dark)
+    sent = sentFill(t.bg2)
+    sentEdge = mix(t.bg3, accent, 0.45)
+    sentDim = guard(dim, needs(textContrast, [sent]), dark)
+  }
+
+  // The fill of a sent entry: bg2 with the most accent, from 14% down,
+  // on which fg and the state colors keep 4.5:1. bg2 meets these needs, so
+  // the result is bg2 at worst. Call it after the inks are set.
+  function sentFill(base) {
+    var inks = [fg, accent, ok, warn, err]
+    for (var m = 0.14; m > 0.001; m -= 0.02) {
+      var c = mix(base, accent, m)
+      var all = true
+      for (var i = 0; i < inks.length && all; i++) all = contrast(inks[i], c) >= textContrast
+      if (all) return c
+    }
+    return base
   }
 
   // Guards a color for text and icons. The fills with 18% of the color

@@ -177,7 +177,11 @@ An agent that works shows your last answer, its step, and its time. **Open threa
 A request shows **Deny** and **Approve**. **Approve** opens the approval sheet, which asks for Face ID or Touch ID.
 **Compare the key** on a pair request opens the pairing sheet. Neither card approves or pairs by itself.
 
-The dock under the thread shows the clipboard with **Send**, the tools **Files**, **Get**, **Photo**, **Scan**, **Text**, and **QR**, and a field for text or a link.
+The dock under the thread shows the clipboard with **Send**, and a field for text or a link with the **+** key, the mic key, and **Send**.
+**+** opens a menu over the chat: **Send files**, **Get files**, **Photo**, **Scan**, **Text**, and **QR**, and under them **Control** and **Computers**.
+Tap **+**, then tap an item. Or hold **+**, slide the thumb to an item, and release it there.
+Chat has no tab bar. 3 dots under the status bar show the tab on each tab, and a swipe to the side on Chat moves to Control. On Control and Computers, a swipe from the edge of the screen moves between the tabs.
+A tap on the field hides **+**, so the field takes its width and grows to 6 lines. The expand key opens the large editor.
 A link opens in the browser of the computer. Other text goes to its clipboard.
 iOS asks before an app reads the clipboard, so the dock shows only the kind of the copy until it goes out.
 The menu at the top holds **Send photos**, the signature mode, and **Queue and transfers**.

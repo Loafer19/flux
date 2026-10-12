@@ -73,41 +73,85 @@ Window {
 
   // Each step prepares the view. The harness waits, then saves a PNG.
   property var steps: [
-    ["01-overview", function () { view.selectedId = pixel; view.tab = "overview" }],
-    ["02-camera-starting", function () { mock.setState(function (s) { s.webcam.active = false }) }],
-    ["03-camera-error", function () { mock.setState(function (s) { s.webcam.error = "The v4l2loopback module is not loaded. Run: sudo modprobe v4l2loopback" }) }],
-    ["04-camera-settings", function () { mock.setState(function (s) { s.webcam = mock.fixture.state.webcam }) }, function () { camera().settingsOpen = true ; scrollToEnd() }],
-    ["05-camera-settings-changed", function () {
+    // The chat of a phone: clips, links, and files in both directions,
+    // with an image clip and a received photo. The image files are in the
+    // repository, so only a harness that runs from the files shows them.
+    ["01-chat", function () {
+      var icon = Qt.resolvedUrl("../../../macos/App/Assets.xcassets/AppIcon.appiconset/icon_256x256.png").toString()
+      var photo = Qt.resolvedUrl("../../../site/img/og.png").toString()
+      mock.setState(function (s) {
+        if (icon.indexOf("file://") === 0)
+          s.clipboard.splice(2, 0, { id: "c0", text: "", image: icon.substring(7), dir: "in", device: pixel, time: Math.floor(Date.now() / 1000) - 500 })
+        if (photo.indexOf("file://") === 0)
+          s.transfers.forEach(function (t) { if (t.id === "t3") { t.name = "og.png"; t.path = photo.substring(7) } })
+        s.clipboard[0].pinned = true
+      })
+      view.selectedId = pixel
+      view.tab = "chat"
+    }],
+    ["02-chat-compose", function () { view.tab = "chat" }, function () {
+      pageItem().focusComposer("")
+      findBy(pageItem(), "placeholder", "Text or a link for Pixel 8").text = "Running 10 minutes late.\nStart without me."
+    }],
+    ["03-chat-search", function () { view.forceActiveFocus(); view.tab = "chat" }, function () {
+      findBy(pageItem(), "placeholder", "Search the chat").text = "omarchy"
+    }, 700],
+    ["04-chat-saved", function () { view.tab = "chat" }, function () {
+      findBy(pageItem(), "placeholder", "Search the chat").text = ""
+      pageItem().savedOnly = true
+    }],
+    ["05-chat-error", function () {
+      pageItem().savedOnly = false
+      mock.failures = { "clipboard.send": { code: "disabled", message: "Clipboard access is off for this device" } }
+    }, function () {
+      findBy(pageItem(), "placeholder", "Text or a link for Pixel 8").text = "Gate B14"
+      pageItem().send()
+    }],
+    ["06-chat-narrow", function () {
+      mock.failures = {}
+      view.anchors.fill = undefined
+      view.width = 560
+      view.height = 760
+    }],
+    ["07-chat-empty", function () {
+      view.anchors.fill = win.contentItem
+      view.selectedId = tablet
+      view.tab = "chat"
+    }],
+    // The top of the chat, with the rule of the day before.
+    ["08-chat-top", function () { view.selectedId = pixel; view.tab = "chat" }, function () {
+      findBy(pageItem(), "objectName", "chatList").positionViewAtEnd()
+    }],
+    ["10-device", function () { view.selectedId = pixel; view.tab = "device" }],
+    ["11-camera-starting", function () { mock.setState(function (s) { s.webcam.active = false }) }, function () { scrollTo(camera()) }],
+    ["12-camera-error", function () { mock.setState(function (s) { s.webcam.error = "The v4l2loopback module is not loaded. Run: sudo modprobe v4l2loopback" }) }, function () { scrollTo(camera()) }],
+    ["13-camera-settings", function () { mock.setState(function (s) { s.webcam = mock.fixture.state.webcam }) }, function () { camera().settingsOpen = true; scrollTo(camera()) }],
+    ["14-camera-settings-changed", function () {
       var c = camera()
       c.setKey("zoom", 2.5)
       c.setKey("exposure", 0.666)
       c.setKey("warmth", 0.3)
       c.setKey("whiteBalance", "daylight")
       c.setKey("mirror", true)
-    }, function () { scrollToEnd() }],
-    ["06-camera-restarting", function () { camera().setKey("aspect", "4:3") }, function () { scrollToEnd() }, 300],
-    ["07-camera-restarted", function () {}, function () { scrollToEnd() }, 1500],
-    ["08-camera-narrow", function () { view.anchors.fill = undefined; view.width = 900; view.height = 760 }, function () { scrollToEnd() }],
-    ["09-camera-closed", function () { view.anchors.fill = win.contentItem; camera().settingsOpen = false }],
-    ["10-camera-stopped", function () { mock.call("webcam.stop", {}, null) }],
-    ["11-streams-error", function () {
+    }, function () { scrollTo(camera()) }],
+    ["15-camera-restarting", function () { camera().setKey("aspect", "4:3") }, function () { scrollTo(camera()) }, 300],
+    ["16-camera-restarted", function () {}, function () { scrollTo(camera()) }, 1500],
+    ["17-camera-narrow", function () { view.anchors.fill = undefined; view.width = 900; view.height = 760 }, function () { scrollTo(camera()) }],
+    ["18-camera-closed", function () { view.anchors.fill = win.contentItem; camera().settingsOpen = false }, function () { scrollTo(camera()) }],
+    ["19-camera-stopped", function () { mock.call("webcam.stop", {}, null) }, function () { scrollTo(findBy(pageItem(), "objectName", "micCard")) }],
+    ["20-streams-error", function () {
       mock.setState(function (s) { s.mic = { error: "pw-cat is not installed on the computer. Install it with: sudo pacman -S pipewire", source: "Flux Microphone" } })
-    }, function () { scrollToEnd() }],
-    ["12-streams-stopped", function () { mock.call("mic.stop", {}, null); mock.call("screen.stop", {}, null) }],
-    ["13-clipboard", function () {
-      // An image entry shows the image. The image file is in the
-      // repository, so only a harness that runs from the files shows it.
-      var icon = Qt.resolvedUrl("../../../macos/App/Assets.xcassets/AppIcon.appiconset/icon_256x256.png").toString()
-      mock.setState(function (s) {
-        s.webcam = mock.fixture.state.webcam
-        s.clipboard[0].pinned = true
-        if (icon.indexOf("file://") === 0)
-          s.clipboard.splice(1, 0, { id: "c0", text: "", image: icon.substring(7), dir: "in", device: pixel, time: Math.floor(Date.now() / 1000) - 300 })
-      })
-      view.tab = "clipboard"
+    }, function () { scrollTo(findBy(pageItem(), "objectName", "micCard")) }],
+    ["21-streams-stopped", function () { mock.call("mic.stop", {}, null); mock.call("screen.stop", {}, null) }],
+    ["22-commands", function () { view.tab = "device" }, function () { scrollTo(commands()) }],
+    ["23-commands-form", function () { view.tab = "device" }, function () {
+      commands().openForm()
+      setField("Name", "Screenshot")
+      setField("omarchy-system-lock", "omarchy-capture-screenshot fullscreen save")
+      scrollTo(commands())
     }],
-    ["14-files", function () { view.tab = "files" }],
-    ["15-notifications", function () {
+    ["24-commands-empty", function () { commands().cancel(); mock.setState(function (s) { s.commands = [] }) }, function () { scrollTo(commands()) }],
+    ["25-notifications", function () {
       mock.setState(function(s) {
         s.settings.notificationRules = [
           { id: "rule1", app: "A notification app with a long display name", mode: "mute", until: Math.floor(Date.now() / 1000) + 3600 },
@@ -116,51 +160,45 @@ Window {
       })
       view.tab = "notifications"
     }],
-    ["16-messages", function () { view.tab = "messages" }],
-    ["17-commands", function () { view.tab = "commands" }],
-    ["18-commands-form", function () { view.tab = "commands" }, function () {
-      pageItem().openForm()
-      setField("Name", "Screenshot")
-      setField("omarchy-system-lock", "omarchy-capture-screenshot fullscreen save")
-    }],
-    ["19-commands-empty", function () { pageItem().cancel(); mock.setState(function (s) { s.commands = [] }); view.tab = "commands" }],
-    ["20-commands-offline", function () {
-      if (pageItem().cancel) pageItem().cancel()
+    ["26-messages", function () { view.tab = "messages" }],
+    // The tablet is offline and lists no features.
+    ["27-offline", function () {
       mock.state = mock.fixTimes(mock.fixture.state)
       view.selectedId = tablet
-      view.tab = "commands"
+      view.tab = "device"
     }],
     ["21-pair-list", function () { view.pairPane = true; view.tab = "network" }],
     ["22-pair-requested", function () {
       mock.updateDevice(oneplus, function (d) { d.pairState = "requested"; d.pairKey = "4F21A9C3E08B7D52"; return d })
     }],
     // The phone accepted, and this computer confirms the key.
-    ["22-pair-confirm", function () {
+    ["30-pair-confirm", function () {
       mock.updateDevice(oneplus, function () { return JSON.parse(JSON.stringify(mock.fixture.pairing.confirm)) })
     }],
-    ["23-paired", function () {
+    ["31-paired", function () {
       mock.updateDevice(oneplus, function (d) { d.pairState = "paired"; d.paired = true; d.pairedAt = "2026-09-25"; d.battery = { charge: 91, charging: false }; return d })
     }],
-    ["24-pair-incoming", function () {
+    ["32-pair-incoming", function () {
       mock.setState(function (s) {
         s.devices.push({ id: "c0ffee0000000000000000000000beef", name: "work-thinkpad", type: "laptop", ip: "192.168.1.70", paired: false, online: true, pairState: "incoming", pairKey: "9B03E7D16A2FC048", fingerprint: "71C0E5A93B2D8F46", plugins: [], notifications: [], conversations: [] })
       })
       view.selectedId = pixel
     }],
-    ["25-iphone", function () {
+    ["33-iphone", function () {
       mock.setState(function (s) { s.devices = s.devices.filter(function (d) { return d.pairState !== "incoming" }) })
-      view.selectedId = iphone; view.tab = "overview"
+      view.selectedId = iphone; view.tab = "device"
     }],
-    ["26-offline", function () { view.selectedId = tablet; view.tab = "overview" }],
-    ["27-offline-files", function () { view.tab = "files" }],
-    ["28-toast", function () { view.selectedId = pixel; view.tab = "overview"; view.toast("Clipboard sent to Pixel 8") }],
+    ["34-iphone-chat", function () { view.tab = "chat" }],
+    ["35-offline-chat", function () { view.selectedId = tablet; view.tab = "chat" }],
+    ["36-toast", function () { view.selectedId = pixel; view.tab = "chat"; view.toast("Clipboard sent to Pixel 8") }],
     // A paired computer does not list findmyphone, so its page has no Ring button.
-    ["29-computer", function () {
+    ["37-computer", function () {
       view.toast("")
       mock.setState(function (s) {
         s.devices.push({ id: laptop, name: "work-thinkpad", type: "laptop", ip: "192.168.1.70", paired: true, online: true, pairState: "paired", pairedAt: "2026-09-20", battery: { charge: 64, charging: true }, plugins: ["battery", "clipboard", "share", "notification", "runcommand"], notifications: [], conversations: [] })
       })
       view.selectedId = laptop
+      view.tab = "device"
     }],
     // A desktop peer keeps Overview, Clipboard, Files, and Notifications.
     // Phone commands are hidden, and a request for that tab stays on Overview.
@@ -236,33 +274,33 @@ Window {
       view.tab = "overview"
       view.pairPane = false
     }],
-    ["34-sidebar-640-bottom", function () { view.sidebarFlick.contentY = view.sidebarFlick.contentHeight - view.sidebarFlick.height }],
-    ["35-sidebar-640-select-last", function () { view.sidebarFlick.contentY = 0; view.selectedId = "a0000000000000000000000000000002"; view.tab = "files" }],
-    ["36-sidebar-640-moving", function () { view.sidebarFlick.contentY = 0 }, function () { view.sidebarFlick.flick(0, -1200) }, 60],
+    ["42-sidebar-640-bottom", function () { view.sidebarFlick.contentY = view.sidebarFlick.contentHeight - view.sidebarFlick.height }],
+    ["43-sidebar-640-select-last", function () { view.sidebarFlick.contentY = 0; view.selectedId = "a0000000000000000000000000000002"; view.tab = "chat" }],
+    ["44-sidebar-640-moving", function () { view.sidebarFlick.contentY = 0 }, function () { view.sidebarFlick.flick(0, -1200) }, 60],
     // The drawer of the rail and the narrow layouts, and 1 open thread of a narrow Messages page.
-    ["37-drawer", function () {
+    ["45-drawer", function () {
       view.anchors.fill = win.contentItem
       mock.state = mock.fixTimes(mock.fixture.state)
       view.pairPane = false
       view.selectedId = pixel
-      view.tab = "overview"
+      view.tab = "chat"
       view.drawerOpen = true
     }],
-    ["38-messages-thread", function () { view.drawerOpen = false; view.tab = "messages" }, function () { pageItem().threadOpen = true }],
+    ["46-messages-thread", function () { view.drawerOpen = false; view.tab = "messages" }, function () { pageItem().threadOpen = true }],
     // A group thread with a message that the phone could not send, then the New message form.
-    ["39-messages-group", function () { view.tab = "messages" }, function () {
+    ["47-messages-group", function () { view.tab = "messages" }, function () {
       var p = pageItem()
       p.open(p.convos.filter(function (c) { return c.thread === 4 })[0])
     }],
-    ["40-messages-new", function () { view.tab = "messages" }, function () {
+    ["48-messages-new", function () { view.tab = "messages" }, function () {
       pageItem().compose()
       setField("Phone number", "+47 912 34 567")
       setField("Text message via Pixel 8", "Running 10 minutes late")
     }],
     // An update replaced flux-gui while its window is open.
-    ["43-app-updated", function () { view.tab = "overview"; view.appReplaced = true }],
+    ["49-app-updated", function () { view.tab = "chat"; view.appReplaced = true }],
     // A new release, while this computer has an earlier version.
-    ["44-update-available", function () {
+    ["50-update-available", function () {
       view.appReplaced = false
       mock.setState(function (s) {
         s.self.version = "0.6.0"
@@ -270,7 +308,7 @@ Window {
       })
     }],
     // A phone with an earlier Android app, and a computer with the latest release.
-    ["45-phone-update", function () {
+    ["51-phone-update", function () {
       mock.setState(function (s) {
         s.self.version = "0.7.0"
         s.update = { enabled: true, latest: "0.7.0", available: false, url: "", apk: "", checkedAt: 0, error: "" }
@@ -283,9 +321,9 @@ Window {
         }
       })
     }],
-    // The remote access card with both settings on, then a phone that
-    // shows this screen, then Stop.
-    ["46-remote-on", function () {
+    // The access card with remote desktop and remote input on for every
+    // device, then a phone that shows this screen, then Stop.
+    ["52-remote-on", function () {
       mock.state = mock.fixTimes(mock.fixture.state)
       view.tab = "computer"
     }, function () {
@@ -293,16 +331,16 @@ Window {
       card.set("remoteDesktop", true)
       card.set("remoteInput", true)
     }],
-    ["47-remote-live", function () {
+    ["53-remote-live", function () {
       mock.setState(function (s) { s.desktop = { active: true, to: pixel, toName: "Pixel 8", monitor: "DP-1", width: 2560, height: 1440 } })
-    }],
-    ["48-remote-off", function () {
+    }, function () { scrollTo(findBy(pageItem(), "objectName", "desktopCard")) }],
+    ["54-remote-off", function () {
       mock.call("desktop.stop", {}, null)
-      remote().set("remoteDesktop", false)
-      remote().set("remoteInput", false)
-    }],
+      access().setGlobal("remoteDesktop", false)
+      access().setGlobal("remoteInput", false)
+    }, function () { scrollTo(access()) }],
     // A device on the network with the name of a paired phone.
-    ["49-pair-twin", function () {
+    ["55-pair-twin", function () {
       mock.setState(function (s) {
         s.devices.push({ id: "a0000000000000000000000000000005", name: "pixel  8", type: "phone", ip: "192.168.1.66", fingerprint: "E7A10C5F2B98D364", paired: false, online: true, pairState: "none", plugins: [], notifications: [], conversations: [] })
       })
@@ -320,7 +358,7 @@ Window {
       })
     }, null, 1500],
     // A thread that the phone did not send.
-    ["51-messages-error", function () {
+    ["57-messages-error", function () {
       mock.setState(function (s) { s.devices = s.devices.filter(function (d) { return d.pairState !== "incoming" }) })
       mock.failures = { "sms.thread": { code: "timeout", message: "Pixel 8 did not send the conversation" } }
       view.selectedId = pixel
@@ -331,7 +369,7 @@ Window {
     }],
     // Another phone with SMS: the page shows its conversations and no
     // thread of the first phone.
-    ["52-messages-other-phone", function () {
+    ["58-messages-other-phone", function () {
       mock.failures = {}
       mock.setState(function (s) {
         s.devices.push({ id: "a0000000000000000000000000000006", name: "Pixel 7a", type: "phone", ip: "192.168.1.80", fingerprint: "6A0D3E8C91F27B45", paired: true, online: true, pairState: "paired", pairedAt: "2026-01-02", battery: { charge: 55, charging: false }, plugins: ["sms"], notifications: [], conversations: [
@@ -342,7 +380,7 @@ Window {
     }],
     // A message that fluxd refuses. The error shows above the field, and
     // the draft stays.
-    ["53-messages-send-error", function () {
+    ["59-messages-send-error", function () {
       mock.failures = { "sms.send": { code: "bad_params", message: "The message has 1700 characters. Send at most 1600" } }
       view.selectedId = pixel
       view.tab = "messages"
@@ -350,15 +388,15 @@ Window {
       setField("Text message via Pixel 8", "See you at the station at 6")
       pageItem().send()
     }],
-    // The confirm dialog of the Unpair button in the header.
-    ["54-unpair-confirm", function () {
+    // The confirm dialog of Unpair on the page of the phone.
+    ["60-unpair-confirm", function () {
       view.selectedId = pixel
-      view.tab = "overview"
+      view.tab = "device"
       view.unpair()
-    }],
+    }, function () { scrollToEnd() }],
     // A phone that can start its camera and its mic when this computer
     // asks. No stream runs, so both cards show Start.
-    ["55-stream-start", function () {
+    ["61-stream-start", function () {
       view.unpairTarget = null
       mock.setState(function (s) {
         s.webcam = null
@@ -367,17 +405,17 @@ Window {
           if (s.devices[i].id === pixel) s.devices[i].plugins = s.devices[i].plugins.concat(["streamrequest"])
       })
       view.selectedId = pixel
-      view.tab = "overview"
-    }, function () { scrollToEnd() }],
+      view.tab = "device"
+    }, function () { scrollTo(camera()) }],
     // After Start, the camera card tells the user to confirm on the phone.
-    ["56-stream-asked", function () {}, function () {
+    ["62-stream-asked", function () {}, function () {
       findBy(camera(), "objectName", "startButton").clicked()
-      scrollToEnd()
+      scrollTo(camera())
     }],
     // 2 sent messages in the outbox of fluxd: 1 that the phone did not
     // report in 60 seconds, and 1 on its way. The wait lets the toast of
     // the step before go.
-    ["57-messages-outbox", function () {
+    ["63-messages-outbox", function () {
       var now = Math.floor(Date.now() / 1000)
       mock.setState(function (s) {
         for (var i = 0; i < s.devices.length; i++)
@@ -392,13 +430,11 @@ Window {
       var p = pageItem()
       p.open(p.convos.filter(function (c) { return c.thread === 1 })[0])
     }, 2500],
-    // The link dialog of the Open link tile, with a link in the field.
-    ["58-open-link", function () {
+    // o opens Chat with the link of the clipboard in the draft.
+    ["64-open-link", function () {
       view.selectedId = pixel
-      view.tab = "overview"
+      view.tab = "device"
       view.openLink()
-    }, function () {
-      findBy(view, "placeholder", "https://omarchy.org").text = "omarchy.org/flux"
     }]
   ]
 
@@ -434,12 +470,21 @@ Window {
   }
 
   function camera() { return findBy(pageItem(), "objectName", "cameraCard") }
-  function remote() { return findBy(pageItem(), "objectName", "remoteCard") }
+  function access() { return findBy(pageItem(), "objectName", "accessCard") }
+  function commands() { return findBy(pageItem(), "objectName", "commandList") }
 
-  // Scrolls the content area to the end, where the camera settings are.
+  // Scrolls the content area to the end.
   function scrollToEnd() {
     var f = findBy(view, "objectName", "contentFlick")
     if (f) f.contentY = Math.max(0, f.contentHeight - f.height)
+  }
+
+  // Scrolls the content area so that item starts near the top.
+  function scrollTo(item) {
+    var f = findBy(view, "objectName", "contentFlick")
+    if (!f || !item) return
+    var y = item.mapToItem(f.contentItem, 0, 0).y - 24
+    f.contentY = Math.max(0, Math.min(y, f.contentHeight - f.height))
   }
 
   function replyFirst() {

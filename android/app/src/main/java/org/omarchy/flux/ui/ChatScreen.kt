@@ -117,6 +117,26 @@ import org.omarchy.flux.core.inScope
 import org.omarchy.flux.core.inboxItems
 import org.omarchy.flux.core.isTellChoice
 import org.omarchy.flux.core.target
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import org.omarchy.flux.voice.Dictation
+import org.omarchy.flux.voice.DictationText
+import org.omarchy.flux.voice.VoiceField
+import org.omarchy.flux.voice.rememberVoiceTyping
+import androidx.compose.ui.text.input.KeyboardCapitalization
 
 /**
  * The agents, the approval, and the pair requests of all computers. A
@@ -147,6 +167,7 @@ class ChatActions(
     val showAll: () -> Unit,
     val allowNotifications: () -> Unit,
     val hideNotifications: () -> Unit,
+    val go: (Tab) -> Unit = {},
 )
 
 /**
@@ -263,59 +284,82 @@ fun ChatScreen(
         }) { FluxCore.toast(it) }
     }
 
-    Column(Modifier.fillMaxSize().imePadding()) {
-        Box(Modifier.statusBarsPadding()) {
-            ScreenHeader("Chat", if (paired) header else "") {
-                if (paired) ScopeChip(devices, scope, onScope, Modifier.widthIn(max = 180.dp), compact = true)
+    val menu = rememberThumbMenu()
+    // The target of the tools: the computer in scope, or the computers that the picker offers.
+    val tt = target(scope, devices)
+    val on = tt !is Target.None
+    // The thumb menu of the + key: the tools, and the other destinations nearest the thumb.
+    val menuSections = listOf(
+        ThumbSection(
+            "Files and camera",
+            listOf(
+                ThumbItem(Ic.sendFiles, "Send files", "Send files", on, actions.tools.sendFiles),
+                ThumbItem(Ic.folderOpen, "Get files", "Get files from the computer", on) { picker.run(tt, "Get files from") { actions.open(Route(it.id, "browse")) } },
+                ThumbItem(Ic.camera, "Photo", CameraMode.Photo.hint, on) { picker.run(tt, "Send from the camera to") { actions.open(Route(it.id, "camera:photo")) } },
+                ThumbItem(Ic.document, "Scan", CameraMode.Document.hint, on) { picker.run(tt, "Send from the camera to") { actions.open(Route(it.id, "camera:document")) } },
+                ThumbItem(Ic.text, "Text", CameraMode.Text.hint, on) { picker.run(tt, "Send from the camera to") { actions.open(Route(it.id, "camera:text")) } },
+                ThumbItem(Ic.qr, "QR", CameraMode.Qr.hint, on) { picker.run(tt, "Send from the camera to") { actions.open(Route(it.id, "camera:qr")) } },
+            ),
+        ),
+        ThumbSection(
+            "Go to",
+            listOf(
+                ThumbItem(Ic.tune, "Control", "Go to Control", true) { actions.go(Tab.Control) },
+                ThumbItem(Ic.laptop, "Computers", "Go to Computers", true) { actions.go(Tab.Computers) },
+            ),
+            wide = true,
+        ),
+    )
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().imePadding()) {
+            Box(Modifier.statusBarsPadding()) {
+                ScreenHeader("Chat", if (paired) header else "") {
+                    if (paired) ScopeChip(devices, scope, onScope, Modifier.widthIn(max = 180.dp), compact = true)
+                }
             }
-        }
-        ProgressLine {
-            if (running.isNotEmpty()) {
-                val size = running.sumOf { it.size }
-                LineFill(if (size > 0) running.sumOf { it.done }.toFloat() / size else 0f, Tn.blue)
+            ProgressLine {
+                if (running.isNotEmpty()) {
+                    val size = running.sumOf { it.size }
+                    LineFill(if (size > 0) running.sumOf { it.done }.toFloat() / size else 0f, Tn.blue)
+                }
             }
+            if (!paired) {
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = TiledGutter).padding(top = 12.dp, bottom = 16.dp),
+                ) { PairGuide(state, actions) }
+                return@Column
+            }
+            val t = target(scope, devices)
+            // Each computer reads the output of 1 agent at a time: the newest that waits, or else the newest that works.
+            val focus = remember(chat) {
+                chat.filterIsInstance<ChatEventItem>().map { it.item }.filterIsInstance<AgentItem>()
+                    .groupBy { it.deviceId }
+                    .mapNotNull { (_, agents) -> (agents.lastOrNull { it.kind == InboxKind.AgentInput } ?: agents.lastOrNull { it.kind == InboxKind.AgentWorking })?.key }
+                    .toSet()
+            }
+            DockLayout(
+                Modifier.weight(1f).fillMaxWidth(),
+                thread = { bottom ->
+                    ChatThread(
+                        chat, bottom, devices, active, focus, many = scope == null && devices.count { it.paired } > 1,
+                        reply = reply, notices = notices, actions = actions,
+                        onReply = { reply = it },
+                    )
+                },
+                dock = { shape ->
+                    ChatDock(
+                        shape, on = t !is Target.None, entries = entries, target = t, reply = reply,
+                        menu = menu,
+                        onClip = actions.tools.sendClipboard,
+                        onText = { text -> picker.run(t, "Send to") { Share.sendText(FluxCore, it.id, text) } },
+                        onReply = { text -> reply?.let { tell(it, text) } },
+                        onCancel = { reply = null },
+                    )
+                },
+            )
         }
-        if (!paired) {
-            Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = TiledGutter).padding(top = 12.dp, bottom = 16.dp),
-            ) { PairGuide(state, actions) }
-            return@Column
-        }
-        val t = target(scope, devices)
-        // Each computer reads the output of 1 agent at a time: the newest that waits, or else the newest that works.
-        val focus = remember(chat) {
-            chat.filterIsInstance<ChatEventItem>().map { it.item }.filterIsInstance<AgentItem>()
-                .groupBy { it.deviceId }
-                .mapNotNull { (_, agents) -> (agents.lastOrNull { it.kind == InboxKind.AgentInput } ?: agents.lastOrNull { it.kind == InboxKind.AgentWorking })?.key }
-                .toSet()
-        }
-        DockLayout(
-            Modifier.weight(1f).fillMaxWidth(),
-            thread = { bottom ->
-                ChatThread(
-                    chat, bottom, devices, active, focus, many = scope == null && devices.count { it.paired } > 1,
-                    reply = reply, notices = notices, actions = actions,
-                    onReply = { reply = it },
-                )
-            },
-            dock = { shape ->
-                ChatDock(
-                    shape, on = t !is Target.None, entries = entries, target = t, reply = reply,
-                    tools = listOf(
-                        DockTool(Ic.sendFiles, "Files", "Send files", actions.tools.sendFiles),
-                        DockTool(Ic.folderOpen, "Get", "Get files from the computer") { picker.run(t, "Get files from") { actions.open(Route(it.id, "browse")) } },
-                        DockTool(Ic.camera, "Photo", CameraMode.Photo.hint) { picker.run(t, "Send from the camera to") { actions.open(Route(it.id, "camera:photo")) } },
-                        DockTool(Ic.document, "Scan", CameraMode.Document.hint) { picker.run(t, "Send from the camera to") { actions.open(Route(it.id, "camera:document")) } },
-                        DockTool(Ic.text, "Text", CameraMode.Text.hint) { picker.run(t, "Send from the camera to") { actions.open(Route(it.id, "camera:text")) } },
-                        DockTool(Ic.qr, "QR", CameraMode.Qr.hint) { picker.run(t, "Send from the camera to") { actions.open(Route(it.id, "camera:qr")) } },
-                    ),
-                    onClip = actions.tools.sendClipboard,
-                    onText = { text -> picker.run(t, "Send to") { Share.sendText(FluxCore, it.id, text) } },
-                    onReply = { text -> reply?.let { tell(it, text) } },
-                    onCancel = { reply = null },
-                )
-            },
-        )
+        // The menu lies over the thread and the dock.
+        ThumbMenuOverlay(menu, menuSections)
     }
 }
 
@@ -940,10 +984,11 @@ internal fun breakAll(text: String): String {
 private class DockTool(@param:DrawableRes val icon: Int, val label: String, val description: String, val onClick: () -> Unit)
 
 /**
- * The dock of the chat: the clipboard of this phone with Send, the 6
- * tools, and the field for text or a link. While a [reply] is open, a row
- * with Cancel takes the place of the clipboard and the tools, and the field
- * writes to the agent. [entries] tell whether the clip went out already.
+ * The dock of the chat: the clipboard of this phone with Send, and the
+ * field for text or a link. The + key at the left of the field opens the
+ * thumb [menu]. While a [reply] is open, a row with Cancel takes the place
+ * of the clipboard, the + key hides, and the field writes to the agent.
+ * [entries] tell whether the clip went out already.
  */
 @Composable
 private fun ChatDock(
@@ -952,7 +997,7 @@ private fun ChatDock(
     entries: List<SendEntry>,
     target: Target,
     reply: ChatReply?,
-    tools: List<DockTool>,
+    menu: ThumbMenu,
     onClip: () -> Unit,
     onText: (String) -> Unit,
     onReply: (String) -> Unit,
@@ -973,32 +1018,24 @@ private fun ChatDock(
             }
         } else {
             ClipRow(clip, entries, enabled = on, onClip = onClip)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (k in tools) {
-                    DockKey(k.description, Modifier.weight(1f).height(56.dp), enabled = on, onClick = k.onClick) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Sym(k.icon, tint = Tn.blue, size = 21.dp)
-                            T(k.label, size = 11, weight = FontWeight.Medium, maxLines = 1, fit = true)
-                        }
-                    }
-                }
-            }
         }
         ChatComposer(
             enabled = on || reply != null,
             reply = reply,
             placeholder = when {
                 reply != null -> "Tell ${reply.agent} what to do differently"
-                target is Target.One -> "Type text or a link for ${target.device.name}"
-                else -> "Type text or a link"
+                target is Target.One -> "Text or a link for ${target.device.name}"
+                else -> "Text or a link"
             },
             onSend = { text -> if (reply != null) onReply(text) else onText(text) },
+            menu = if (reply == null) menu else null,
         )
     }
 }
 
+
 /**
- * The clipboard of this phone and its Send key, 56 dp high. The box shows
+ * The clipboard of this phone and its Send key, 44 dp high. The box shows
  * where the clip came from and its text on 1 line. After a send, the key
  * shows Sent.
  */
@@ -1007,10 +1044,10 @@ private fun ClipRow(clip: PhoneClip, entries: List<SendEntry>, enabled: Boolean,
     val now by rememberTicker(30_000L)
     val sent = clip.stamp.takeIf { it != 0L }?.let { s -> entries.lastOrNull { it.clipStamp == s } }
     val context = LocalContext.current
-    Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(
-            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Tn.bg).padding(horizontal = 11.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Tn.bg).padding(horizontal = 11.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
         ) {
             val meta = when {
                 sent != null -> "Clipboard · sent at ${timeText(context, sent.at)}"
@@ -1019,7 +1056,7 @@ private fun ClipRow(clip: PhoneClip, entries: List<SendEntry>, enabled: Boolean,
                 clip.stamp > 0 -> "Clipboard on this phone · ${agoText(clip.stamp, now)}"
                 else -> "Clipboard on this phone"
             }
-            T(meta, size = 11, color = Tn.cyan, weight = FontWeight.Medium, maxLines = 1)
+            T(meta, size = 10, color = Tn.cyan, weight = FontWeight.Medium, maxLines = 1)
             val text = clip.text
             if (text != null) {
                 T(text.replace('\n', ' '), Modifier.clearAndSetSemantics { contentDescription = text }, size = 12, family = Mono, maxLines = 1)
@@ -1036,71 +1073,137 @@ private fun ClipRow(clip: PhoneClip, entries: List<SendEntry>, enabled: Boolean,
         }
         val can = enabled && !clip.empty
         val ink = if (sent != null) Tn.text else Tn.onAccent
-        Column(
-            Modifier.width(88.dp).fillMaxHeight().alpha(if (can) 1f else DimAlpha).clip(RoundedCornerShape(12.dp))
+        Row(
+            Modifier.fillMaxHeight().alpha(if (can) 1f else DimAlpha).clip(RoundedCornerShape(12.dp))
                 .background(if (sent != null) Tn.line else Tn.blue)
                 .clickable(enabled = can, onClickLabel = "Send the clipboard", role = Role.Button) {
                     if (sent != null) FluxCore.toast("The clip is on ${sent.computer} already") else onClip()
-                },
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                }
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Sym(if (sent != null) Ic.check else Ic.pasteGo, tint = ink, size = 20.dp)
-            T(if (sent != null) "Sent" else "Send", size = 14, color = ink, weight = FontWeight.SemiBold)
+            Sym(if (sent != null) Ic.check else Ic.pasteGo, tint = ink, size = 18.dp)
+            T(if (sent != null) "Sent" else "Send", size = 13, color = ink, weight = FontWeight.SemiBold)
         }
     }
 }
 
 /**
- * The field and its send key. A web link opens in the browser of the
- * computer, and other text goes to its clipboard. While a [reply] is open,
- * the field has the accent border, takes the focus, and writes to the
- * agent.
+ * The field with the mic key and the send key. A web link opens in the
+ * browser of the computer, and other text goes to its clipboard. The round
+ * + key at the left opens the thumb [menu], with a tap or a hold. When the field takes the
+ * focus, that key hides, so the field takes its width, and the field grows
+ * to 6 lines. With text, the field shows the key of the large editor. While
+ * a [reply] is open, the field has the accent border, takes the focus, and
+ * writes to the agent. The words of a dictation go in at the cursor.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChatComposer(enabled: Boolean, reply: ChatReply?, placeholder: String, onSend: (String) -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
+private fun ChatComposer(
+    enabled: Boolean,
+    reply: ChatReply?,
+    placeholder: String,
+    onSend: (String) -> Unit,
+    menu: ThumbMenu?,
+) {
+    var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    var focused by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     LaunchedEffect(reply) {
-        text = ""
+        field = TextFieldValue()
         if (reply != null) runCatching { focus.requestFocus() }
     }
-    val can = enabled && text.isNotBlank()
+    // The field gives up the focus when the keyboard closes, so the key of the tools comes back.
+    val ime = WindowInsets.isImeVisible
+    var imeSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(ime) {
+        if (ime) {
+            imeSeen = true
+        } else if (imeSeen) {
+            imeSeen = false
+            focusManager.clearFocus()
+        }
+    }
+    val voice = rememberVoiceTyping { spoken ->
+        val e = DictationText.insert(field.text, field.selection.start, field.selection.end, spoken)
+        field = TextFieldValue(e.text, TextRange(e.cursor))
+    }
+    val can = enabled && field.text.isNotBlank()
     val send = {
         if (can) {
-            onSend(text.trim())
-            text = ""
+            onSend(field.text.trim())
+            field = TextFieldValue()
+            editing = false
         }
     }
     val shape = RoundedCornerShape(24.dp)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-        BasicTextField(
-            value = text,
-            onValueChange = { text = it },
-            modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = placeholder },
-            enabled = enabled,
-            textStyle = TextStyle(color = Tn.text, fontSize = 14.sp, lineHeight = 20.sp),
-            cursorBrush = SolidColor(Tn.blue),
-            maxLines = 4,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { send() }),
-            decorationBox = { inner ->
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        // The key of the tools also hides while the phone listens, so the panel of the dictation takes the width.
+        AnimatedVisibility(
+            menu != null && !focused && voice.dictation.phase == Dictation.Phase.Idle,
+            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start),
+        ) {
+            val open = menu?.open == true
+            Box(
+                Modifier.padding(end = 8.dp).size(48.dp).clip(CircleShape).background(if (open) Tn.blue else Tn.line)
+                    .then(if (menu != null) Modifier.thumbMenuKey(menu, enabled = true, label = "Menu: files, camera, and the other screens") else Modifier),
+                contentAlignment = Alignment.Center,
+            ) { Sym(Ic.add, tint = if (open) Tn.onAccent else Tn.text, size = 24.dp) }
+        }
+        VoiceField(
+            voice, Modifier.weight(1f), enabled = enabled, round = true,
+            send = {
                 Box(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape).background(Tn.bg).border(1.dp, if (reply != null) Tn.blue else Tn.lineHi, shape)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (text.isEmpty()) T(placeholder, Modifier.clearAndSetSemantics {}, size = 14, color = Tn.sub, maxLines = 1)
-                    inner()
-                }
+                    Modifier.size(48.dp).clip(CircleShape).background(if (can) Tn.blue else Tn.line)
+                        .clickable(enabled = can, onClickLabel = "Send", role = Role.Button, onClick = send)
+                        .semantics { contentDescription = "Send" },
+                    contentAlignment = Alignment.Center,
+                ) { Sym(Ic.up, tint = if (can) Tn.onAccent else Tn.sub, size = 22.dp) }
             },
-        )
-        Box(
-            Modifier.size(48.dp).clip(CircleShape).background(if (can) Tn.blue else Tn.line)
-                .clickable(enabled = can, onClickLabel = "Send", role = Role.Button, onClick = send)
-                .semantics { contentDescription = "Send" },
-            contentAlignment = Alignment.Center,
-        ) { Sym(Ic.up, tint = if (can) Tn.onAccent else Tn.sub, size = 22.dp) }
+        ) { m ->
+            BasicTextField(
+                value = field,
+                onValueChange = { field = it },
+                modifier = m.focusRequester(focus).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = placeholder },
+                enabled = enabled,
+                textStyle = TextStyle(color = Tn.text, fontSize = 14.sp, lineHeight = 20.sp),
+                cursorBrush = SolidColor(Tn.blue),
+                maxLines = if (focused) 6 else 4,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { send() }),
+                decorationBox = { inner ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape).background(Tn.bg)
+                            .border(1.dp, if (reply != null || focused) Tn.blue else Tn.lineHi, shape)
+                            .padding(start = 16.dp, end = if (field.text.isEmpty()) 16.dp else 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.weight(1f).padding(vertical = 14.dp)) {
+                            if (field.text.isEmpty()) T(placeholder, Modifier.clearAndSetSemantics {}, size = 14, color = Tn.sub, maxLines = 1)
+                            inner()
+                        }
+                        // Only the key of the large editor shows, so the text keeps the width. The editor has Clear.
+                        if (field.text.isNotEmpty()) ExpandKey({ editing = true })
+                    }
+                },
+            )
+        }
+    }
+    if (editing) {
+        FieldEditor(
+            title = if (reply != null) "Reply to ${reply.agent}" else "Text or a link",
+            value = field,
+            onValueChange = { field = it },
+            onDismiss = { editing = false },
+            placeholder = placeholder,
+            keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        ) {
+            FluxButton("Send", { send() }, enabled = can)
+        }
     }
 }
 

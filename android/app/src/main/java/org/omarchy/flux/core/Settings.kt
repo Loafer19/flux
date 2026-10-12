@@ -72,6 +72,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("sendScreenshots", false)
         set(v) = prefs.edit().putBoolean("sendScreenshots", v).apply()
 
+    /** True after the chat showed once that a swipe leads to the other screens. */
+    var swipeHinted: Boolean
+        get() = prefs.getBoolean("swipeHinted", false)
+        set(v) = prefs.edit().putBoolean("swipeHinted", v).apply()
+
     /** Sends each new camera photo to the computers. */
     var sendPhotos: Boolean
         get() = prefs.getBoolean("sendPhotos", false)

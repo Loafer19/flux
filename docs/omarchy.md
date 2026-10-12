@@ -17,11 +17,11 @@ The plugin ID is `flux`.
 To open the window on a screen, run:
 
 ```
-omarchy-shell shell summon flux '{"page":"files"}'
+omarchy-shell shell summon flux '{"page":"chat"}'
 ```
 
-The payload is optional. `page` is one of `network`, `overview`, `clipboard`, `files`,
-`notifications`, `messages`, or `commands`.
+The payload is optional. `page` is one of `network`, `chat`, `overview`, `clipboard`, `files`,
+`notifications`, `messages`, or `device` (`commands` opens `device`).
 To open or close the window, use `omarchy-shell shell toggle flux '{}'`.
 
 The panel loads the Flux view when the window opens and unloads it when the
@@ -90,8 +90,8 @@ It does not touch the running shell, `~/.config/omarchy`, or the session bus.
 
 ```
 gui/omarchy/tools/test-offscreen.sh /tmp/flux-shell copy "$XDG_RUNTIME_DIR/flux/fluxd.sock"
-qs ipc --pid "$(pgrep -f '^qs -p /tmp/flux-shell/omarchy/shell')" call shell summon flux '{"page":"files"}'
-qs ipc --pid "$(pgrep -f '^qs -p /tmp/flux-shell/omarchy/shell')" call shell call flux snapshot overview:/tmp/flux-shell/panel.png
+qs ipc --pid "$(pgrep -f '^qs -p /tmp/flux-shell/omarchy/shell')" call shell summon flux '{"page":"chat"}'
+qs ipc --pid "$(pgrep -f '^qs -p /tmp/flux-shell/omarchy/shell')" call shell call flux snapshot chat:/tmp/flux-shell/panel.png
 ```
 
 - `copy` installs the plugin with the test wrappers in `tools/`. The bar widget

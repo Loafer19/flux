@@ -235,7 +235,9 @@ It never pairs by itself.
 A received file shows its progress, then **Open**.
 Its context menu has **Open**, **Show in Finder**, and **Clear Finished Transfers**.
 
-The dock under the thread shows the clipboard of this Mac with **Send**, the tools for files, the files of the computer, and the camera modes, and a field for text or a link.
+The dock under the thread shows the clipboard of this Mac with **Send**. Under it are the **+** key, a field for text or a link, the mic key, and **Send**.
+The **+** key opens a menu with **Send files**, **Get files**, **Photo**, **Scan**, **Text**, and **QR**, and under **Go to**, **Control** and **Computers**.
+Click **+** and select an item, or press **+**, move the pointer to an item, and release the button.
 A link that starts with `http://` or `https://` opens in the browser of the computer. Other text goes to the clipboard of the computer.
 To send files from Finder, drop them on **Chat** or on the Dock icon, or select **Services > Send to Flux**.
 

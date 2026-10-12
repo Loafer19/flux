@@ -107,8 +107,31 @@ QtObject {
   // The word for the device in button labels, for example "Ring phone".
   function noun(type) {
     if (type === "phone" || type === "tablet") return type
-    if (type === "laptop" || type === "desktop") return "PC"
+    if (type === "laptop" || type === "desktop") return "computer"
     return "device"
+  }
+
+  // The name of the page of a device, for example "Phone".
+  function deviceWord(type) {
+    var n = noun(type)
+    return n.charAt(0).toUpperCase() + n.slice(1)
+  }
+
+  // The day of a time for the chat: "Today", "Yesterday", or a date such
+  // as "Fri 9 Oct". A date of another year shows the year.
+  function day(sec) {
+    if (!sec) return ""
+    var d = new Date(sec * 1000)
+    var now = new Date()
+    if (d.toDateString() === now.toDateString()) return "Today"
+    var y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+    if (d.toDateString() === y.toDateString()) return "Yesterday"
+    return Qt.formatDate(d, d.getFullYear() === now.getFullYear() ? "ddd d MMM" : "d MMM yyyy")
+  }
+
+  // True when the path ends with the extension of an image that Qt shows.
+  function isImage(path) {
+    return /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(path || ""))
   }
 
   function battery(b) {
@@ -179,7 +202,10 @@ QtObject {
 
     "calendar": 0xF0B67, "github": 0xF02A4, "bank": 0xF0E80, "chat": 0xF0EDE, "mail": 0xF01F0,
     "account": 0xF0B55, "whatsapp": 0xF05A3, "slack": 0xF04B1, "spotify": 0xF04C7,
-    "firefox": 0xF0239, "chrome": 0xF02AF, "web": 0xF059F
+    "firefox": 0xF0239, "chrome": 0xF02AF, "web": 0xF059F,
+
+    "forum": 0xF0822, "paperclip": 0xF03E2, "pin": 0xF0403, "pin-outline": 0xF0931,
+    "image": 0xF02E9, "file": 0xF0224, "folder-open": 0xF0770, "scan": 0xF113D
   })
 
 
@@ -203,6 +229,14 @@ QtObject {
     } catch (e) {
       return ""
     }
+  }
+
+  // Converts an absolute path to a file URL. Each part of the path is
+  // encoded, so a name with "#" or "?" stays a part of the path.
+  function fileUrl(path) {
+    var p = String(path || "")
+    if (p.charAt(0) !== "/") return ""
+    return "file://" + p.split("/").map(encodeURIComponent).join("/")
   }
 
   // The web link in text that the user typed, or "". A link is an http or

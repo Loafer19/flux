@@ -4,7 +4,7 @@ import ".."
 // Test wrapper for the offscreen test. It adds snapshot("<page>:<path>"),
 // which selects a screen and saves the window as a PNG, and probe(). Call
 // them with:
-//   qs -p <shell> ipc call shell call flux snapshot overview:/tmp/panel.png
+//   qs -p <shell> ipc call shell call flux snapshot chat:/tmp/panel.png
 //   qs -p <shell> ipc call shell call flux probe ring
 Panel {
   id: panel

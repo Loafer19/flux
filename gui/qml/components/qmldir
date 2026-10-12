@@ -11,7 +11,6 @@ OverviewRules 1.0 OverviewRules.qml
 PairCard 1.0 PairCard.qml
 SectionLabel 1.0 SectionLabel.qml
 Stripes 1.0 Stripes.qml
-Tile 1.0 Tile.qml
 Toast 1.0 Toast.qml
 Txt 1.0 Txt.qml
 Icon 1.0 Icon.qml
@@ -21,7 +20,15 @@ Chip 1.0 Chip.qml
 Toggle 1.0 Toggle.qml
 ValueSlider 1.0 ValueSlider.qml
 CameraCard 1.0 CameraCard.qml
-RemoteCard 1.0 RemoteCard.qml
 KeyedModel 1.0 KeyedModel.qml
 NoticeBar 1.0 NoticeBar.qml
 QrImage 1.0 QrImage.qml
+AccessCard 1.0 AccessCard.qml
+CardTitle 1.0 CardTitle.qml
+ChatEntry 1.0 ChatEntry.qml
+CommandList 1.0 CommandList.qml
+Composer 1.0 Composer.qml
+IconAction 1.0 IconAction.qml
+TextAction 1.0 TextAction.qml
+RemoteCard 1.0 RemoteCard.qml
+Tile 1.0 Tile.qml

@@ -89,9 +89,9 @@ An image snippet can contain up to 16 MiB.
 
 ## Per-device access
 
-The Overview page has a **Device access** section.
+The page of the device, for example **Phone**, has an **Access** card.
 Each switch controls access for the selected device.
-A global feature switch must also be on.
+A global feature switch must also be on. A feature that is off for every device shows `Off on this computer.` under its switch.
 Agent control also needs agent output access.
 Agent terminals also need agent control access.
 

@@ -53,9 +53,6 @@ Item {
   // The scrim takes the keyboard while the dialog is open, so give it back to
   // the shortcuts when it closes.
   onUnpairTargetChanged: if (!unpairTarget) forceActiveFocus()
-  // The device that the link dialog sends to. Null when it is closed.
-  property var linkTarget: null
-  onLinkTargetChanged: if (!linkTarget) forceActiveFocus()
 
   property alias daemonUp: rules.daemonUp
   property alias allDevices: rules.allDevices
@@ -72,6 +69,7 @@ Item {
   property alias dev: rules.dev
   property alias devOnline: rules.devOnline
   property alias devName: rules.devName
+  property alias devType: rules.devType
   property alias visibleTabs: rules.visibleTabs
   property alias currentTab: rules.currentTab
   property alias networkTab: rules.networkTab
@@ -112,8 +110,9 @@ Item {
     })
   }
 
-  // Opens the link dialog for the selected device. The field starts with
-  // the newest clipboard entry when that entry is a web link.
+  // Opens Chat and puts the cursor in its draft. An empty draft gets the
+  // newest clipboard entry when that entry is a web link. Send then opens
+  // the link in a notification on the device.
   function openLink() {
     if (!dev) return
     if (!dev.online) {
@@ -121,21 +120,11 @@ Item {
       return
     }
     var clips = backend ? (backend.clipboard || []) : []
-    linkField.text = clips.length > 0 ? Fmt.webLink(clips[0].text) : ""
-    linkTarget = dev
-    linkField.input.selectAll()
-    linkField.input.forceActiveFocus()
-  }
-
-  // Sends the link in the dialog. The device shows it in a notification,
-  // and a tap there opens it in the browser.
-  function sendLink() {
-    var link = Fmt.webLink(linkField.text)
-    var target = linkTarget
-    if (link === "" || !target) return
-    linkTarget = null
-    var name = target.name || "the device"
-    call("share.url", { device: target.id, url: link }, function () { toast("Link sent. Open its notification on " + name + ".") })
+    var link = clips.length > 0 ? Fmt.webLink(clips[0].text) : ""
+    go("chat")
+    Qt.callLater(function () {
+      if (page.item && page.item.focusComposer) page.item.focusComposer(link)
+    })
   }
 
   property alias sidebarFlick: sideFlick
@@ -895,94 +884,6 @@ Item {
           OutlineButton {
             text: "Cancel"
             onClicked: root.unpairTarget = null
-          }
-        }
-      }
-    }
-  }
-
-  // The link dialog: a web link for the browser of the device. It uses the
-  // same scrim and card as the unpair dialog. Enter sends, and Escape
-  // closes the dialog.
-  Item {
-    id: linkScrim
-    objectName: "linkDialog"
-    anchors.fill: parent
-    z: 30
-    visible: !!root.linkTarget
-
-    Rectangle {
-      anchors.fill: parent
-      color: Theme.alpha(Theme.bg, 0.6)
-      MouseArea {
-        anchors.fill: parent
-        onClicked: root.linkTarget = null
-      }
-    }
-
-    Card {
-      anchors.centerIn: parent
-      width: Math.min(440, parent.width - 32)
-      height: linkCol.implicitHeight + 40
-
-      // A click on the card does not reach the scrim behind it and close.
-      MouseArea { anchors.fill: parent }
-
-      Column {
-        id: linkCol
-        x: 20
-        y: 20
-        width: parent.width - 40
-        spacing: 10
-
-        readonly property string targetName: root.linkTarget ? (root.linkTarget.name || "the device") : "the device"
-        readonly property bool valid: Fmt.webLink(linkField.text) !== ""
-
-        Txt {
-          width: parent.width
-          text: "Open a link on " + linkCol.targetName
-          font.pixelSize: 16
-          font.weight: Font.DemiBold
-          wrapMode: Text.Wrap
-        }
-        Txt {
-          width: parent.width
-          text: linkCol.targetName + " shows the link in a notification. Open the notification to show the page in the browser."
-          color: Theme.dim
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
-        }
-        Field {
-          id: linkField
-          width: parent.width
-          placeholder: "https://omarchy.org"
-          onAccepted: root.sendLink()
-          onEscaped: root.linkTarget = null
-        }
-        Txt {
-          width: parent.width
-          visible: linkField.text.trim() !== "" && !linkCol.valid
-          text: "Enter an http or https link."
-          color: Theme.err
-          font.pixelSize: 12
-          wrapMode: Text.Wrap
-        }
-        Item { width: 1; height: 2 }
-        // RightToLeft puts Send on the right, the primary action.
-        Row {
-          width: parent.width
-          spacing: 8
-          layoutDirection: Qt.RightToLeft
-          AccentButton {
-            objectName: "linkSend"
-            icon: "send"
-            text: "Send"
-            active: linkCol.valid
-            onClicked: root.sendLink()
-          }
-          OutlineButton {
-            text: "Cancel"
-            onClicked: root.linkTarget = null
           }
         }
       }

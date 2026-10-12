@@ -377,6 +377,36 @@ func TestLargeLocalText(t *testing.T) {
 	}
 }
 
+// TestLocalClipNamesItsDevices checks that a local copy names the devices
+// that clipboard sync sent it to: a connected device, and not an offline
+// device. A text that is too large to send names no device.
+func TestLocalClipNamesItsDevices(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	onDesk, onPhone, _, phoneID := linkPair(t, ctx)
+	go onPhone.Receive(func(*proto.Packet) {})
+
+	d, _ := clipDaemon(t, true)
+	d.devices[phoneID] = &Device{ID: phoneID, Name: "Pixel 8", Paired: true, link: onDesk}
+	d.devices["tablet"] = &Device{ID: "tablet", Name: "Galaxy Tab", Paired: true}
+	d.onLocalClipboard("yay -S flux-git")
+	if e := d.clipboard[0]; e.Device != "" || !slices.Equal(e.To, []string{phoneID}) {
+		t.Fatalf("entry %+v", e)
+	}
+	// The same text again keeps 1 entry and adds a device that connected.
+	d.devices["tablet"].link = onDesk
+	d.onLocalClipboard("yay -S flux-git")
+	want := []string{phoneID, "tablet"}
+	slices.Sort(want)
+	if len(d.clipboard) != 1 || !slices.Equal(d.clipboard[0].To, want) {
+		t.Fatalf("history %+v", d.clipboard)
+	}
+	d.onLocalClipboard(strings.Repeat("a", maxSentText+1))
+	if e := d.clipboard[0]; len(e.To) != 0 {
+		t.Fatalf("a text that fluxd did not send names %q", e.To)
+	}
+}
+
 // connectClip returns the flux.clipboard.connect packet of a device that
 // copied text at the time at.
 func connectClip(text string, at time.Time) *proto.Packet {

@@ -14,6 +14,7 @@ Item {
 
   readonly property string pixel: "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93"
   readonly property string other: "a0000000000000000000000000000006"
+  readonly property string iphone: "b71c04e9d2a84f3e9c6a5d1b0e8f2c47"
 
   MockBackend { id: mock }
 
@@ -164,6 +165,9 @@ Item {
       }
       atLeast(name, "accent", T.accent, T.mix(T.bg2, T.accent, 0.18), 4.5)
       for (i = 0; i < 2; i++) atLeast(name, "edge", T.edge, surfaces[i], 3)
+      // The fill of a sent entry in the chat, and its inks.
+      var inks = ["fg", "accent", "ok", "warn", "err", "sentDim"]
+      for (i = 0; i < inks.length; i++) atLeast(name, inks[i], T[inks[i]], T.sent, 4.5)
     }
 
     function test_defaultsMeetTheRules() {
@@ -173,6 +177,8 @@ Item {
       verify(Qt.colorEqual(Theme.accent, "#7aa2f7"))
       verify(Qt.colorEqual(Theme.ok, "#9ece6a"))
       verify(Qt.colorEqual(Theme.bg3, "#292e42"))
+      // A sent entry has a fill of its own.
+      verify(!Qt.colorEqual(Theme.sent, Theme.bg2))
     }
 
     function test_lowContrastThemesMeetTheRules() {
@@ -574,9 +580,9 @@ Item {
       view.selectedId = top.pixel
       view.tab = "notifications"
       tryVerify(function () { return !!page(view) && !!findBy(page(view), "text", "Hello") })
-      var close = findBy(page(view), "text", "×")
+      var close = findBy(page(view), "tip", "Dismiss on the phone")
       verify(!!close)
-      close.children[0].clicked(null)
+      close.clicked()
       var sent = requestsOf("notification.dismiss")
       compare(sent.length, 1)
       compare(sent[0].params.id, "hasOwnProperty")
@@ -664,7 +670,7 @@ Item {
 
     function test_clipboardDeleteCallsApi() {
       var view = createTemporaryObject(viewComponent, top)
-      view.tab = "clipboard"
+      view.tab = "chat"
       tryVerify(function () { return (mock.state.clipboard || []).length > 0 })
       var id = mock.state.clipboard[0].id
       view.call("clipboard.delete", { id: id })
@@ -673,7 +679,7 @@ Item {
 
     function test_clipboardClearCallsApi() {
       var view = createTemporaryObject(viewComponent, top)
-      view.tab = "clipboard"
+      view.tab = "chat"
       tryVerify(function () { return (mock.state.clipboard || []).length > 0 })
       view.call("clipboard.clear", {})
       tryVerify(function () { return (mock.state.clipboard || []).filter(function (e) { return !e.pinned }).length === 0 })
@@ -681,7 +687,7 @@ Item {
 
     function test_clipboardLimitSetting() {
       var view = createTemporaryObject(viewComponent, top)
-      view.tab = "clipboard"
+      view.tab = "chat"
       view.call("settings.set", { key: "clipboardLimit", value: 25 })
       tryCompare(mock.state.settings, "clipboardLimit", 25)
     }
@@ -736,7 +742,7 @@ Item {
       })
       var view = createTemporaryObject(viewComponent, top)
       view.selectedId = top.pixel
-      view.tab = "overview"
+      view.tab = "device"
       var card = null
       tryVerify(function () { card = findBy(page(view), "objectName", "cameraCard"); return !!card })
       compare(card.aspects.length, 16)
@@ -748,10 +754,10 @@ Item {
       compare(card.aspects, ["16:9", "4:3", "1:1", "9:16"])
     }
 
-    function test_overviewShowsBrowseSessions() {
+    function test_devicePageShowsBrowseSessions() {
       var view = createTemporaryObject(viewComponent, top)
       view.selectedId = top.pixel
-      view.tab = "overview"
+      view.tab = "device"
       var card = null
       tryVerify(function () { card = findBy(page(view), "objectName", "browseCard"); return !!card })
       verify(!card.visible)
@@ -763,7 +769,20 @@ Item {
       verify(!card.visible)
     }
 
-    function test_overviewShowsFingerprint() {
+    function test_devicePageShowsFingerprint() {
+      var view = createTemporaryObject(viewComponent, top)
+      view.selectedId = top.pixel
+      view.tab = "device"
+      var line = null
+      tryVerify(function () { line = findBy(page(view), "objectName", "fingerprint"); return !!line })
+      verify(line.visible)
+      verify(!!findBy(line, "text", "5EE6 825F 974E D59A"))
+      mock.updateDevice(top.pixel, function (d) { d.fingerprint = ""; return d })
+      verify(!line.visible)
+    }
+
+    // Overview keeps the fingerprint behind Show.
+    function test_overviewKeepsFingerprintBehindShow() {
       var view = createTemporaryObject(viewComponent, top)
       view.selectedId = top.pixel
       view.tab = "overview"
@@ -853,7 +872,7 @@ Item {
     function overview() {
       var view = createTemporaryObject(viewComponent, top)
       view.selectedId = top.pixel
-      view.tab = "overview"
+      view.tab = "device"
       return view
     }
 
@@ -1165,7 +1184,7 @@ Item {
   }
 
   TestCase {
-    name: "OpenLink"
+    name: "Chat"
     when: mock.ready
 
     function init() {
@@ -1174,38 +1193,172 @@ Item {
       mock.failures = {}
     }
 
-    // The dialog starts with the newest clipboard entry when it is a link,
-    // sends only a web link, and adds https:// to a host name.
-    function test_sendsLink() {
+    function cleanup() {
+      mock.failures = {}
+    }
+
+    function chat(id) {
       var view = createTemporaryObject(viewComponent, top)
       tryVerify(function () { return view.allDevices.length > 0 })
-      view.selectedId = top.pixel
-      view.openLink()
-      compare(view.linkTarget.id, top.pixel)
-      var field = findBy(view, "placeholder", "https://omarchy.org")
-      compare(field.text, mock.clipboard[0].text)
-      var send = findBy(view, "objectName", "linkSend")
-      field.text = "not a link"
-      verify(!send.active)
-      send.clicked()
+      view.selectedId = id || top.pixel
+      view.tab = "chat"
+      tryVerify(function () { return !!page(view) && page(view).hasOwnProperty("items") })
+      return view
+    }
+
+    function keys(view) {
+      return page(view).items.map(function (e) { return e.key }).sort()
+    }
+
+    function draft(view) {
+      return findBy(page(view), "objectName", "chatDraft")
+    }
+
+    // A thread holds what the device sent, what this computer sent to it,
+    // and the local copies that clipboard sync sent to it.
+    function test_threadOfTheDevice() {
+      var view = chat()
+      // A key is "c" and the ID of a clip, or "t" and the ID of a file.
+      compare(keys(view), ["cc1", "cc2", "cc4", "cc5", "cc6", "cc7", "cc8", "tt1", "tt2", "tt3", "tt4", "tt5"])
+      view.selectedId = top.iphone
+      compare(keys(view), ["cc3", "cc4"])
+      // Newest first, so the newest entry is at the bottom of the list.
+      var items = page(view).items
+      verify(items[0].at >= items[1].at)
+    }
+
+    function test_textGoesToTheClipboardOfTheDevice() {
+      var view = chat()
+      var field = draft(view)
+      field.text = "Gate B14\n"
+      page(view).send()
+      var sent = requestsOf("clipboard.send")
+      compare(sent.length, 1)
+      compare(sent[0].params.device, top.pixel)
+      compare(sent[0].params.text, "Gate B14")
       compare(requestsOf("share.url").length, 0)
-      field.text = "omarchy.org/flux"
-      verify(send.active)
-      send.clicked()
+      tryCompare(field, "text", "")
+    }
+
+    function test_linkOpensOnTheDevice() {
+      var view = chat()
+      draft(view).text = "omarchy.org/flux"
+      page(view).send()
       var sent = requestsOf("share.url")
       compare(sent.length, 1)
       compare(sent[0].params.device, top.pixel)
       compare(sent[0].params.url, "https://omarchy.org/flux")
-      compare(view.linkTarget, null)
+      compare(requestsOf("clipboard.send").length, 0)
     }
 
-    function test_offlineDeviceGetsNoDialog() {
+    // An error shows above the dock, and the draft stays.
+    function test_sendErrorKeepsTheDraft() {
+      var view = chat()
+      var msg = "Clipboard access is off for this device"
+      mock.failures = { "clipboard.send": { code: "disabled", message: msg } }
+      var field = draft(view)
+      field.text = "Gate B14"
+      page(view).send()
+      var line = findBy(page(view), "objectName", "chatError")
+      tryVerify(function () { return line.visible && line.text === msg })
+      compare(field.text, "Gate B14")
+      // A new draft clears the error.
+      field.text = "Gate B15"
+      verify(!line.visible)
+    }
+
+    function test_offlineDeviceSendsNoText() {
+      mock.updateDevice(top.pixel, function (d) { d.online = false; return d })
+      var view = chat()
+      draft(view).text = "Gate B14"
+      verify(!findBy(page(view), "objectName", "chatSend").active)
+      page(view).send()
+      compare(requestsOf("clipboard.send").length, 0)
+    }
+
+    function test_filesGoToTheDevice() {
+      var view = chat()
+      page(view).sendFiles(["/home/user/notes.md"], 0)
+      var sent = requestsOf("share.files")
+      compare(sent.length, 1)
+      compare(sent[0].params.device, top.pixel)
+      compare(sent[0].params.paths, ["/home/user/notes.md"])
+    }
+
+    // Saved shows the saved clips of every device, and no files.
+    function test_savedShowsEverySavedClip() {
+      mock.setState(function (s) { s.clipboard.forEach(function (e) { e.pinned = e.id === "c3" || e.id === "c1" }) })
+      var view = chat()
+      page(view).savedOnly = true
+      compare(keys(view), ["cc1", "cc3"])
+    }
+
+    // o opens Chat with the newest clipboard link in an empty draft.
+    function test_openLinkFillsTheDraft() {
       var view = createTemporaryObject(viewComponent, top)
       tryVerify(function () { return view.allDevices.length > 0 })
       view.selectedId = top.pixel
+      view.tab = "device"
+      view.openLink()
+      compare(view.currentTab.key, "chat")
+      tryVerify(function () { var f = draft(view); return !!f && f.text === mock.clipboard[0].text })
+      page(view).send()
+      var sent = requestsOf("share.url")
+      compare(sent.length, 1)
+      compare(sent[0].params.url, mock.clipboard[0].text)
+    }
+
+    function test_offlineDeviceGetsNoLink() {
+      var view = createTemporaryObject(viewComponent, top)
+      tryVerify(function () { return view.allDevices.length > 0 })
+      view.selectedId = top.pixel
+      view.tab = "device"
       mock.updateDevice(top.pixel, function (d) { d.online = false; return d })
       view.openLink()
-      compare(view.linkTarget, null)
+      compare(view.currentTab.key, "device")
+    }
+
+    // The keys of the pages before Chat still open a page.
+    function test_oldPageKeys() {
+      var view = chat()
+      var pages = { overview: "overview", commands: "device", clipboard: "clipboard", files: "files", messages: "messages", notifications: "notifications", chat: "chat", device: "device" }
+      for (var k in pages) {
+        verify(view.showPage(k), k)
+        compare(view.currentTab.key, pages[k], k)
+      }
+      verify(!view.showPage("nothing"))
+    }
+  }
+
+  TestCase {
+    name: "Access"
+    when: mock.ready
+
+    function init() {
+      mock.state = mock.fixTimes(mock.fixture.state)
+      mock.requests = []
+    }
+
+    // Remote desktop turns on and off for every device from the card. The
+    // switch is the rule of the device.
+    function test_remoteForEveryDevice() {
+      var view = createTemporaryObject(viewComponent, top)
+      view.selectedId = top.pixel
+      view.tab = "device"
+      var card = null
+      tryVerify(function () { card = findBy(page(view), "objectName", "accessCard"); return !!card })
+      var turn = findBy(card, "objectName", "computer-remoteDesktop")
+      compare(turn.text, "Turn on")
+      turn.clicked()
+      compare(requestsOf("settings.set")[0].params.key, "remoteDesktop")
+      compare(requestsOf("settings.set")[0].params.value, true)
+      tryCompare(turn, "text", "Turn off")
+      findBy(card, "objectName", "toggle-remoteDesktop").toggled(false)
+      var rule = requestsOf("device.settings.set")
+      compare(rule.length, 1)
+      compare(rule[0].params.device, top.pixel)
+      compare(rule[0].params.key, "remoteDesktop")
+      compare(rule[0].params.value, false)
     }
   }
 }

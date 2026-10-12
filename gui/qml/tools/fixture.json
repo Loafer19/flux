@@ -199,10 +199,21 @@
     "time": -60
    },
    {
+    "id": "c6",
+    "text": "https://github.com/basecamp/omarchy/pull/1482",
+    "dir": "out",
+    "device": "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93",
+    "source": "link",
+    "time": -300
+   },
+   {
     "id": "c2",
     "text": "yay -S flux-git",
     "dir": "out",
     "device": "",
+    "to": [
+     "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93"
+    ],
     "time": -1200
    },
    {
@@ -213,10 +224,22 @@
     "time": -2040
    },
    {
+    "id": "c7",
+    "text": "Meet at the north entrance at 15:30.\nThe door code is 4471.",
+    "dir": "out",
+    "device": "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93",
+    "source": "share",
+    "time": -2400
+   },
+   {
     "id": "c4",
     "text": "ssh deploy@10.0.4.12",
     "dir": "out",
     "device": "",
+    "to": [
+     "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93",
+     "b71c04e9d2a84f3e9c6a5d1b0e8f2c47"
+    ],
     "time": -3120
    },
    {
@@ -225,6 +248,13 @@
     "dir": "in",
     "device": "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93",
     "time": -8640
+   },
+   {
+    "id": "c8",
+    "text": "omarchy-theme-set tokyo-night",
+    "dir": "in",
+    "device": "3f8e2a1c9b7d4e6fa0c5b8d2e1f47a93",
+    "time": -90000
    }
   ],
   "transfers": [
@@ -236,7 +266,8 @@
     "done": 114660000,
     "dir": "in",
     "state": "active",
-    "rate": 12000000
+    "rate": 12000000,
+    "time": -40
    },
    {
     "id": "t2",
@@ -246,7 +277,8 @@
     "done": 0,
     "dir": "in",
     "state": "queued",
-    "rate": 0
+    "rate": 0,
+    "time": -30
    },
    {
     "id": "t3",
@@ -256,7 +288,8 @@
     "done": 4200000,
     "dir": "in",
     "state": "done",
-    "rate": 0
+    "rate": 0,
+    "time": -660
    },
    {
     "id": "t4",
@@ -266,7 +299,8 @@
     "done": 1100000,
     "dir": "out",
     "state": "done",
-    "rate": 0
+    "rate": 0,
+    "time": -1500
    },
    {
     "id": "t5",
@@ -276,7 +310,8 @@
     "done": 48000,
     "dir": "in",
     "state": "done",
-    "rate": 0
+    "rate": 0,
+    "time": -86400
    }
   ],
   "settings": {

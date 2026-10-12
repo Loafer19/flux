@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -55,8 +56,13 @@ type ClipEntry struct {
 	Dir        string `json:"dir"` // "in" or "out"
 	Device     string `json:"device"`
 	DeviceName string `json:"deviceName"`
-	// Source is "scan" for camera text, "share" for shared text, and empty
-	// for clipboard sync.
+
+	// To holds the IDs of the devices that clipboard sync sent a local copy
+	// to. Device is then empty.
+	To []string `json:"to,omitempty"`
+	// Source is "scan" for camera text, "share" for shared text, "link" for
+	// a web link that a device opened on this computer or that this computer
+	// opened on a device, and empty for clipboard sync.
 	Source string `json:"source,omitempty"`
 	Time   int64  `json:"time"`
 
@@ -70,6 +76,11 @@ func (d *Daemon) addClipLocked(e ClipEntry) {
 		top := &d.clipboard[0]
 		if top.Text == e.Text && top.sum == e.sum && top.Dir == e.Dir {
 			top.Time = e.Time
+			for _, id := range e.To {
+				if !slices.Contains(top.To, id) {
+					top.To = append(slices.Clip(top.To), id)
+				}
+			}
 			if e.Image != "" && e.Image != top.Image {
 				os.Remove(e.Image)
 			}
@@ -238,7 +249,11 @@ func (d *Daemon) onLocalClipboard(text string) {
 	}
 	auto := d.cfg.AutoClipboard
 	if auto {
-		d.addClipLocked(ClipEntry{Text: text, Dir: "out", DeviceName: "this pc", Time: time.Now().Unix()})
+		var to []string
+		if fits {
+			to = d.featureDevicesLocked("clipboard")
+		}
+		d.addClipLocked(ClipEntry{Text: text, Dir: "out", DeviceName: "this pc", To: to, Time: time.Now().Unix()})
 	}
 	d.mu.Unlock()
 	if !auto {
@@ -284,7 +299,11 @@ func (d *Daemon) onLocalImage(data []byte, mime string) {
 	if !auto {
 		return
 	}
-	if err := d.addClipImage(ClipEntry{Dir: "out", DeviceName: "this pc", Time: time.Now().Unix()}, data, mime); err != nil {
+	to := make([]string, 0, len(targets))
+	for _, t := range targets {
+		to = append(to, t.dev.ID)
+	}
+	if err := d.addClipImage(ClipEntry{Dir: "out", DeviceName: "this pc", To: to, Time: time.Now().Unix()}, data, mime); err != nil {
 		d.logf("save clipboard image: %v", err)
 	}
 	ctx, cancel := d.newClipSend()

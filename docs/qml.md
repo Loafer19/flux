@@ -30,7 +30,7 @@ FluxView {
 | --- | --- | --- |
 | `backend` | `var`, required | The backend object. The contract is below. |
 | `themeText` | `string` | The content of `~/.local/state/omarchy/current/theme/colors.toml`. Set it again when the file changes. An empty string gives the Tokyo Night defaults. |
-| `showPage(key)` | function, returns `bool` | Selects a screen: `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, or `commands`. Returns `false` for an unknown key. |
+| `showPage(key)` | function, returns `bool` | Selects a screen: `network`, `chat`, `overview`, `clipboard`, `files`, `notifications`, `messages`, or `device` (`commands` selects `device`). Returns `false` for an unknown key. |
 | `appReplaced` | `bool` | The host sets it when an update replaced the host program. The window then shows **Flux was updated** with a **Restart** button. The shell plugin does not set it, because omarchy-shell reloads the plugin. |
 | `restartApp()` | signal | The user selected **Restart**. The host starts its new program and quits. |
 
@@ -45,8 +45,9 @@ The window follows its width:
 | Less than 680 px | No sidebar. The header has a menu button. |
 
 The rail and the narrow layout open the full sidebar as a drawer over the
-content. A new pair request opens the drawer 1 time. Below 760 px of content,
-the header buttons show only their icons. Messages shows 1 pane below
+content. A new pair request opens the drawer 1 time. Below 480 px of content,
+the header hides the name and the address of the device. Below 560 px,
+the buttons of **Chat** show only their icons. Messages shows 1 pane below
 620 px. The smallest window is 360 × 480 px.
 
 To render every screen at another size, add `size=<width>x<height>`:
@@ -213,8 +214,9 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QML_XHR_ALLOW_FILE_READ=1 \
 `gui/tests/tst_views.qml` checks the views with the mock backend. It covers
 the device switch in Messages, the outbox of sent messages, the pair
 requests, the key format, the errors from fluxd, the list limits, the text
-from a phone, the contrast rules of the theme, and the **Start** buttons of
-the camera and the mic. To run the tests from the repository root:
+from a phone, the contrast rules of the theme, the **Start** buttons of the
+camera and the mic, the thread and the sends of **Chat**, and the **Access**
+card. To run the tests from the repository root:
 
 ```sh
 make test-gui

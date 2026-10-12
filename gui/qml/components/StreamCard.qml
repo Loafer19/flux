@@ -41,15 +41,10 @@ Card {
     anchors.margins: 16
     spacing: 8
 
-    Row {
-      spacing: 8
-      Icon {
-        anchors.verticalCenter: parent.verticalCenter
-        name: root.icon
-        size: 14
-        color: root.live ? Theme.err : Theme.dim
-      }
-      SectionLabel { anchors.verticalCenter: parent.verticalCenter; text: root.live ? root.heading + " · LIVE" : root.heading }
+    CardTitle {
+      icon: root.icon
+      text: root.heading
+      live: root.live
     }
 
     Item {
@@ -73,8 +68,10 @@ Card {
           width: parent.width
           visible: !root.failed && !root.idle
           text: root.live ? root.title : "Starting…"
-          font.weight: root.live ? Font.Bold : Font.Normal
+          font.weight: root.live ? Font.DemiBold : Font.Normal
           color: root.live ? Theme.fg : Theme.dim
+          wrapMode: Text.Wrap
+          maximumLineCount: 2
           elide: Text.ElideRight
         }
         Txt {

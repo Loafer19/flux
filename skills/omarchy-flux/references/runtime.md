@@ -31,7 +31,7 @@ FLUX_GUI=plugin flux-cli open notifications
 `flux-cli on` removes the marker and starts the daemon.
 Prefer these commands when the user asks to turn Flux off or on.
 
-Pages: `computer`, `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, `browse`, and `commands`.
+Pages: `computer`, `network`, `chat`, `overview`, `clipboard`, `files`, `notifications`, `messages`, `browse`, and `device` (`commands` opens `device`).
 
 ## Devices and transfers
 

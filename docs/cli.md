@@ -44,7 +44,7 @@ flux-cli status
 flux-cli status --json
 flux-cli off
 flux-cli on
-flux-cli open files
+flux-cli open messages
 ```
 
 `flux-cli status` prints each device as name, type, role, connection, battery, address, and pair state.
@@ -53,7 +53,7 @@ The role `remote` is a phone, a tablet, or a Mac.
 See [Connect two computers](desktop-peer.md) for the firewall allow and the pair.
 `send` and `clip` take a peer by the same `--device` name or id as a phone.
 
-Window pages: `computer`, `network`, `overview`, `clipboard`, `files`, `notifications`, `messages`, and `commands`.
+Window pages: `computer`, `network`, `chat`, `overview`, `clipboard`, `files`, `notifications`, `messages`, and `device`. `commands` opens `device`.
 `computer` holds the switches for this computer: clipboard, Do Not Disturb, home share, remote desktop, remote input, and agents.
 `network` shows each paired device.
 A row shows the device type, the address, and whether the device is online.

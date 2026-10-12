@@ -15,16 +15,23 @@ Item {
 
   signal freshPairRequest()
 
+  // The pages of a device. Chat and the device page (named after the
+  // device type, for example Phone) come from upstream; Overview, Clipboard
+  // and Files stay for the fork's remote control and peer file browsing.
   readonly property var tabs: [
+    { key: "chat", label: "Chat", page: "Chat", icon: "forum" },
     { key: "overview", label: "Overview", page: "Overview", icon: "dashboard" },
     { key: "clipboard", label: "Clipboard", page: "Clipboard", icon: "clipboard" },
     { key: "files", label: "Files", page: "Files", icon: "transfers" },
     { key: "notifications", label: "Notifications", page: "Notifications", icon: "bell" },
     { key: "messages", label: "Messages", page: "Messages", icon: "message" },
-    { key: "commands", label: "Phone commands", page: "PhoneCommands", icon: "console" }
+    { key: "device", label: Fmt.deviceWord(devType), page: "Device", icon: Fmt.kindIcon(devType) }
   ]
+  // Keys of pages that another page took over. showPage and tab accept
+  // them, so a host and flux-cli open keep working.
+  readonly property var tabAliases: ({ commands: "device" })
 
-  property string tab: "overview"
+  property string tab: "chat"
   onTabChanged: if (tab !== "network") pairPane = false
   property string selectedId: ""
   // Pair is open. Pair new device, the rail plus button, and key p open it.
@@ -86,11 +93,14 @@ Item {
   }
   readonly property bool devOnline: !!dev && !!dev.online
   readonly property string devName: dev ? (dev.name || "device") : "device"
+  // A string, so that the tabs change only when the type changes.
+  readonly property string devType: dev ? (dev.type || "") : ""
   readonly property var visibleTabs: tabs.filter(t => rules.tabAllowed(t.key))
   readonly property var currentTab: {
     if (tab === "network" || tab === "computer") return null
+    var key = rules.tabKey(tab)
     for (var i = 0; i < visibleTabs.length; i++)
-      if (visibleTabs[i].key === tab) return visibleTabs[i]
+      if (visibleTabs[i].key === key) return visibleTabs[i]
     return visibleTabs.length > 0 ? visibleTabs[0] : null
   }
   readonly property bool networkTab: tab === "network"
@@ -118,11 +128,17 @@ Item {
 
   function tabAllowed(key) {
     if (key === "messages") return rules.has("sms")
-    if (key === "commands") return !dev || dev.role !== "peer"
     return true
   }
 
+  // The key of a page, or of the page that took its place.
+  function tabKey(key) {
+    var alias = Fmt.lookup(tabAliases, key)
+    return alias !== undefined ? alias : key
+  }
+
   function go(key) {
+    key = rules.tabKey(key)
     if (rules.tabAllowed(key)) tab = key
   }
 
@@ -131,6 +147,7 @@ Item {
       rules.tab = key
       return true
     }
+    key = rules.tabKey(key)
     for (var i = 0; i < tabs.length; i++) {
       if (tabs[i].key === key) {
         rules.go(key)

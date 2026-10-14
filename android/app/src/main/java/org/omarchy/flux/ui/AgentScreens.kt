@@ -224,13 +224,15 @@ fun TiledAgentsScreen(
     onNew: () -> Unit = {},
 ) {
     LaunchedEffect(d.id, d.online) { if (d.online) HerdrSync.request(FluxCore, d.id) }
-    val herdr = d.herdr
+    // The list shows the picked herdr session.
+    val herdr = HerdrSessionPrefs.herdrOf(LocalContext.current, d)
     // A wide window shows the list in the center, as wide as the other lists.
     CappedScrollColumn(bottom = 96.dp) {
         TiledTopBar("Agents", onBack, context = d.name) {
             if (d.online && herdr?.running == true && herdr.control) SquareButton(Ic.add, "New agent or terminal", onNew)
             if (d.online) SquareButton(Ic.refresh, "Refresh", { HerdrSync.request(FluxCore, d.id) })
         }
+        if (d.online) SessionStrip(d, Modifier.padding(bottom = 4.dp))
         when {
             !d.online -> NotReachable(d, "The agents")
             herdr == null -> LineSkeleton("Loading the agents of ${d.name}", Modifier.padding(4.dp), lines = listOf(0.7f, 0.5f, 0.6f))
@@ -367,6 +369,15 @@ fun TiledAgentScreen(d: DeviceUi, pane: String, onBack: () -> Unit, onSwitch: (S
     val agent = d.herdr?.agent(pane)
     val status = agent?.status
     val demo = isDemo(d.id)
+    // An agent of another herdr session, for example from a notification,
+    // makes its session the picked one, so the agent list shows it after Back.
+    val appContext = LocalContext.current
+    LaunchedEffect(d.id, agent?.session) {
+        val h = d.herdr ?: return@LaunchedEffect
+        if (agent != null && h.manySessions && h.sessionOrDefault(HerdrSessionPrefs.picked(appContext, d.id)).name != agent.session) {
+            HerdrSessionPrefs.pick(appContext, d.id, agent.session)
+        }
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // A poll waits while the last read did not end, so that reads do not pile up on a slow link.
     val loading by rememberUpdatedState(d.herdrOutput?.takeIf { it.pane == pane }?.loading == true)
@@ -495,7 +506,8 @@ fun TiledAgentScreen(d: DeviceUi, pane: String, onBack: () -> Unit, onSwitch: (S
                 close = if (control && d.online) ({ closer.ask() }) else null,
             )
         }
-        val agents = d.herdr?.sorted.orEmpty()
+        // The strip shows the other agents of the session of this agent.
+        val agents = d.herdr?.scoped(agent?.session)?.sorted.orEmpty()
         if (agents.size >= 2 && agent != null) AgentStrip(agents, pane, thread?.elapsed.orEmpty(), onSwitch)
         // The progress line: it moves while the agent works.
         Box(Modifier.fillMaxWidth().height(2.dp).background(Tn.line)) {

@@ -22,7 +22,7 @@ struct ControlView: View {
         let hasHerdr = Inbox.hasFeature(scope: scope, devices: devices, can: { $0.accepts(PacketType.fluxHerdr) })
         let scoped = model.connectedPaired.filter { scope == nil || $0.id == scope }
         let herdrDevices = scoped.filter { $0.accepts(PacketType.fluxHerdr) }
-        let working = herdrDevices.contains { d in herdr?.model.states[d.id]?.agents.contains { $0.status == .working } == true }
+        let working = herdrDevices.contains { d in herdr?.model.scoped(d.id)?.agents.contains { $0.status == .working } == true }
         // The dock plays the computer in scope, or the first computer that plays.
         let players = scoped.filter { $0.accepts(PacketType.mprisRequest) && mpris?.model.media($0.id).player != nil }
         let player = players.first { mpris?.model.media($0.id).player?.playing == true } ?? players.first
@@ -169,7 +169,9 @@ struct ControlView: View {
 private let controlOrder: [AgentStatus] = [.blocked, .working, .done, .idle, .unknown]
 
 /// The agents and the terminals of the computers in `devices`, with the
-/// agents that need the user first. A line tells why no agent shows.
+/// agents that need the user first. A line tells why no agent shows. A
+/// computer with more than 1 herdr session shows the agents of the session
+/// that the user picks in its pills.
 private struct AgentList: View {
     let herdr: HerdrPlugin
     let devices: [DeviceSnapshot]
@@ -193,9 +195,9 @@ private struct AgentList: View {
     }
 
     var body: some View {
-        let rows = devices.flatMap { d in (herdr.model.states[d.id]?.agents ?? []).map { Row(device: d, agent: $0) } }
+        let rows = devices.flatMap { d in (herdr.model.scoped(d.id)?.agents ?? []).map { Row(device: d, agent: $0) } }
             .sorted { (controlOrder.firstIndex(of: $0.agent.status) ?? 9) < (controlOrder.firstIndex(of: $1.agent.status) ?? 9) }
-        let terms = devices.flatMap { d in (herdr.model.states[d.id]?.panes ?? []).map { TermRow(device: d, terminal: $0) } }
+        let terms = devices.flatMap { d in (herdr.model.scoped(d.id)?.panes ?? []).map { TermRow(device: d, terminal: $0) } }
         let blocked = rows.filter { $0.agent.status == .blocked }.count
         let summary = rows.isEmpty ? "" : contextLine([
             "\(rows.count) \(rows.count == 1 ? "agent" : "agents")",
@@ -207,6 +209,11 @@ private struct AgentList: View {
                 .font(.system(size: 11.5))
                 .disabled(!canOpen)
                 .help("Open the agents of the computer in their own window")
+        }
+        ForEach(devices) { d in
+            if let all = herdr.model.states[d.id], all.sessions.count > 1, let shown = herdr.model.session(d.id) {
+                SessionPills(state: all, selected: shown, computer: devices.count > 1 ? d.name : nil) { herdr.model.selectSession(d.id, $0) }
+            }
         }
         note(rows: rows.count, terminals: terms.count)
         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -225,7 +232,7 @@ private struct AgentList: View {
     @ViewBuilder
     private func note(rows: Int, terminals: Int) -> some View {
         let single = devices.count == 1 ? devices[0] : nil
-        let state = single.flatMap { herdr.model.states[$0.id] }
+        let state = single.flatMap { herdr.model.scoped($0.id) }
         if devices.isEmpty {
             let d = model.pairedDevice(model.scope)
             AgentNote(text: d.map { "\($0.name) is not reachable. Its agents show when it connects." } ?? "No computer with herdr is online.")
@@ -239,6 +246,43 @@ private struct AgentList: View {
         } else if rows == 0 && terminals == 0 {
             AgentNote(text: "No agents run in herdr yet.")
         }
+    }
+}
+
+/// The herdr sessions of a computer as pills. The pill of the shown session
+/// has the accent, and each pill counts the agents of its session that need
+/// the user. `computer` names the computer when the list shows more than 1.
+struct SessionPills: View {
+    /// The agents of all sessions of the computer.
+    let state: HerdrState
+    let selected: HerdrSession
+    var computer: String?
+    let select: (String) -> Void
+    @Environment(\.tn) private var tn
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if let computer {
+                    Text(computer)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(tn.sub)
+                        .lineLimit(1)
+                }
+                ForEach(state.sessions) { s in
+                    let n = state.blockedCount(in: s.name)
+                    StripPill(label: s.label, selected: s.name == selected.name, meta: n > 0 ? "\(n) \(n == 1 ? "needs" : "need") you" : "",
+                              help: "Show the agents of the session \(s.label)") {
+                        select(s.name)
+                    } mark: {
+                        if n > 0 { Circle().fill(tn.red).frame(width: 7, height: 7) }
+                    }
+                    .accessibilityLabel("Session \(s.label)" + (n > 0 ? ", \(n) \(n == 1 ? "needs" : "need") you" : ""))
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 }
 

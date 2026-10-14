@@ -103,6 +103,135 @@ final class HerdrControlTests: XCTestCase {
                        wire(#"{"kind":"close","pane":"w4:p1","request":5}"#))
     }
 
+    func testCreateNamesTheSessionOfANewWorkspace() {
+        XCTAssertEqual(HerdrWire.create(what: "agent", agent: "claude", cwd: "~/x", workspace: "", session: "omarchy").body,
+                       wire(#"{"kind":"create","what":"agent","agent":"claude","cwd":"~/x","workspace":"","herdr_session":"omarchy"}"#))
+        XCTAssertEqual(HerdrWire.create(what: "agent", agent: "claude", cwd: "~/x", workspace: "omarchy/w3", session: "omarchy").body,
+                       wire(#"{"kind":"create","what":"agent","agent":"claude","cwd":"~/x","workspace":"omarchy/w3"}"#),
+                       "a workspace ID names its session")
+        XCTAssertEqual(HerdrWire.create(what: "terminal", agent: "", cwd: "", workspace: "", session: "default").body,
+                       wire(#"{"kind":"create","what":"terminal","agent":"","cwd":"","workspace":""}"#),
+                       "the default session needs no field")
+        XCTAssertEqual(HerdrWire.create(what: "terminal", agent: "", cwd: "", workspace: "", session: "").body,
+                       wire(#"{"kind":"create","what":"terminal","agent":"","cwd":"","workspace":""}"#))
+    }
+
+    // MARK: Sessions
+
+    private let sessionsState = #"""
+    {"kind":"state","enabled":true,"running":true,"control":true,"terminals":true,"kinds":["claude"],
+    "agents":[{"pane":"w1:p1","agent":"claude","status":"idle","project":"flux","workspace":"flux"}],
+    "panes":[{"pane":"w1:p2","workspace":"flux"}],
+    "workspaces":[{"id":"w1","label":"flux","cwd":"~/Code/flux"}],
+    "sessions":[
+     {"name":"default","default":true,"running":true,
+      "agents":[{"pane":"w1:p1","agent":"claude","status":"idle","project":"flux","workspace":"flux"}],
+      "panes":[{"pane":"w1:p2","workspace":"flux"}],
+      "workspaces":[{"id":"w1","label":"flux","cwd":"~/Code/flux"}]},
+     {"name":"omarchy","default":false,"running":true,
+      "agents":[{"pane":"omarchy/w1:p1","agent":"codex","status":"blocked","project":"omarchy","workspace":"omarchy"},
+                {"pane":"omarchy/w2:p1","agent":"claude","status":"blocked"}],
+      "panes":[{"pane":"omarchy/w3:p2","workspace":"omarchy"}],
+      "workspaces":[{"id":"omarchy/w1","label":"omarchy","cwd":"~/.local/share/omarchy"}]}
+    ]}
+    """#
+
+    func testParsesSessions() throws {
+        let s = try XCTUnwrap(HerdrWire.state(body(sessionsState)))
+        XCTAssertEqual(s.sessions, [HerdrSession(name: "default", isDefault: true, running: true), HerdrSession(name: "omarchy", running: true)])
+        XCTAssertEqual(s.agents.map(\.pane), ["w1:p1", "omarchy/w1:p1", "omarchy/w2:p1"], "the agents of all sessions, the default session first")
+        XCTAssertEqual(s.agents.map(\.session), ["default", "omarchy", "omarchy"])
+        XCTAssertEqual(s.panes.map(\.pane), ["w1:p2", "omarchy/w3:p2"])
+        XCTAssertEqual(s.workspaces.map(\.id), ["w1", "omarchy/w1"])
+        XCTAssertEqual(s.workspaces.last?.session, "omarchy")
+        XCTAssertEqual(s.agent("omarchy/w1:p1")?.agent, "codex", "a lookup finds the agents of each session")
+        XCTAssertEqual(s.terminal("omarchy/w3:p2")?.session, "omarchy")
+        XCTAssertEqual(s.blocked, 2, "the agents of all sessions count")
+        XCTAssertEqual(s.blockedCount(in: "omarchy"), 2)
+        XCTAssertEqual(s.blockedCount(in: "default"), 0)
+        XCTAssertEqual(s.session("omarchy").label, "omarchy")
+        XCTAssertEqual(s.session(nil).label, "Default")
+    }
+
+    func testParsesTheDefaultSessionOfAnOlderFluxd() throws {
+        let s = try XCTUnwrap(HerdrWire.state(body(#"""
+        {"kind":"state","enabled":true,"running":false,"control":true,"agents":[{"pane":"w1:p1","agent":"claude","status":"idle"}],
+        "workspaces":[{"id":"w1"}]}
+        """#)))
+        XCTAssertEqual(s.sessions, [HerdrSession(name: "default", isDefault: true, running: false)])
+        XCTAssertEqual(s.agents, [HerdrAgent(pane: "w1:p1", agent: "claude", status: .idle)])
+        XCTAssertEqual(s.agents.first?.session, "default")
+        XCTAssertEqual(s.workspaces.first?.session, "default")
+        XCTAssertEqual(s.scoped(to: nil), s, "the default session is all of the state")
+        XCTAssertEqual(s.scoped(to: "omarchy"), s, "a session that is gone shows the default session")
+        let empty = try XCTUnwrap(HerdrWire.state(body(#"{"kind":"state","enabled":true,"running":true,"agents":[{"pane":"w1:p1"}],"sessions":[]}"#)))
+        XCTAssertEqual(empty.sessions.map(\.name), ["default"], "an empty list is the default session")
+        XCTAssertEqual(empty.agents.map(\.pane), ["w1:p1"])
+    }
+
+    func testSessionsKeepThePermissions() throws {
+        let s = try XCTUnwrap(HerdrWire.state(body(sessionsState.replacingOccurrences(of: #""terminals":true"#, with: #""terminals":false"#))))
+        XCTAssertTrue(s.panes.isEmpty, "the panes of each session need terminals")
+        XCTAssertEqual(s.workspaces.count, 2)
+        let off = try XCTUnwrap(HerdrWire.state(body(sessionsState.replacingOccurrences(of: #""control":true"#, with: #""control":false"#))))
+        XCTAssertTrue(off.workspaces.isEmpty, "the workspaces of each session need control")
+        XCTAssertEqual(off.agents.count, 3)
+    }
+
+    func testScopesToASession() throws {
+        let s = try XCTUnwrap(HerdrWire.state(body(sessionsState)))
+        let omarchy = s.scoped(to: "omarchy")
+        XCTAssertEqual(omarchy.agents.map(\.pane), ["omarchy/w1:p1", "omarchy/w2:p1"])
+        XCTAssertEqual(omarchy.panes.map(\.pane), ["omarchy/w3:p2"])
+        XCTAssertEqual(omarchy.workspaces.map(\.id), ["omarchy/w1"])
+        XCTAssertEqual(omarchy.blocked, 2)
+        XCTAssertEqual(omarchy.sessions, s.sessions, "a scoped state keeps the session list")
+        XCTAssertEqual(NewPane.folderChoices(omarchy).map(\.path), ["~", "~/.local/share/omarchy"], "a new pane offers the workspaces of the session")
+        let main = s.scoped(to: "default")
+        XCTAssertEqual(main.agents.map(\.pane), ["w1:p1"])
+        XCTAssertEqual(main.workspaces.map(\.id), ["w1"])
+        XCTAssertEqual(s.scoped(to: "gone"), main, "a session that is gone shows the default session")
+    }
+
+    func testANamedSessionRunsWithoutTheDefaultSession() throws {
+        let json = sessionsState.replacingOccurrences(of: #""running":true"#, with: #""running":false"#)
+            .replacingOccurrences(of: #""name":"omarchy","default":false,"running":false"#, with: #""name":"omarchy","default":false,"running":true"#)
+        let s = try XCTUnwrap(HerdrWire.state(body(json)))
+        XCTAssertTrue(s.running, "the agents of a running session count")
+        XCTAssertFalse(s.scoped(to: nil).running)
+        XCTAssertTrue(s.scoped(to: "omarchy").running)
+    }
+
+    @MainActor
+    func testTheModelKeepsThePickedSession() throws {
+        let plugin = HerdrPlugin()
+        let m = plugin.model
+        XCTAssertNil(m.session("d"), "no session before the first agent list")
+        XCTAssertEqual(m.createSession("d"), "")
+        m.states["d"] = try XCTUnwrap(HerdrWire.state(body(sessionsState)))
+        XCTAssertEqual(m.session("d")?.name, "default")
+        XCTAssertEqual(m.scoped("d")?.agents.map(\.pane), ["w1:p1"])
+        m.selectSession("d", "omarchy")
+        XCTAssertEqual(m.sessionChoices, ["d": "omarchy"])
+        XCTAssertEqual(m.scoped("d")?.agents.count, 2)
+        XCTAssertEqual(m.scopedStates["d"]?.agents.count, 2)
+        XCTAssertEqual(m.createSession("d"), "omarchy")
+        XCTAssertEqual(m.states["d"]?.agents.count, 3, "the agents of all sessions stay for the notifications")
+
+        m.states["d"] = try XCTUnwrap(HerdrWire.state(body(#"{"kind":"state","enabled":true,"running":true,"agents":[{"pane":"w1:p1"}]}"#)))
+        XCTAssertEqual(m.session("d")?.name, "default", "a session that is gone shows the default session")
+        XCTAssertEqual(m.createSession("d"), "")
+        XCTAssertEqual(m.sessionChoices, ["d": "omarchy"], "the choice stays while its session is gone")
+
+        m.states["d"] = try XCTUnwrap(HerdrWire.state(body(sessionsState)))
+        XCTAssertEqual(m.session("d")?.name, "omarchy", "the session shows again when it comes back")
+        m.reveal("d", pane: "w1:p2")
+        XCTAssertEqual(m.session("d")?.name, "default", "a notification shows the session of its pane")
+        XCTAssertEqual(m.sessionChoices, [:])
+        m.reveal("d", pane: "omarchy/w2:p1")
+        XCTAssertEqual(m.session("d")?.name, "omarchy")
+    }
+
     func testTimeoutsMatchAndroid() {
         XCTAssertEqual(HerdrPlugin.readTimeout, .seconds(15))
         XCTAssertEqual(HerdrPlugin.createTimeout, .seconds(60))

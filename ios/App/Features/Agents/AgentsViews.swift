@@ -45,7 +45,8 @@ struct AgentsTile: View {
 /// The herdr agents of a computer. The agents that need input come first.
 /// A tap opens the recent output of the agent. When the computer allows
 /// terminals, they follow the agents. When the computer allows control,
-/// the add button starts an agent or opens a terminal.
+/// the add button starts an agent or opens a terminal. A computer with more
+/// than 1 herdr session shows the agents of the session that the user picks.
 struct AgentsScreen: View {
     @Environment(AppModel.self) private var model
     let deviceId: String
@@ -56,12 +57,20 @@ struct AgentsScreen: View {
         let online = device?.online == true
         let name = device?.name ?? "the computer"
         let plugin = model.core.plugin(HerdrPlugin.self)
-        let herdr = plugin?.model.states[deviceId]
+        let herdr = plugin?.model.scoped(deviceId)
         Group {
             if !online {
                 PaneNotReachable(name: name, what: "The agents")
             } else if let herdr {
-                content(herdr, name: name)
+                VStack(spacing: 0) {
+                    if let m = plugin?.model, let all = m.states[deviceId], all.sessions.count > 1, let shown = m.session(deviceId) {
+                        SessionChip(state: all, selected: shown) { m.selectSession(deviceId, $0) }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
+                    content(herdr, name: name)
+                }
             } else {
                 ProgressView("Loading the agents of \(name)…")
             }

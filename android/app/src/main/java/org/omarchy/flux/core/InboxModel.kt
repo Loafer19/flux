@@ -93,7 +93,7 @@ fun inboxItems(devices: List<DeviceUi>, approval: ApproveRequest?): List<InboxIt
         }
         if (!d.online) continue
         val herdr = d.herdr
-        if (herdr != null && herdr.running) {
+        if (herdr != null && herdr.anyRunning) {
             for (a in herdr.agents) {
                 if (a.status == AgentStatus.Blocked || a.status == AgentStatus.Done || a.status == AgentStatus.Working) {
                     out += AgentItem(d.id, d.name, a, herdr.control)

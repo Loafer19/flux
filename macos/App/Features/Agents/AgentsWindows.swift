@@ -32,7 +32,10 @@ final class AgentsWindowModel {
     }
 
     var device: DeviceSnapshot? { app.state.devices.first { $0.id == deviceId } }
+    /// The agents of all herdr sessions of the computer.
     var herdr: HerdrState? { plugin.model.states[deviceId] }
+    /// The agents of the herdr session that the list shows.
+    var shown: HerdrState? { plugin.model.scoped(deviceId) }
 
     /// Puts dictated words in the draft of `pane` at its cursor.
     func insert(_ spoken: String, pane: String) {
@@ -81,6 +84,8 @@ final class AgentsWindows: NSObject, NSWindowDelegate {
     /// Shows the agents window of a computer, and opens it when it is not
     /// open. `pane` selects that agent.
     func show(_ deviceId: String, pane: String? = nil, app: AppModel) {
+        // The list shows the session of the agent.
+        if let pane { app.core.plugin(HerdrPlugin.self)?.model.reveal(deviceId, pane: pane) }
         if let entry = open[deviceId] {
             if let pane { entry.model.selection = pane }
             entry.window.makeKeyAndOrderFront(nil)

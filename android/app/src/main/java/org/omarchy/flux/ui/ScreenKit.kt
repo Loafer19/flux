@@ -114,8 +114,8 @@ internal fun PillStrip(content: @Composable RowScope.() -> Unit) {
 }
 
 /**
- * A pill of a [PillStrip]: a [mark], the [label], and [meta] in mono. The
- * [selected] pill has the accent. A [dim] pill shows at 55%, for a
+ * A pill of a [PillStrip]: a [mark], the [label], and [meta] in mono in
+ * [metaColor]. The [selected] pill has the accent. A [dim] pill shows at 55%, for a
  * computer that is offline. It is 36 dp high and takes taps on 48 dp.
  */
 @Composable
@@ -124,6 +124,7 @@ internal fun Pill(
     selected: Boolean,
     onClick: () -> Unit,
     meta: String = "",
+    metaColor: Color = Tn.sub,
     dim: Boolean = false,
     clickLabel: String? = null,
     state: String? = null,
@@ -142,7 +143,7 @@ internal fun Pill(
     ) {
         mark()
         T(label, size = 13, weight = FontWeight.Medium, maxLines = 1)
-        if (meta.isNotEmpty()) T(meta, size = 11, color = Tn.sub, family = Mono, maxLines = 1)
+        if (meta.isNotEmpty()) T(meta, size = 11, color = metaColor, family = Mono, maxLines = 1)
     }
 }
 

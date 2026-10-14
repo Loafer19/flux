@@ -92,7 +92,8 @@ func (d *Daemon) herdrKeys(dev *Device, pane string, keys []string) *proto.Packe
 				return herdrRefusal(fmt.Sprintf("The key %q is not allowed", k))
 			}
 		}
-		if err := herdr.SendKeys(ctx, d.herdrPath, pane, keys); err != nil {
+		sock, id := d.herdrAt(pane)
+		if err := herdr.SendKeys(ctx, sock, id, keys); err != nil {
 			return err
 		}
 		d.logf("%s sent the keys %s to the herdr agent in %s", d.nameOf(dev), strings.Join(keys, " "), pane)
@@ -117,14 +118,15 @@ func (d *Daemon) herdrPrompt(dev *Device, pane, text string, answer bool) *proto
 			return herdrRefusal(fmt.Sprintf("The text is longer than %d KB", herdrMaxPrompt>>10))
 		}
 		what := "a prompt"
-		err := herdr.Prompt(ctx, d.herdrPath, pane, text)
+		sock, id := d.herdrAt(pane)
+		err := herdr.Prompt(ctx, sock, id, text)
 		if herdr.Code(err) == "agent_blocked" {
 			if !answer {
 				return errHerdrBlocked
 			}
 			// pane.send_input does not check for an agent. The agent can
 			// stop or end after herdr refused the prompt.
-			a, gerr := herdr.GetAgent(ctx, d.herdrPath, pane)
+			a, gerr := herdr.GetAgent(ctx, sock, id)
 			if gerr != nil {
 				return gerr
 			}
@@ -134,7 +136,7 @@ func (d *Daemon) herdrPrompt(dev *Device, pane, text string, answer bool) *proto
 			// A line break in typed text is an Enter key, so the answer
 			// goes on one line.
 			what = "an answer"
-			err = herdr.SendInput(ctx, d.herdrPath, pane, strings.ReplaceAll(text, "\n", " "), []string{"enter"})
+			err = herdr.SendInput(ctx, sock, id, strings.ReplaceAll(text, "\n", " "), []string{"enter"})
 		}
 		if err != nil {
 			return err
@@ -171,7 +173,8 @@ func (d *Daemon) herdrInput(dev *Device, pane, text string, keys []string) *prot
 				return herdrRefusal(fmt.Sprintf("The key %q is not allowed", k))
 			}
 		}
-		if err := herdr.SendInput(ctx, d.herdrPath, pane, text, keys); err != nil {
+		sock, id := d.herdrAt(pane)
+		if err := herdr.SendInput(ctx, sock, id, text, keys); err != nil {
 			return err
 		}
 		d.logf("%s sent %d characters and the keys %q to the herdr terminal %s", d.nameOf(dev), len([]rune(text)), strings.Join(keys, " "), pane)
@@ -237,10 +240,16 @@ func herdrReplyError(pane string, err error) string {
 // the agent kind, such as claude. The pane opens in a new tab of the
 // workspace, or in a new workspace when workspace is empty. cwd is the
 // folder. An empty cwd is the home folder. One start runs at a time for
-// each device.
-func (d *Daemon) herdrCreate(dev *Device, what, kind, cwd, workspace string) *proto.Packet {
+// each device. The workspace is a qualified ID, so it selects its
+// session. A new workspace opens in session, an empty string for the
+// default session.
+func (d *Daemon) herdrCreate(dev *Device, what, kind, cwd, workspace, session string) *proto.Packet {
 	reply := map[string]any{"kind": "created", "what": what}
+	if workspace != "" {
+		session = herdrSessionOf(workspace)
+	}
 	d.mu.Lock()
+	sessionKnown := d.herdrSessionKnownLocked(session)
 	enabled, control, terminals, paired := d.cfg.Herdr, d.cfg.HerdrControl, d.herdrTerminalsLocked(), dev.Paired
 	kindKnown := slices.Contains(d.herdrKinds, kind)
 	placeKnown := workspace == "" || slices.ContainsFunc(d.herdrPlaces, func(w HerdrWorkspace) bool { return w.ID == workspace })
@@ -273,6 +282,8 @@ func (d *Daemon) herdrCreate(dev *Device, what, kind, cwd, workspace string) *pr
 		err = herdrRefusal(fmt.Sprintf("Flux cannot open a %q", what))
 	case what == "agent" && !kindKnown:
 		err = herdrRefusal(fmt.Sprintf("herdr cannot start the agent %q on this computer", kind))
+	case !sessionKnown:
+		err = herdrRefusal(fmt.Sprintf("The herdr session %s does not run", session))
 	case !placeKnown:
 		err = herdrRefusal(fmt.Sprintf("The workspace %s is gone", workspace))
 	case busy:
@@ -284,7 +295,8 @@ func (d *Daemon) herdrCreate(dev *Device, what, kind, cwd, workspace string) *pr
 	var pane string
 	if err == nil {
 		ctx, cancel := context.WithTimeout(d.ctx, herdrStartTimeout)
-		pane, err = d.openHerdrPane(ctx, what, kind, cwd, workspace)
+		pane, err = d.openHerdrPane(ctx, session, what, kind, cwd, workspace)
+		pane = herdrQualify(session, pane)
 		cancel()
 	}
 	if err != nil {
@@ -301,15 +313,18 @@ func (d *Daemon) herdrCreate(dev *Device, what, kind, cwd, workspace string) *pr
 	return proto.New(proto.TypeFluxHerdr, reply)
 }
 
-// openHerdrPane opens a tab or a workspace, and starts the agent in its
-// pane. When the agent does not start, it closes the pane again.
-func (d *Daemon) openHerdrPane(ctx context.Context, what, kind, cwd, workspace string) (string, error) {
+// openHerdrPane opens a tab or a workspace in the session, and starts the
+// agent in its pane. When the agent does not start, it closes the pane
+// again. It returns the herdr ID of the pane.
+func (d *Daemon) openHerdrPane(ctx context.Context, session, what, kind, cwd, workspace string) (string, error) {
 	var c herdr.Created
 	var err error
+	sock := d.herdrSocket(session)
 	if workspace == "" {
-		c, err = herdr.CreateWorkspace(ctx, d.herdrPath, cwd)
+		c, err = herdr.CreateWorkspace(ctx, sock, cwd)
 	} else {
-		c, err = herdr.CreateTab(ctx, d.herdrPath, workspace, cwd)
+		_, id := herdrSplit(workspace)
+		c, err = herdr.CreateTab(ctx, sock, id, cwd)
 	}
 	if err != nil {
 		return "", err
@@ -321,10 +336,10 @@ func (d *Daemon) openHerdrPane(ctx context.Context, what, kind, cwd, workspace s
 	if what == "terminal" {
 		return pane, nil
 	}
-	if err := d.startHerdrAgent(ctx, kind, pane, cwd); err != nil {
+	if err := d.startHerdrAgent(ctx, sock, kind, pane, cwd); err != nil {
 		// Close with a new context, because ctx can be at its end.
 		cctx, cancel := context.WithTimeout(d.ctx, herdrCallTimeout)
-		_ = herdr.ClosePane(cctx, d.herdrPath, pane)
+		_ = herdr.ClosePane(cctx, sock, pane)
 		cancel()
 		return pane, err
 	}
@@ -335,10 +350,11 @@ func (d *Daemon) openHerdrPane(ctx context.Context, what, kind, cwd, workspace s
 // until herdr finds it. A new shell needs a moment before its prompt
 // shows, so fluxd tries again while herdr says that the pane is busy.
 // When herdr does not find the agent, the error has the last line of the
-// pane, such as "command not found".
-func (d *Daemon) startHerdrAgent(ctx context.Context, kind, pane, cwd string) error {
+// pane, such as "command not found". sock is the API socket of the
+// session, and pane is the herdr ID.
+func (d *Daemon) startHerdrAgent(ctx context.Context, sock, kind, pane, cwd string) error {
 	for try := 0; ; {
-		err := herdr.StartAgent(ctx, d.herdrPath, agentName(kind, cwd, try), kind, pane)
+		err := herdr.StartAgent(ctx, sock, agentName(kind, cwd, try), kind, pane)
 		if err == nil {
 			break
 		}
@@ -358,7 +374,7 @@ func (d *Daemon) startHerdrAgent(ctx context.Context, kind, pane, cwd string) er
 	fctx, cancel := context.WithTimeout(ctx, herdrFindTimeout)
 	defer cancel()
 	for {
-		a, err := herdr.GetAgent(fctx, d.herdrPath, pane)
+		a, err := herdr.GetAgent(fctx, sock, pane)
 		if err == nil && a.Agent != "" {
 			return nil
 		}
@@ -369,7 +385,7 @@ func (d *Daemon) startHerdrAgent(ctx context.Context, kind, pane, cwd string) er
 	msg := fmt.Sprintf("%s did not start", kind)
 	rctx, rcancel := context.WithTimeout(d.ctx, herdrCallTimeout)
 	defer rcancel()
-	if r, err := herdr.ReadPane(rctx, d.herdrPath, pane, 20, false); err == nil {
+	if r, err := herdr.ReadPane(rctx, sock, pane, 20, false); err == nil {
 		if line := paneLastLine(r.Text); line != "" {
 			msg += ": " + line
 		}
@@ -419,7 +435,8 @@ func (d *Daemon) herdrClose(dev *Device, pane string) *proto.Packet {
 		reply["error"] = fmt.Sprintf("No agent runs in %s", pane)
 	default:
 		ctx, cancel := context.WithTimeout(d.ctx, herdrCallTimeout)
-		err := herdr.ClosePane(ctx, d.herdrPath, pane)
+		sock, id := d.herdrAt(pane)
+		err := herdr.ClosePane(ctx, sock, id)
 		cancel()
 		if err != nil {
 			reply["error"] = herdrError(pane, err)

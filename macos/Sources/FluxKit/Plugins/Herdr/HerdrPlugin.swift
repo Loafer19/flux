@@ -24,6 +24,11 @@ public final class HerdrModel {
     public internal(set) var prompts: [String: HerdrOutput] = [:]
     /// The time that each agent got its status, by device ID and pane. See `AgentClock`.
     public internal(set) var since: [String: [String: Date]] = [:]
+    /// The herdr session that the user picked for the agent list of each
+    /// computer, by device ID. A computer without an entry shows the default
+    /// session. The choice stays while its session is gone, and the list
+    /// shows the default session meanwhile, see `session(_:)`.
+    public internal(set) var sessionChoices: [String: String] = [:]
 
     /// Notify when an agent on a computer needs input. It applies to all computers.
     public var inputAlerts = true {
@@ -50,7 +55,53 @@ public final class HerdrModel {
         inputAlerts = defaults.object(forKey: HerdrPlugin.inputAlertsKey) as? Bool ?? true
         doneAlerts = defaults.object(forKey: HerdrPlugin.doneAlertsKey) as? Bool ?? true
         dictationLanguage = defaults.string(forKey: HerdrPlugin.dictationLanguageKey) ?? ""
+        sessionChoices = defaults.dictionary(forKey: HerdrPlugin.sessionsKey) as? [String: String] ?? [:]
         self.defaults = defaults
+    }
+
+    /// The herdr session that the agent list of a computer shows: the
+    /// picked session while the computer has it, else the default session.
+    /// Nil before the first agent list.
+    public func session(_ deviceId: String) -> HerdrSession? {
+        states[deviceId]?.session(sessionChoices[deviceId])
+    }
+
+    /// The agents, terminals, and workspaces of a computer in the session
+    /// that its agent list shows, see `HerdrState.scoped(to:)`. Nil before
+    /// the first agent list.
+    public func scoped(_ deviceId: String) -> HerdrState? {
+        states[deviceId]?.scoped(to: sessionChoices[deviceId])
+    }
+
+    /// `scoped(_:)` of each computer, by device ID.
+    public var scopedStates: [String: HerdrState] {
+        Dictionary(uniqueKeysWithValues: states.map { ($0.key, $0.value.scoped(to: sessionChoices[$0.key])) })
+    }
+
+    /// The session for a new workspace on a computer, for `HerdrPlugin.create`:
+    /// the name of the shown session, or empty for the default session.
+    public func createSession(_ deviceId: String) -> String {
+        guard let s = session(deviceId), !s.isDefault else { return "" }
+        return s.name
+    }
+
+    /// Shows the herdr session `name` in the agent list of a computer. This
+    /// device keeps the choice.
+    public func selectSession(_ deviceId: String, _ name: String) {
+        let isDefault = states[deviceId]?.sessions.first { $0.name == name }?.isDefault ?? (name == HerdrSession.defaultName)
+        let next: String? = isDefault ? nil : name
+        guard sessionChoices[deviceId] != next else { return }
+        sessionChoices[deviceId] = next
+        defaults?.set(sessionChoices, forKey: HerdrPlugin.sessionsKey)
+    }
+
+    /// Shows the session of `pane` in the agent list of a computer, so that
+    /// the list has the agent that a notification opens.
+    public func reveal(_ deviceId: String, pane: String) {
+        guard let state = states[deviceId],
+              let name = state.agent(pane)?.session ?? state.terminal(pane)?.session,
+              name != session(deviceId)?.name else { return }
+        selectSession(deviceId, name)
     }
 
     /// The output of `pane` on a computer, or nil when the window shows no output of it.
@@ -86,6 +137,7 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     static let inputAlertsKey = "herdr.inputAlerts"
     static let doneAlertsKey = "herdr.doneAlerts"
     static let dictationLanguageKey = "herdr.dictationLanguage"
+    static let sessionsKey = "herdr.sessions"
 
     /// How long a finished agent must stay ready before this Mac posts it.
     /// The status can change between tool calls.
@@ -153,7 +205,12 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
         Notifier.shared.register(category: Self.notificationCategory) { action, info, _ in
             guard action == UNNotificationDefaultActionIdentifier,
                   let id = info[Self.deviceKey] as? String, let pane = info[Self.paneKey] as? String else { return }
-            DispatchQueue.main.async { MainActor.assumeIsolated { model.open?(id, pane) } }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    model.reveal(id, pane: pane)
+                    model.open?(id, pane)
+                }
+            }
         }
     }
 
@@ -440,10 +497,12 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
     /// Asks the computer to open a pane: an agent of `kind` when `what` is
     /// "agent", or a shell when it is "terminal". The pane opens in `cwd`,
     /// as a new tab of `workspace`, or in a new workspace when `workspace`
-    /// is empty. `model.actions` has the answer. A new agent gets `task` as
-    /// its first prompt when it is ready, see `FirstTask`.
+    /// is empty. A new workspace opens in the herdr session `session`, see
+    /// `HerdrModel.createSession`. `model.actions` has the answer. A new
+    /// agent gets `task` as its first prompt when it is ready, see `FirstTask`.
     @MainActor
-    public func create(_ deviceId: String, what: String, kind: String, cwd: String, workspace: String, task: String? = nil) {
+    public func create(_ deviceId: String, what: String, kind: String, cwd: String, workspace: String, task: String? = nil,
+                       session: String = "") {
         let text = what == "agent" ? task?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" : ""
         if !text.isEmpty {
             // The task belongs to the next action.
@@ -452,7 +511,7 @@ public final class HerdrPlugin: FluxPlugin, @unchecked Sendable {
             model.firstTasks[deviceId] = nil
         }
         action(deviceId, HerdrAction(action: "create", seq: 0, what: what), timeout: Self.createTimeout,
-               HerdrWire.create(what: what, agent: kind, cwd: cwd, workspace: workspace))
+               HerdrWire.create(what: what, agent: kind, cwd: cwd, workspace: workspace, session: session))
     }
 
     /// Forgets the first task of the last new agent, after the UI showed its end.

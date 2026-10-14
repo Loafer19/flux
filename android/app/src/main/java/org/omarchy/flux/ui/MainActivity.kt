@@ -249,6 +249,9 @@ class MainActivity : ComponentActivity() {
             org.omarchy.flux.core.DebugDemo.agentOutput = intent.getStringExtra("flux.debug.output")
             org.omarchy.flux.core.DebugDemo.terminalSample = intent.getStringExtra("flux.debug.terminal")
             org.omarchy.flux.core.DebugDemo.terminalGrid = intent.getStringExtra("flux.debug.terminal_grid")
+            org.omarchy.flux.core.DebugDemo.sessions = intent.getBooleanExtra("flux.debug.sessions", false)
+            // flux.debug.session picks a herdr session of the sample computer, such as omarchy.
+            intent.getStringExtra("flux.debug.session")?.let { HerdrSessionPrefs.pick(this, org.omarchy.flux.core.DebugDemo.PC, it) }
             FluxCore.publish()
         }
         // A capture is too long for an extra, so it can also come from a file in the app folder.

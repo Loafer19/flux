@@ -310,4 +310,134 @@ class HerdrTest {
         assertTrue(big.truncated)
         assertTrue(big.lines.all { it.text.length <= TERM_MAX_COLUMNS })
     }
+
+    private val sessionsState = """{"kind":"state","enabled":true,"running":true,"control":true,"terminals":true,
+        "agents":[{"pane":"w1:p1","agent":"claude","status":"idle"}],
+        "panes":[{"pane":"w1:p2"}],
+        "workspaces":[{"id":"w1","label":"flux","cwd":"~/Code/flux"}],
+        "kinds":["claude"],
+        "sessions":[
+          {"name":"default","default":true,"running":true,
+           "agents":[{"pane":"w1:p1","agent":"claude","status":"idle"}],
+           "panes":[{"pane":"w1:p2"}],
+           "workspaces":[{"id":"w1","label":"flux","cwd":"~/Code/flux"}]},
+          {"name":"omarchy","default":false,"running":true,
+           "agents":[{"pane":"omarchy/w1:p1","agent":"codex","status":"blocked"},{"pane":"omarchy/w2:p1","agent":"claude","status":"working"}],
+           "panes":[{"pane":"omarchy/w3:p2"}],
+           "workspaces":[{"id":"omarchy/w1","label":"omarchy","cwd":"~/Code/omarchy"}]}
+        ]}"""
+
+    @Test
+    fun parsesSessions() {
+        val s = parseHerdrState(body(sessionsState))!!
+        assertEquals(
+            listOf(HerdrSessionInfo("default", default = true, running = true), HerdrSessionInfo("omarchy", default = false, running = true)),
+            s.sessions,
+        )
+        assertTrue(s.manySessions)
+        assertEquals("the lists hold all sessions", listOf("w1:p1", "omarchy/w1:p1", "omarchy/w2:p1"), s.agents.map { it.pane })
+        assertEquals(listOf("default", "omarchy", "omarchy"), s.agents.map { it.session })
+        assertEquals(listOf("w1:p2", "omarchy/w3:p2"), s.panes.map { it.pane })
+        assertEquals(HerdrWorkspace("omarchy/w1", "omarchy", "~/Code/omarchy", "omarchy"), s.workspaces[1])
+        assertEquals("a lookup finds an agent of any session", "codex", s.agent("omarchy/w1:p1")?.agent)
+        assertEquals("omarchy", s.terminal("omarchy/w3:p2")?.session)
+        assertEquals(1, s.blocked)
+        assertEquals(0, s.blockedIn("default"))
+        assertEquals(1, s.blockedIn("omarchy"))
+        assertEquals("Default", s.sessionList[0].label)
+        assertEquals("omarchy", s.sessionList[1].label)
+    }
+
+    @Test
+    fun sessionsKeepThePermissions() {
+        val s = parseHerdrState(body(sessionsState.replace("\"control\":true", "\"control\":false")))!!
+        assertTrue("terminals need control", s.panes.isEmpty())
+        assertTrue("workspaces need control", s.workspaces.isEmpty())
+        assertEquals(3, s.agents.size)
+        val off = parseHerdrState(body(sessionsState.replace("\"enabled\":true", "\"enabled\":false")))!!
+        assertFalse(off.anyRunning)
+        assertTrue(off.sessions.none { it.running })
+    }
+
+    @Test
+    fun parsesStateWithoutSessions() {
+        val s = parseHerdrState(
+            body(
+                """{"kind":"state","enabled":true,"running":true,"control":true,"terminals":true,
+                "agents":[{"pane":"w1:p1","agent":"claude","status":"blocked"}],"panes":[{"pane":"w1:p2"}],
+                "workspaces":[{"id":"w1","label":"flux"}]}""",
+            ),
+        )!!
+        assertTrue(s.sessions.isEmpty())
+        assertEquals(listOf(HerdrSessionInfo("default", default = true, running = true)), s.sessionList)
+        assertFalse("no picker with only the default session", s.manySessions)
+        assertEquals(HerdrAgent("w1:p1", "claude", AgentStatus.Blocked), s.agents.single())
+        assertEquals(HERDR_DEFAULT_SESSION, s.panes.single().session)
+        assertEquals(HERDR_DEFAULT_SESSION, s.workspaces.single().session)
+        assertTrue("one session scopes to itself", s.scoped("omarchy") === s)
+        assertEquals(1, s.blockedIn("default"))
+
+        val empty = parseHerdrState(body("""{"kind":"state","enabled":true,"running":false,"agents":[{"pane":"w1:p1"}],"sessions":[]}"""))!!
+        assertEquals("an empty list is like no list", listOf("w1:p1"), empty.agents.map { it.pane })
+        assertFalse(empty.anyRunning)
+        assertFalse(empty.sessionList.single().running)
+    }
+
+    @Test
+    fun scopesToASession() {
+        val s = parseHerdrState(body(sessionsState))!!
+        val omarchy = s.scoped("omarchy")
+        assertEquals(listOf("omarchy/w1:p1", "omarchy/w2:p1"), omarchy.agents.map { it.pane })
+        assertEquals(listOf("omarchy/w3:p2"), omarchy.panes.map { it.pane })
+        assertEquals(listOf("omarchy/w1"), omarchy.workspaces.map { it.id })
+        assertEquals(1, omarchy.blocked)
+        assertEquals("the kinds apply to each session", listOf("claude"), omarchy.kinds)
+        assertTrue(omarchy.control)
+
+        val default = s.scoped("default")
+        assertEquals(listOf("w1:p1"), default.agents.map { it.pane })
+        assertEquals(listOf("w1"), default.workspaces.map { it.id })
+        assertEquals("a session that is gone shows the default session", default, s.scoped("gone"))
+        assertEquals("no pick shows the default session", default, s.scoped(null))
+        assertEquals("default", s.sessionOrDefault("gone").name)
+        assertEquals("omarchy", s.sessionOrDefault("omarchy").name)
+    }
+
+    @Test
+    fun scopedSessionTakesItsRunningState() {
+        val s = parseHerdrState(body(sessionsState.replace("\"running\":true", "\"running\":false")))!!
+        assertFalse(s.running)
+        assertFalse(s.anyRunning)
+        val named = HerdrState(
+            enabled = true, running = false, agents = emptyList(),
+            sessions = listOf(HerdrSessionInfo("default", true, false), HerdrSessionInfo("omarchy", false, true)),
+        )
+        assertTrue("a named session runs without the default one", named.anyRunning)
+        assertTrue(named.scoped("omarchy").running)
+        assertFalse(named.scoped("default").running)
+    }
+
+    @Test
+    fun createNamesTheSessionOfANewWorkspace() {
+        val plain = herdrCreateBody("agent", "claude", " ~/Code/flux ", "", null, 4)
+        assertEquals("create", plain.str("kind"))
+        assertEquals("~/Code/flux", plain.str("cwd"))
+        assertEquals("", plain.str("workspace"))
+        assertEquals(4L, plain["request"]?.let { (it as JsonPrimitive).content.toLong() })
+        assertNull(plain["herdr_session"])
+        assertNull("the default session is not named", herdrCreateBody("agent", "claude", "~", "", HERDR_DEFAULT_SESSION, 1)["herdr_session"])
+
+        val named = herdrCreateBody("terminal", "", "~/Code/omarchy", "", "omarchy", 5)
+        assertEquals("omarchy", named.str("herdr_session"))
+        assertNull("it is not the stream session", named["session"])
+        assertNull(
+            "a new tab takes the session of its workspace",
+            herdrCreateBody("agent", "claude", "~", "omarchy/w1", "omarchy", 6)["herdr_session"],
+        )
+        assertEquals(
+            "without a session, the body is as before",
+            setOf("kind", "what", "agent", "cwd", "workspace", "request"),
+            plain.keys,
+        )
+    }
 }

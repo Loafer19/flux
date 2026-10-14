@@ -2,6 +2,7 @@ package org.omarchy.flux.ui
 
 import android.content.Context
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +58,7 @@ import org.omarchy.flux.core.DeviceUi
 import org.omarchy.flux.core.FluxCore
 import org.omarchy.flux.core.FolderChoice
 import org.omarchy.flux.core.HerdrReply
+import org.omarchy.flux.core.HerdrState
 import org.omarchy.flux.core.HerdrSync
 import org.omarchy.flux.core.HerdrWorkspace
 import org.omarchy.flux.core.SHELL_CHOICE
@@ -93,6 +96,77 @@ private object NewPanePrefs {
     }
 }
 
+/**
+ * The herdr session that the user picked on each computer. A session that
+ * the computer no longer has stays picked, and the default session shows
+ * while it is gone.
+ */
+internal object HerdrSessionPrefs {
+    private const val PREFS = "flux-herdr"
+
+    /** Changes with each pick, so the screens that show a session read it again. */
+    private val picks = mutableIntStateOf(0)
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** The picked session of [device], or null when the user picked none. */
+    fun picked(context: Context, device: String): String? {
+        picks.intValue
+        return prefs(context).getString("session.$device", null)
+    }
+
+    fun pick(context: Context, device: String, session: String) {
+        if (prefs(context).getString("session.$device", null) == session) return
+        prefs(context).edit { putString("session.$device", session) }
+        picks.intValue++
+    }
+
+    /** The herdr state of [d] in its picked session, or null before the first agent list. */
+    fun herdrOf(context: Context, d: DeviceUi): HerdrState? = d.herdr?.scoped(picked(context, d.id))
+}
+
+/**
+ * The herdr sessions of [d] as pills, when it has more than the default
+ * session. The picked session has the accent, and a tap picks another. A
+ * session with agents that need input shows their number in red. [label]
+ * names the computer before the pills, when the list shows more than 1.
+ */
+@Composable
+internal fun SessionStrip(d: DeviceUi, modifier: Modifier = Modifier, label: String? = null) {
+    val context = LocalContext.current
+    val herdr = d.herdr ?: return
+    if (!herdr.manySessions) return
+    val picked = herdr.sessionOrDefault(HerdrSessionPrefs.picked(context, d.id))
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (label != null) T(label, size = 12, color = Tn.sub, maxLines = 1)
+        for (s in herdr.sessionList) {
+            val on = s.name == picked.name
+            val blocked = herdr.blockedIn(s.name)
+            Pill(
+                s.label, on,
+                onClick = { HerdrSessionPrefs.pick(context, d.id, s.name) },
+                meta = if (blocked > 0) "$blocked" else "",
+                metaColor = Tn.red,
+                clickLabel = "Show the session ${s.label}",
+                state = listOfNotNull(
+                    if (on) "Shown" else null,
+                    if (blocked > 0) "$blocked ${if (blocked == 1) "agent needs" else "agents need"} input" else null,
+                ).joinToString(", ").ifEmpty { null },
+            ) {
+                when {
+                    blocked > 0 -> Dot(Tn.red, 8.dp)
+                    s.running -> Dot(Tn.green, 8.dp)
+                    else -> RingMark()
+                }
+            }
+        }
+    }
+}
+
 // ───────────────────────── New agent or terminal ─────────────────────────
 
 /**
@@ -106,7 +180,9 @@ private object NewPanePrefs {
 @Composable
 fun TiledNewPaneScreen(d: DeviceUi, onBack: () -> Unit, onOpened: (what: String, pane: String) -> Unit) {
     val context = LocalContext.current
-    val herdr = d.herdr
+    // The new pane opens in the picked session, among its workspaces.
+    val herdr = HerdrSessionPrefs.herdrOf(context, d)
+    val session = d.herdr?.takeIf { it.manySessions }?.sessionOrDefault(HerdrSessionPrefs.picked(context, d.id))
     val kinds = herdr?.kinds.orEmpty()
     val shell = herdr?.terminals == true
     var run by rememberSaveable(d.id) { mutableStateOf(NewPanePrefs.run(context, d.id)) }
@@ -131,7 +207,7 @@ fun TiledNewPaneScreen(d: DeviceUi, onBack: () -> Unit, onOpened: (what: String,
     // A wide window shows the screen in the center, as wide as the lists of the other screens.
     Box(Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = ContentMaxWidth).fillMaxSize().padding(horizontal = TiledGutter)) {
-            TiledTopBar("New agent or terminal", onBack, context = d.name)
+            TiledTopBar("New agent or terminal", onBack, context = if (session != null) "${d.name} · ${session.label}" else d.name)
             when {
                 !d.online -> NotReachable(d, "The agents that you can start")
                 herdr == null || !herdr.running -> EmptyState(
@@ -164,7 +240,7 @@ fun TiledNewPaneScreen(d: DeviceUi, onBack: () -> Unit, onOpened: (what: String,
                         ReplyLock.run(context, {
                             after = last
                             NewPanePrefs.save(context, d.id, kind, target)
-                            HerdrSync.create(FluxCore, d.id, what, kind, target, workspace)
+                            HerdrSync.create(FluxCore, d.id, what, kind, target, workspace, session?.name)
                         }, title = if (what == "agent") "Start an agent" else "Open a terminal", purpose = "start agents and terminals") {
                             lockError = it
                         }

@@ -368,6 +368,12 @@ To draw the sample computer in a sample theme, set `FLUX_THEME` to `neon`, `toky
 ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 FLUX_THEME=catppuccin-latte tools/shot.sh chat /tmp/chat-latte.png
 ```
 
+To give the sample computer the named herdr sessions `infra` and `omarchy`, so the session picker shows, set `FLUX_SESSIONS=1`. `FLUX_SESSION` picks the session that **Control** shows, `default`, `infra`, or `omarchy`. The sample agent `agent:omarchy/w2:p1` has sample output:
+
+```bash
+ANDROID_SERIAL=emulator-5554 FLUX_DEMO=1 FLUX_SESSIONS=1 FLUX_SESSION=omarchy tools/shot.sh control /tmp/control-sessions.png
+```
+
 Release builds ignore these extras.
 
 The agent screen of `agent:<pane>` shows the output of the agent as a thread.

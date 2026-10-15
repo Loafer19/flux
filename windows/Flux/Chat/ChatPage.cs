@@ -108,7 +108,8 @@ public static class ChatFeed
     // The first time that the chat saw each item, by key.
     static readonly Dictionary<string, DateTimeOffset> Seen = [];
 
-    public static IEnumerable<System.ComponentModel.INotifyPropertyChanged> Models(AppModel model) => [];
+    public static IEnumerable<System.ComponentModel.INotifyPropertyChanged> Models(AppModel model) =>
+        new System.ComponentModel.INotifyPropertyChanged?[] { model.Core.Plugin<ClipboardPlugin>()?.Model }.OfType<System.ComponentModel.INotifyPropertyChanged>();
 
     // The progress of the files that come in or go out, or null.
     public static double? Progress(AppModel model) => null;
@@ -124,6 +125,12 @@ public static class ChatFeed
                 Seen[key] = at = DateTimeOffset.Now;
             }
             list.Add(new ChatEntryView(key, at, Cards.PairCard(model, d, at)));
+        }
+        // The last clip shows only when it came from a computer.
+        if (model.Core.Plugin<ClipboardPlugin>()?.Model.Last is { Sent: false } clip &&
+            (model.Scope is null || clip.DeviceIds.Contains(model.Scope)))
+        {
+            list.Add(new ChatEntryView("clip", clip.At, Cards.ClipCard(clip)));
         }
         return list.OrderBy(e => e.At).ToArray();
     }
@@ -337,6 +344,15 @@ public static class Cards
     {
         var t = Ui.Text(label, 13, FontWeights.SemiBold, Tn.Current.Accent).MinHeight(24);
         return new PlainButton(t, run) { HorizontalAlignment = HorizontalAlignment.Left }.Help(help.Length > 0 ? help : label);
+    }
+
+    // The last clip from a computer. A secret shows "Hidden text" in the
+    // body face, and no part of the secret.
+    public static UIElement ClipCard(ClipEvent clip)
+    {
+        var tn = Tn.Current;
+        var text = clip.Secret ? ClipEvent.HiddenText : clip.Preview;
+        return InCard(Head("Clipboard", tn.Cyan, clip.Computer, Texts.ClockTime(clip.At), Ui.Dot(tn.Cyan, 8)), text, mono: !clip.Secret);
     }
 
     // A computer that asks to pair. A click opens the pairing page.

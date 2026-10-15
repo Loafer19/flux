@@ -35,6 +35,7 @@ sealed class SettingsView : View
     {
         this.model = model;
         Watch(model);
+        Watch(model.Core.Plugin<ThemePlugin>()?.Model);
         foreach (var m in FeatureSettings.Models(model))
         {
             Watch(m);
@@ -96,6 +97,7 @@ sealed class SettingsView : View
             Parts.SectionLabel("Theme"),
             Group(
                 Choices(),
+                Note(ComputerLine()),
                 Note("Computer draws the Omarchy theme of the computer in scope. System follows the app mode of Windows with Tokyo Night.")),
         };
         return Ui.V(Metrics.Gap, items);
@@ -104,24 +106,31 @@ sealed class SettingsView : View
     UIElement Choices()
     {
         var tn = Tn.Current;
-        var chips = Enum.GetValues<ThemeChoice>().Select(c =>
+        var chips = ThemeModes.All.Select(mode =>
         {
-            var selected = model.Theme == c;
+            var selected = model.Theme == mode;
             var chip = new Border
             {
-                Child = Ui.Text(c.ToString(), 13, FontWeights.SemiBold, selected ? tn.Text : tn.Sub),
+                Child = Ui.Text(mode.Label(), 13, FontWeights.SemiBold, selected ? tn.Text : tn.Sub),
                 Background = selected ? tn.AccentTile : tn.Tile,
                 BorderBrush = selected ? tn.Accent : tn.Line,
                 BorderThickness = new Thickness(selected ? 2 : 1),
                 CornerRadius = new CornerRadius(Metrics.SmallCorner),
                 Padding = new Thickness(12, 6, 12, 6),
             };
-            var choice = c;
-            var b = new PlainButton(chip, () => model.Theme = choice).Named("Theme " + c);
+            var b = new PlainButton(chip, () => model.Theme = mode).Named("Theme " + mode.Label());
             System.Windows.Automation.AutomationProperties.SetItemStatus(b, selected ? "Selected" : "");
             return (UIElement)b;
         });
         return Ui.H(6, chips);
+    }
+
+    // The theme that the Computer choice draws now, and the computer that sent it.
+    string ComputerLine()
+    {
+        var theme = model.Core.Plugin<ThemePlugin>()?.Model.Current(model.Scope);
+        var themeComputer = theme is null ? null : model.DeviceOf(theme.DeviceId)?.Name;
+        return "Computer: " + ThemeModes.ComputerLine(theme, themeComputer, model.PairedDevice(model.Scope)?.Name, ThisComputer.SystemDark);
     }
 
     UIElement FeaturesTab()

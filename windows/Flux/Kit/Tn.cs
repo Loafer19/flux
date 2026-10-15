@@ -1,49 +1,15 @@
 using System.Windows;
 using System.Windows.Media;
+using FluxKit;
 
 namespace Flux;
 
-// The color roles of DESIGN.md as 0xRRGGBB values. The theme of the computer
-// fills them through the contrast guard of FluxKit. Tokyo Night and Tokyo
-// Night Day are the fallback.
-public sealed record Palette(
-    bool Dark,
-    int Bg,
-    int OffTile,
-    int Tile,
-    int TileHi,
-    int Line,
-    int LineHi,
-    int Text,
-    int Sub,
-    int Dim,
-    int OnAccent,
-    int Accent,
-    int AccentTile,
-    int Cyan,
-    int Green,
-    int Magenta,
-    int Orange,
-    int Red,
-    int Yellow,
-    int TermBlue,
-    IReadOnlyList<int> Border,
-    double? BorderAngle)
-{
-    public static readonly Palette TokyoNight = new(
-        true, 0x16161E, 0x1A1B26, 0x1F2335, 0x24283B, 0x292E42, 0x3B4261, 0xC0CAF5, 0x8B94BE, 0x66709B, 0x16161E,
-        0x7AA2F7, 0x1E2845, 0x7DCFFF, 0x9ECE6A, 0xBB9AF7, 0xFF9E64, 0xF7768E, 0xE0AF68, 0x7AA2F7, [0x7AA2F7, 0x7DCFFF], null);
-
-    // The accent tile is tile-hi with 18% of the accent, as the guard derives it.
-    public static readonly Palette TokyoNightDay = new(
-        false, 0xE1E2E7, 0xDDDEE4, 0xD9DBE1, 0xD4D5DC, 0xC4C8DA, 0xA8AECB, 0x343B58, 0x44518A, 0x70769E, 0xFFFFFF,
-        0x2457B8, 0xB4BED6, 0x006486, 0x496529, 0x7B31CF, 0x914A00, 0xBA0046, 0x765729, 0x2457B8, [0x2457B8, 0x006486], null);
-}
-
-// The palette as frozen WPF brushes. Each view takes its colors from Tn.
+// The palette of DESIGN.md as frozen WPF brushes. FluxKit fills the roles
+// from the theme of the computer through the contrast guard. Each view takes
+// its colors from Tn.
 public sealed class ThemeColors
 {
-    public Palette Palette { get; }
+    public ThemePalette Palette { get; }
     public bool Dark => Palette.Dark;
     public SolidColorBrush Bg { get; }
     public SolidColorBrush OffTile { get; }
@@ -66,7 +32,7 @@ public sealed class ThemeColors
     public SolidColorBrush TermBlue { get; }
     public IReadOnlyList<Color> Border { get; }
 
-    public ThemeColors(Palette p)
+    public ThemeColors(ThemePalette p)
     {
         Palette = p;
         Bg = Brush(p.Bg);
@@ -126,12 +92,12 @@ public sealed class ThemeColors
 // The theme in effect. A change makes the open views draw again.
 public static class Tn
 {
-    public static ThemeColors Current { get; private set; } = new(Palette.TokyoNight);
+    public static ThemeColors Current { get; private set; } = new(ThemePalette.TokyoNight);
 
     // Called on the UI thread after the palette changed.
     public static event Action? Changed;
 
-    public static void Apply(Palette palette)
+    public static void Apply(ThemePalette palette)
     {
         if (palette == Current.Palette)
         {

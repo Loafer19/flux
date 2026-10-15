@@ -22,6 +22,15 @@ public sealed class ChatDock
     readonly TextBlock plusIcon = Ui.Icon(Icons.Add, 16);
     readonly TextBlock sendIcon = Ui.Icon(Icons.Send, 15);
     readonly Border frame;
+    readonly Border clipBox = new() { CornerRadius = new CornerRadius(Metrics.TileCorner), BorderThickness = new Thickness(1), Padding = new Thickness(10, 0, 10, 0) };
+    readonly TextBlock clipText = Ui.Text("", 12, mono: true);
+    readonly Border clipKey = new() { CornerRadius = new CornerRadius(Metrics.TileCorner), BorderThickness = new Thickness(1), Padding = new Thickness(12, 0, 12, 0) };
+    readonly TextBlock clipKeyText = Ui.Text("Send", 13, FontWeights.SemiBold);
+    readonly PlainButton clipSend;
+    readonly Stack clipRow;
+    readonly System.Windows.Threading.DispatcherTimer clipTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    long clipStamp = -1;
+    bool clipEmpty = true;
 
     // The dock. It stays the same element, so that the field keeps its focus.
     public Border Root { get; }
@@ -58,15 +67,65 @@ public sealed class ChatDock
         send = new PlainButton(sendTile, Send).Named("Send").Help("Send (Enter)");
         var row = Ui.H(8, plus, field.Fill(), send);
         tools.PlacementTarget = plus;
+        clipBox.Child = clipText;
+        clipKey.Child = Ui.H(6, Ui.Icon(Icons.Paste, 13), clipKeyText);
+        clipSend = new PlainButton(clipKey, SendClipboard).Named("Send the clipboard").Help("Send the clipboard of this computer");
+        clipRow = Ui.H(8, clipBox.Fill(), clipSend);
+        clipRow.Height = 40;
+        clipTimer.Tick += (_, _) => ReadClipboard();
         frame = new Border
         {
-            Child = new Border { Child = row, MaxWidth = Metrics.MaxContentWidth },
+            Child = new Border { Child = Ui.V(10, clipRow, row), MaxWidth = Metrics.MaxContentWidth },
             BorderThickness = new Thickness(1, 1, 1, 0),
             CornerRadius = new CornerRadius(20, 20, 0, 0),
             Padding = new Thickness(Metrics.Gutter, 12, Metrics.Gutter, 10),
         };
         Root = frame;
+        frame.Loaded += (_, _) =>
+        {
+            ReadClipboard();
+            clipTimer.Start();
+        };
+        frame.Unloaded += (_, _) => clipTimer.Stop();
         Update();
+    }
+
+    // Reads the clipboard of this computer when its change count is new. A
+    // copy that the source marks as private shows "Hidden text".
+    void ReadClipboard()
+    {
+        var clipboard = Features.Clipboard;
+        var stamp = clipboard.ChangeCount;
+        if (stamp == clipStamp)
+        {
+            return;
+        }
+        clipStamp = stamp;
+        string shown;
+        try
+        {
+            shown = clipboard.HoldsPrivate ? ClipEvent.HiddenText
+                : clipboard.ReadText() is { } text && text.Trim().Length > 0 ? ClipEvent.MakePreview(text, 400) : "";
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // The clipboard is busy. The next tick reads it again.
+            clipStamp = -1;
+            return;
+        }
+        clipEmpty = shown.Length == 0;
+        clipText.Text = clipEmpty ? "The clipboard is empty" : shown;
+        clipText.FontFamily = clipEmpty || shown == ClipEvent.HiddenText ? Faces.Body : Faces.Mono;
+        Update();
+    }
+
+    void SendClipboard()
+    {
+        if (model.Core.Plugin<ClipboardPlugin>() is not { } plugin || Targets.Pick(model, PacketType.Clipboard) is not { } id)
+        {
+            return;
+        }
+        _ = plugin.SendClipboardAsync(id);
     }
 
     // The features that send text or a link. The share feature sets it.
@@ -111,6 +170,16 @@ public sealed class ChatDock
         sendTile.BorderBrush = canSend ? tn.Accent : tn.Line;
         sendIcon.Foreground = canSend ? tn.OnAccent : tn.Dim;
         send.IsEnabled = canSend;
+        var clipboard = model.Core.Plugin<ClipboardPlugin>() is not null;
+        clipRow.Visibility = clipboard ? Visibility.Visible : Visibility.Collapsed;
+        clipBox.Background = tn.Bg;
+        clipBox.BorderBrush = tn.Line;
+        clipText.Foreground = clipEmpty ? tn.Sub : tn.Text;
+        var canClip = clipboard && !clipEmpty && model.ConnectedPaired.Any(d => d.Accepts(PacketType.Clipboard));
+        clipKey.Background = canClip ? tn.Line : tn.Tile;
+        clipKey.BorderBrush = tn.Line;
+        clipKeyText.Foreground = canClip ? tn.Text : tn.Dim;
+        clipSend.IsEnabled = canClip;
     }
 
     void OpenTools()

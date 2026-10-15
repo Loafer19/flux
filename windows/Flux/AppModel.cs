@@ -3,16 +3,6 @@ using FluxKit;
 
 namespace Flux;
 
-// The theme setting: the theme of the computer, the mode of Windows with
-// Tokyo Night, or a fixed light or dark mode.
-public enum ThemeChoice
-{
-    Computer,
-    System,
-    Light,
-    Dark,
-}
-
 // The UI state of the app. It mirrors the core and holds the destination,
 // the scope, the pages on top of each destination, and the theme setting.
 // AppModel.swift of the Mac app has the same job.
@@ -108,12 +98,13 @@ public sealed class AppModel : Model
         private set => Set(ref newlyPairedId, value);
     }
 
-    public ThemeChoice Theme
+    // The theme setting.
+    public ThemeMode Theme
     {
-        get => Enum.TryParse<ThemeChoice>(Core.Settings.String("theme"), out var t) ? t : ThemeChoice.Computer;
+        get => Core.Plugin<ThemePlugin>()?.Model.Mode ?? ThemeMode.Computer;
         set
         {
-            Core.Settings.Set("theme", value.ToString());
+            Core.Plugin<ThemePlugin>()?.SetMode(value);
             Changed();
         }
     }
@@ -293,22 +284,7 @@ public sealed class AppModel : Model
 
     // Theme
 
-    // The palette of the theme setting. systemDark is the app mode of Windows.
-    public Palette CurrentPalette(bool systemDark) => Theme switch
-    {
-        ThemeChoice.Dark => Palette.TokyoNight,
-        ThemeChoice.Light => Palette.TokyoNightDay,
-        ThemeChoice.System => systemDark ? Palette.TokyoNight : Palette.TokyoNightDay,
-        _ => ComputerPalette ?? (systemDark ? Palette.TokyoNight : Palette.TokyoNightDay),
-    };
-
-    // The palette of the computer in scope, from the theme feature. Null
-    // while no computer sent a theme.
-    public Func<string?, Palette?> ComputerPaletteOf { get; set; } = _ => null;
-
-    public Palette? ComputerPalette => ComputerPaletteOf(scope);
-
-    // Reports a change of the palette inputs that the theme feature sees.
-    public void ThemeInputsChanged() => Changed(nameof(Theme));
-
+    // The palette to draw for the scope. systemDark is the app mode of Windows.
+    public ThemePalette Palette(bool systemDark) =>
+        Core.Plugin<ThemePlugin>()?.Model.Palette(scope, systemDark) ?? (systemDark ? ThemePalette.TokyoNight : ThemePalette.TokyoNightDay);
 }

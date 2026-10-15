@@ -55,10 +55,34 @@ public abstract class View : ContentControl
 
     void OnModelChanged(object? sender, PropertyChangedEventArgs e) => Invalidate();
 
+    // While true, the view does not draw again, for example during a drag of
+    // a slider in it. The end of the hold draws the changes that came.
+    protected bool Hold
+    {
+        get => hold;
+        set
+        {
+            hold = value;
+            if (!value && missed)
+            {
+                missed = false;
+                Invalidate();
+            }
+        }
+    }
+
+    bool hold;
+    bool missed;
+
     // Draws the view on the next turn of the UI thread. More changes in the
     // same turn give 1 drawing.
     public void Invalidate()
     {
+        if (hold)
+        {
+            missed = true;
+            return;
+        }
         if (pending)
         {
             return;

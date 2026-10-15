@@ -10,9 +10,10 @@ public readonly record struct BatteryLevel(int Charge, bool Charging);
 public static class Batteries
 {
     // The model to watch for changes, or null without the feature.
-    public static INotifyPropertyChanged? Model(AppModel model) => null;
+    public static INotifyPropertyChanged? Model(AppModel model) => model.Core.Plugin<BatteryPlugin>()?.Model;
 
-    public static BatteryLevel? Of(AppModel model, string deviceId) => null;
+    public static BatteryLevel? Of(AppModel model, string deviceId) =>
+        model.Core.Plugin<BatteryPlugin>()?.Model.Of(deviceId) is { } b ? new BatteryLevel(b.Charge, b.Charging) : null;
 }
 
 // The items of all computers that need the user or have a state now: the

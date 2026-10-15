@@ -86,6 +86,10 @@ public sealed class ToastBackend : INotificationBackend
         {
             b.Append("<text>").Append(E(n.Body)).Append("</text>");
         }
+        if (n.Subtitle is { Length: > 0 } subtitle)
+        {
+            b.Append("<text placement=\"attribution\">").Append(E(subtitle)).Append("</text>");
+        }
         if (n.Image is { } image)
         {
             b.Append("<image placement=\"hero\" src=\"").Append(E(new Uri(image).AbsoluteUri)).Append("\"/>");

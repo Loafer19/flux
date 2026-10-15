@@ -72,6 +72,10 @@ public sealed class App : Application
                 ApplyTheme();
             }
         };
+        if (core.Plugin<ThemePlugin>() is { } theme)
+        {
+            theme.Model.PropertyChanged += (_, _) => ApplyTheme();
+        }
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, _) => Dispatcher.BeginInvoke(ApplyTheme);
         main = new MainWindow(model, Features.Root, Features.Route) { OpenSettings = OpenSettings };
         MainWindow = main;
@@ -94,11 +98,11 @@ public sealed class App : Application
         {
             return;
         }
-        var palette = model.CurrentPalette(ThisComputer.SystemDark);
+        var palette = model.Palette(ThisComputer.SystemDark);
         Tn.Apply(palette);
         Resources["Flux.Accent"] = Tn.Current.Accent;
 #pragma warning disable WPF0001
-        ThemeMode = palette.Dark ? ThemeMode.Dark : ThemeMode.Light;
+        ThemeMode = palette.Dark ? System.Windows.ThemeMode.Dark : System.Windows.ThemeMode.Light;
 #pragma warning restore WPF0001
     }
 
@@ -130,6 +134,10 @@ public sealed class App : Application
             main.Quitting = true;
         }
         tray?.Dispose();
+        if (model is not null)
+        {
+            Features.WillQuit(model);
+        }
         core?.Dispose();
         Shutdown();
     }

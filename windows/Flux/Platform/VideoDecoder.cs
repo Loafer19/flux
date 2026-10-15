@@ -235,9 +235,10 @@ public sealed class H264Decoder : IDisposable
         for (var turn = 0; turn < MaxTurns; turn++)
         {
             var data = new OutputDataBuffer();
-            var own = hasFormat && !givesSamples && outputSample != IntPtr.Zero;
+            var own = !givesSamples && outputSample != IntPtr.Zero;
             if (own)
             {
+                outputBuffer?.SetCurrentLength(0);
                 data.Sample = outputSample;
             }
             var hr = transform.ProcessOutput(0, 1, ref data, out _);
@@ -257,6 +258,10 @@ public sealed class H264Decoder : IDisposable
                     Marshal.ThrowExceptionForHR(hr);
                 }
                 continue;
+            }
+            if (hr < 0)
+            {
+                FluxLog.Error("desktop", $"the H.264 decoder failed with 0x{hr:X8}, own sample {own}, format {hasFormat}");
             }
             Marshal.ThrowExceptionForHR(hr);
             if (!own && data.Sample != IntPtr.Zero)
@@ -280,7 +285,7 @@ public sealed class H264Decoder : IDisposable
                     Marshal.ReleaseComObject(given);
                 }
             }
-            else if (own && outputBuffer is not null)
+            else if (own && hasFormat && outputBuffer is not null)
             {
                 Read(outputBuffer, show);
             }
@@ -349,7 +354,10 @@ public sealed class H264Decoder : IDisposable
         {
             if (type.GetUINT64(MF.FrameSize, out var size) < 0)
             {
+                // The size comes with the first SPS. The decoder still needs
+                // an output sample for the pull that reports it.
                 hasFormat = false;
+                Allocate(0);
                 return;
             }
             var w = (int)(size >> 32);
@@ -380,26 +388,37 @@ public sealed class H264Decoder : IDisposable
         {
             Marshal.ReleaseComObject(type);
         }
+        Allocate(stride * planeHeight * 3 / 2);
+        hasFormat = true;
+        FluxLog.Info("desktop", $"remote desktop: the decoder gives {width}x{height} pictures");
+    }
+
+    // Makes the output sample when the decoder needs one from the caller,
+    // with room for an NV12 picture of the bytes given, at least the size
+    // that the decoder asks for. Before the size is known, the room holds a
+    // 1080p picture.
+    void Allocate(int bytes)
+    {
         transform.GetOutputStreamInfo(0, out var info);
         givesSamples = (info.Flags & MF.ProvidesSamples) != 0;
         ReleaseOutput();
-        if (!givesSamples)
+        if (givesSamples)
         {
-            Marshal.ThrowExceptionForHR(MF.MFCreateSample(out outputSample));
-            var sample = (IMFSample)Marshal.GetObjectForIUnknown(outputSample);
-            try
-            {
-                Marshal.ThrowExceptionForHR(MF.MFCreateMemoryBuffer(Math.Max(info.Size, stride * planeHeight * 3 / 2), out var buffer));
-                sample.AddBuffer(buffer);
-                outputBuffer = buffer;
-            }
-            finally
-            {
-                Marshal.ReleaseComObject(sample);
-            }
+            return;
         }
-        hasFormat = true;
-        FluxLog.Info("desktop", $"remote desktop: the decoder gives {width}x{height} pictures");
+        var room = Math.Max(info.Size, bytes > 0 ? bytes : 1920 * 1088 * 3 / 2);
+        Marshal.ThrowExceptionForHR(MF.MFCreateSample(out outputSample));
+        var sample = (IMFSample)Marshal.GetObjectForIUnknown(outputSample);
+        try
+        {
+            Marshal.ThrowExceptionForHR(MF.MFCreateMemoryBuffer(room, out var buffer));
+            sample.AddBuffer(buffer);
+            outputBuffer = buffer;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(sample);
+        }
     }
 
     void ReleaseOutput()

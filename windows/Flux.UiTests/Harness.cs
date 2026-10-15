@@ -43,6 +43,14 @@ public sealed class Harness : IDisposable
 
     public Harness()
     {
+        // The errors of the app show in the log of the runner.
+        FluxLog.Sink = (level, category, message) =>
+        {
+            if (level == LogLevel.Error)
+            {
+                Console.WriteLine($"LOG {category}: {message}");
+            }
+        };
         var host = new FluxHost
         {
             DeviceName = () => "Test PC",

@@ -754,6 +754,17 @@ public sealed class SharePlugin(ISharePlatform? platform = null, IShareNotificat
 
     // Sends text, or a link when the text is 1 URL. It returns false when the
     // text did not go out.
+    // Records a clip that Send clipboard sent, so that the chat shows it on
+    // the side of this computer. Text is empty for a secret. Call it on the
+    // UI thread.
+    public void RecordClip(IReadOnlyList<string> deviceIds, string text, long stamp)
+    {
+        foreach (var id in deviceIds)
+        {
+            Model.Record(new SentItem(id, SentKind.Clip, text, clipStamp: stamp));
+        }
+    }
+
     public bool SendText(string text, string deviceId)
     {
         if (Encoding.UTF8.GetByteCount(text) > MaxText)

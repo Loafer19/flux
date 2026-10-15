@@ -22,6 +22,9 @@ public sealed class ChatPage : Page
     public ChatPage(AppModel model) : base(model)
     {
         chatDock = new ChatDock(model);
+        // Files, text, and links that the user drops on the page go to the computer.
+        AllowDrop = true;
+        Drop += (_, e) => ShareViews.Drop(model, e);
         DockPanel.SetDock(lineHost, Dock.Top);
         layout.Children.Add(lineHost);
         DockPanel.SetDock(chatDock.Root, Dock.Bottom);
@@ -109,10 +112,11 @@ public static class ChatFeed
     static readonly Dictionary<string, DateTimeOffset> Seen = [];
 
     public static IEnumerable<System.ComponentModel.INotifyPropertyChanged> Models(AppModel model) =>
-        new System.ComponentModel.INotifyPropertyChanged?[] { model.Core.Plugin<ClipboardPlugin>()?.Model }.OfType<System.ComponentModel.INotifyPropertyChanged>();
+        new System.ComponentModel.INotifyPropertyChanged?[] { model.Core.Plugin<ClipboardPlugin>()?.Model, model.Core.Plugin<SharePlugin>()?.Model }
+            .OfType<System.ComponentModel.INotifyPropertyChanged>();
 
     // The progress of the files that come in or go out, or null.
-    public static double? Progress(AppModel model) => null;
+    public static double? Progress(AppModel model) => ShareViews.Progress(model);
 
     public static IReadOnlyList<ChatEntryView> Entries(AppModel model)
     {
@@ -126,6 +130,7 @@ public static class ChatFeed
             }
             list.Add(new ChatEntryView(key, at, Cards.PairCard(model, d, at)));
         }
+        list.AddRange(ShareViews.Entries(model));
         // The last clip shows only when it came from a computer.
         if (model.Core.Plugin<ClipboardPlugin>()?.Model.Last is { Sent: false } clip &&
             (model.Scope is null || clip.DeviceIds.Contains(model.Scope)))

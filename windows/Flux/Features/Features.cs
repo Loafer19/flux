@@ -24,8 +24,23 @@ public static class Features
                 d => m.Push(new Route.Feature(Card.Media, d.Id))));
 
         FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<ClipboardPlugin>()?.Model);
+        FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<SharePlugin>()?.Model);
+        FeatureSettings.Makers.Add(ShareViews.Settings);
         FeatureSettings.Makers.Add(ClipboardSettings);
 
+        ChatDock.SendText = (m, id, text) => m.Core.Plugin<SharePlugin>()?.SendText(text, id) == true;
+        ChatDock.Tools.Add(m => m.Core.Plugin<SharePlugin>() is null ? null : ("Send files", Icons.Upload, () => ShareViews.PickAndSend(m)));
+
+        TrayActions.Makers.Add((m, d) => m.Core.Plugin<SharePlugin>() is { } s && d.Accepts(PacketType.Share)
+            ? ("Send file…", () =>
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = $"Send to {d.Name}" };
+                if (dialog.ShowDialog() == true)
+                {
+                    s.SendFiles(dialog.FileNames, d.Id);
+                }
+            })
+            : null);
         TrayActions.Makers.Add((m, d) => m.Core.Plugin<ClipboardPlugin>() is { } c && d.Accepts(PacketType.Clipboard)
             ? ("Send clipboard", () => _ = c.SendClipboardAsync(d.Id))
             : null);
@@ -42,16 +57,21 @@ public static class Features
             : null);
     }
 
-    public static IReadOnlyList<IFluxPlugin> Plugins() =>
-    [
-        new PingPlugin(),
-        new ClipboardPlugin(Clipboard),
-        new RunCommandPlugin(),
-        new MprisPlugin(),
-        new NotificationsPlugin(new ToastHistory()),
-        new BatteryPlugin(new BatterySource()),
-        new ThemePlugin(),
-    ];
+    public static IReadOnlyList<IFluxPlugin> Plugins(Notifier notifier)
+    {
+        var clipboard = new ClipboardPlugin(Clipboard);
+        return
+        [
+            new PingPlugin(),
+            new SharePlugin(new WindowsShare(clipboard), new SharedNotificationLimit(notifier)),
+            clipboard,
+            new RunCommandPlugin(),
+            new MprisPlugin(),
+            new NotificationsPlugin(new ToastHistory()),
+            new BatteryPlugin(new BatterySource()),
+            new ThemePlugin(),
+        ];
+    }
 
     // The page of a destination root.
     public static Page Root(AppModel model, Destination d) => d switch
@@ -74,6 +94,11 @@ public static class Features
     // Runs once after the start, before the network starts.
     public static void DidLaunch(AppModel model)
     {
+        if (model.Core.Plugin<ClipboardPlugin>() is { } clipboard && model.Core.Plugin<SharePlugin>() is { } share)
+        {
+            // A clip that Send clipboard sent shows in the chat.
+            clipboard.ClipSent += clip => share.RecordClip(clip.DeviceIds, clip.Text, clip.Stamp);
+        }
         if (model.Core.Plugin<NotificationsPlugin>() is { } notifications)
         {
             // A click on a notification of a computer opens its chat.

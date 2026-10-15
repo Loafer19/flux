@@ -53,7 +53,7 @@ public sealed class App : Application
         };
         try
         {
-            core = new FluxCore(paths, host, LanConfig.FromEnvironment(), Features.Plugins());
+            core = new FluxCore(paths, host, LanConfig.FromEnvironment(), Features.Plugins(notifier));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException or InvalidDataException)
         {

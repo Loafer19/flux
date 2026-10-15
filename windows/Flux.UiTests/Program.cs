@@ -57,6 +57,24 @@ static class Program
         return list;
     }
 
+    static List<Button> Buttons(DependencyObject root)
+    {
+        var list = new List<Button>();
+        void Walk(DependencyObject e)
+        {
+            if (e is Button b)
+            {
+                list.Add(b);
+            }
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(e); i++)
+            {
+                Walk(VisualTreeHelper.GetChild(e, i));
+            }
+        }
+        Walk(root);
+        return list;
+    }
+
     static bool Shows(DependencyObject root, string text) => Texts(root).Any(t => t.Contains(text, StringComparison.Ordinal));
 
     static DeviceSnapshot Device(string id, string name, bool paired, bool online, PairState state, string key = "") =>
@@ -76,7 +94,7 @@ static class Program
                 DeviceType = "laptop",
                 Post = action => Dispatcher.CurrentDispatcher.BeginInvoke(action),
             };
-            using var core = new FluxCore(new FluxPaths(data), host, new LanConfig { LoopbackOnly = true }, Features.Plugins());
+            using var core = new FluxCore(new FluxPaths(data), host, new LanConfig { LoopbackOnly = true }, Features.Plugins(host.Notifier));
             var model = new AppModel(core);
             var window = new MainWindow(model, Features.Root, Features.Route);
             window.Show();
@@ -127,10 +145,17 @@ static class Program
                 ValueList.From(new[] { new RemoteCommand("a", "Update", "omarchy-update") }));
             core.Plugin<BatteryPlugin>()!.Model.Computers = core.Plugin<BatteryPlugin>()!.Model.Computers.SetItem(paired.Id, new BatteryState(80, true));
             core.Plugin<ClipboardPlugin>()!.Model.Last = ClipEvent.ReceivedFrom(paired.Id, "omarchy-xps", "copied text");
+            var share = core.Plugin<SharePlugin>()!;
+            share.Model.Record(new SentItem(paired.Id, SentKind.Link, "https://omarchy.org"));
+            share.Model.Start(new FileTransfer { DeviceId = paired.Id, Name = "report.pdf", Incoming = true, Size = 2000, Bytes = 500 });
+            share.Model.Start(new FileTransfer { DeviceId = paired.Id, Name = "photo.png", Incoming = false, Size = 1000, Bytes = 1000, State = TransferState.Done, Ended = DateTimeOffset.Now });
             Pump();
             model.Go(Destination.Chat);
             Pump();
             Check(Shows(window, "copied text"), "the chat shows the clip from the computer");
+            Check(Shows(window, "https://omarchy.org") && Shows(window, "Link · opened in the browser"), "the chat shows the sent link");
+            Check(Shows(window, "report.pdf") && Shows(window, "Receiving"), "the chat shows the file that comes in");
+            Check(Shows(window, "photo.png") && Shows(window, "Sent ·"), "the chat shows the sent file");
 
             model.Go(Destination.Control);
             Pump();
@@ -163,6 +188,16 @@ static class Program
             Pump();
             Check(Shows(settings, "Flux is on") && Shows(settings, "Open at login"), "the settings show General");
             Check(Shows(settings, "Computer: "), "the settings name the theme of the Computer choice");
+            settings.Close();
+            settings = new SettingsWindow(model);
+            settings.Show();
+            Pump();
+            foreach (var b in Buttons(settings).Where(b => System.Windows.Automation.AutomationProperties.GetName(b) == "Features"))
+            {
+                b.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            }
+            Pump();
+            Check(Shows(settings, "Received files") && Shows(settings, "Sync clipboard"), "the settings show the features");
             settings.Close();
 
             var panel = new TrayPanel(model, () => { }, () => { }, () => { });

@@ -306,8 +306,10 @@ public sealed class CaptureWatchPlugin : IFluxPlugin, IDisposable
         {
             try
             {
+                // Windows does not hide a name that starts with a dot, as
+                // other systems do, so the scan skips such names itself.
                 var info = new FileInfo(path);
-                if (info.Exists && (info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
+                if (info.Exists && !info.Name.StartsWith('.') && (info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
                 {
                     found.Add((info, info.CreationTimeUtc, info.LastWriteTimeUtc));
                 }

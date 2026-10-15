@@ -61,7 +61,7 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 
 | Feature | What Windows does |
 | --- | --- |
-| Files | Sends files to the computer from the **+** menu of Chat, a drop on Chat, or the tray. Receives files from `flux-cli send` in Downloads, with resumable transfers |
+| Files | Sends files to the computer from the **+** menu of Chat, a drop on Chat, the tray, or **Send to > Flux** in File Explorer. Settings > Features > Files adds Flux to the **Send to** menu. Receives files from `flux-cli send` in Downloads, with resumable transfers |
 | Text and links | Sends the text of the Chat field. A single web address opens in the browser of the computer, and other text goes on its clipboard. A link from the computer waits in a notification with **Open** |
 | Clipboard | Syncs copied text both ways. **Send** in the dock of Chat sends the clipboard at once |
 | Theme | Draws the Omarchy theme of the computer in scope. Settings has Computer, System, Light, and Dark |

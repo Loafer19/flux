@@ -138,6 +138,17 @@ public static class Features
         }
     }
 
+    // Files that the user gave to Flux, from Send to or Open with.
+    public static void Open(AppModel model, IReadOnlyList<string> files)
+    {
+        var folders = files.Where(Directory.Exists).ToArray();
+        if (folders.Length > 0)
+        {
+            model.Show(folders.Length == 1 ? "Flux sends no folders. Send the files in it." : "Flux sends no folders. Send the files in them.");
+        }
+        ShareViews.SendFiles(model, files.Where(File.Exists).ToArray());
+    }
+
     // Runs when the app quits.
     public static void WillQuit(AppModel model)
     {

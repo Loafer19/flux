@@ -219,6 +219,13 @@ public static class ShareViews
         });
         return ("Files", SettingsView.Group(
             SettingsView.Field("Received files", Ui.H(8, Ui.Text(share.DownloadFolder, 12, mono: true).Fill(), choose)),
+            SettingsView.Toggle("Show Flux in the Send to menu", SendToMenu.Enabled, on =>
+            {
+                if (!SendToMenu.Set(on))
+                {
+                    model.Show("Windows did not change the Send to menu");
+                }
+            }),
             SettingsView.Note("Received files never open by themselves. Windows checks them before they open, as files from the internet.")));
     }
 }

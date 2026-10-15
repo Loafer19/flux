@@ -76,10 +76,14 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Omarchy panel | Shows the workspaces, the windows, and the key bindings of Hyprland next to the remote desktop, and runs them |
 | Get files | Browses the folders of the computer, searches them, and downloads files to Downloads |
 | Fingerprint approval | Approves `sudo`, polkit, and the `hyprlock` lock screen of the computer with Windows Hello: a fingerprint, a face, or the Windows Hello PIN. See [Fingerprint approval](#fingerprint-approval) |
+| Microphone | Sends the microphone of this computer to the computer, where apps see **Flux Microphone**. Start it from **Mic** in Control or from the tray. The page picks the input and shows the level |
+| Webcam | Sends a camera of this computer to the computer, where apps see **Flux Camera**. The page shows a preview and sets the shape, the resolution, the mirror, the zoom, the exposure, and the colors. **Also send the microphone** sends the microphone with the camera |
+| Screen mirror | Shows a display of this computer in a window on the computer |
+| Stream requests | `flux-cli webcam start` and `flux-cli mic start` ask Windows for a stream. A prompt shows the request while Flux is in front, else a notification. Only a click on start starts the stream |
 
 The touchpad, the remote desktop, the answers to agents, and **Start Agent** ask for Windows Hello first: a face, a fingerprint, or the Windows Hello PIN. A check stays valid for 5 minutes, and it ends when Windows locks, sleeps, or turns off the display. Without Windows Hello, these features do not open. Set up a PIN in Settings > Accounts > Sign-in options.
 
-These features of the Mac app are not in the Windows app yet: the microphone, the webcam, the screen mirror, and the camera modes.
+The camera modes of the Mac app are not in the Windows app yet.
 
 Windows has no public interface that turns Do Not Disturb on or off, so the Windows app does not sync Do Not Disturb.
 
@@ -128,6 +132,15 @@ The Omarchy computer needs a `fluxd` newer than 0.17.0. Version 0.17.0 and earli
 On Windows 11 24H2 and later, the prompt of Windows Hello belongs to the prompt of Flux. On an older Windows, Flux brings it to the front.
 
 The page of the computer in Computers shows the key code, the recent requests, and **Remove Key**. **Remove Key** and an unpair delete the key of that computer. The key file on the Omarchy computer stays until you run `sudo flux-cli approve remove`.
+
+## Streams
+
+The microphone, the webcam, and the screen mirror listen on TCP 12070 to 12099, and the computer connects to Windows. The [camera and streams](camera.md) page describes the side of the computer.
+
+- Windows does not ask a desktop app for the microphone or the camera. Turn on **Let desktop apps access your microphone** in Settings > Privacy & security > Microphone, and the same setting under Camera. While a setting is off, the page of the stream shows **Open Privacy Settings**.
+- The webcam and the screen mirror use the H.264 encoder of Windows on the processor: Main profile, level 4.1, and a key frame each second. A 1080p webcam needs more processor time than 720p.
+- The screen mirror uses the screen capture of Windows, with the pointer. It sends at most 30 frames each second, and at most 1080 pixels on the long side.
+- The Windows app does not turn the camera image. A tablet camera in portrait orientation gives a sideways image.
 
 ## Pairing data
 
@@ -193,7 +206,7 @@ To point the app at a headless `fluxd`, set these variables:
 | `windows/Flux/Shell` | The main window, the sidebar, the header, and the scope menu |
 | `windows/Flux/Chat` | Chat: the thread, the cards, the dock, the notices, and the pairing guide |
 | `windows/Flux/Destinations` | Control, Computers, and the pairing pages |
-| `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, Windows Hello, and other Windows parts |
+| `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, Windows Hello, the microphone, the cameras, the screen capture, the H.264 encoder and decoder, and other Windows parts |
 | `windows/Flux.UiTests` | Builds each page with sample computers on Windows |
 
 The views are C# code, not XAML, so that the compiler checks each property. Each view draws itself from the models again after a change, as a SwiftUI view does.

@@ -32,6 +32,9 @@ public static class Features
         ControlTools.Tools.Add(m => m.Core.Plugin<MprisPlugin>() is null || !ControlTools.HasFeature(m, PacketType.MprisRequest) || MediaDock.Shows(m) ? null
             : ControlTools.Tool(m, Icons.Audio, "Media", "Play, pause, and volume", PacketType.MprisRequest,
                 d => m.Push(new Route.Feature(Card.Media, d.Id))));
+        ControlTools.Streams.Add(StreamFeature.MicTool);
+        ControlTools.Streams.Add(StreamFeature.WebcamTool);
+        ControlTools.Streams.Add(StreamFeature.MirrorTool);
 
         FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<ClipboardPlugin>()?.Model);
         FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<SharePlugin>()?.Model);
@@ -76,6 +79,9 @@ public static class Features
         TrayActions.Makers.Add(ApproveFeature.TrayAction);
 
         ComputerSections.Makers.Add(ApproveFeature.Section);
+        TrayActions.Makers.Add(StreamFeature.StopWebcamAction);
+        TrayActions.Makers.Add(StreamFeature.StopMirrorAction);
+        TrayActions.Makers.Add(StreamFeature.MicAction);
     }
 
     public static IReadOnlyList<IFluxPlugin> Plugins(Notifier notifier)
@@ -96,6 +102,10 @@ public static class Features
             new ThemePlugin(),
             new HerdrPlugin(),
             new ApprovePlugin(new WindowsHelloSigner(ApprovePrompts.Owner)),
+            new MicPlugin(StreamFeature.Microphone),
+            new WebcamPlugin(StreamFeature.Cameras, StreamFeature.Renderer, StreamFeature.Encoders),
+            new ScreenPlugin(StreamFeature.Screens, StreamFeature.Encoders),
+            new StreamRequestPlugin(StreamFeature.Starter),
         ];
     }
 
@@ -114,6 +124,8 @@ public static class Features
         Flux.Route.Computer c => new ComputerPage(model, c.DeviceId),
         Flux.Route.Feature { Card: Card.Commands } f => new CommandsPage(model, f.DeviceId),
         Flux.Route.Feature { Card: Card.Media } f => new MediaPage(model, f.DeviceId),
+        Flux.Route.Feature { Card: Card.Mic } f => new MicPage(model, f.DeviceId),
+        Flux.Route.Feature { Card: Card.Stream } f => new StreamPage(model, f.DeviceId),
         _ => new ComputersPage(model),
     };
 
@@ -123,6 +135,7 @@ public static class Features
         AgentsFeature.DidLaunch(model);
         ApproveFeature.DidLaunch(model);
         ReplyLock.Watch();
+        StreamFeature.DidLaunch(model);
         if (model.Core.Plugin<ClipboardPlugin>() is { } clipboard && model.Core.Plugin<SharePlugin>() is { } share)
         {
             // A clip that Send clipboard sent shows in the chat.
@@ -161,6 +174,7 @@ public static class Features
         model.Core.Plugin<ClipboardPlugin>()?.Dispose();
         AgentsWindows.CloseAll();
         ApprovePrompts.Close();
+        StreamFeature.WillQuit(model);
     }
 
     static (string Label, UIElement Content)? ClipboardSettings(AppModel model)

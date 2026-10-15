@@ -96,6 +96,8 @@ public sealed class EventCards(AppModel model, bool inPanel = false)
                 return card;
             case InboxContent.Pair p when model.DeviceOf(p.DeviceId) is { } d:
                 return Cards.PairCard(model, d, at);
+            case InboxContent.Approval a:
+                return ApproveCards.ApprovalCard(model, item, a.Request, at);
             default:
                 return Cards.InCard(Cards.Head(item.StateWord, item.Tone.Brush(), string.Join(" · ", item.SourceParts), Texts.ClockTime(at)),
                     item.Title, ask: item.Kind.NeedsYou());

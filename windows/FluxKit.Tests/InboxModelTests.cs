@@ -3,8 +3,7 @@ using FluxKit;
 namespace FluxKit.Tests;
 
 // Ported from InboxModelTests.swift of the Mac app and InboxModelTest.kt of
-// the Android app, plus the texts of the items. The approval feature is not
-// in the Windows app yet, so its items are not here.
+// the Android app, plus the texts of the items.
 public class InboxModelTests
 {
     static DeviceSnapshot Device(string id, bool paired = true, bool online = true, PairState? pairState = null) =>
@@ -17,6 +16,9 @@ public class InboxModelTests
         Inbox.Items(devices, herdr ?? []);
 
     static HerdrAgent? AgentOf(InboxItem item) => item.Content is InboxContent.Agent a ? a.Value : null;
+
+    static ApproveRequest Approval(string computer) =>
+        new(computer, "name-" + computer, "r1", ApproveKind.Approve, "host", "user", "sudo", "pts/1", "", 0, new string('0', 64), 60);
 
     static readonly HerdrAgent Working = new("w1:p1", "claude", AgentStatus.Working, "Refactor");
     static readonly HerdrAgent Blocked = new("w2:p1", "codex", AgentStatus.Blocked, "Migrate");
@@ -35,12 +37,30 @@ public class InboxModelTests
     }
 
     [Fact]
-    public void AnApprovalGoesAtTheEnd()
+    public void TheItemsAreTheAgentsTheApprovalAndThePairRequests()
     {
-        // The approval feature gives its open request as an item.
-        var pair = new InboxItem(new InboxContent.Pair("x"), "name-x");
-        var items = Inbox.Items([Device("a")], new Dictionary<string, HerdrState> { ["a"] = Agents(Blocked) }, pair);
-        Assert.Equal([InboxKind.AgentInput, InboxKind.PairRequest], items.Select(i => i.Kind));
+        var devices = new[] { Device("a"), Device("new", paired: false, pairState: PairState.Incoming) };
+        var items = Inbox.Items(devices, new Dictionary<string, HerdrState> { ["a"] = Agents(Working, Blocked, Done, Idle) }, Approval("a"));
+        Assert.Equal([InboxKind.AgentWorking, InboxKind.AgentInput, InboxKind.AgentDone, InboxKind.PairRequest, InboxKind.Approval],
+            items.Select(i => i.Kind));
+        Assert.Equal(3, Inbox.NeedsYou(items));
+        // The approval names its computer.
+        Assert.Equal("name-a", items[^1].Computer);
+    }
+
+    // The items of a core take the open request of the approve plugin.
+    [Fact]
+    public void TheItemsOfACoreTakeTheOpenApproval()
+    {
+        using var t = new TestCore(SystemTestComputer.CoreLan(36745), [new ApprovePlugin()]);
+        var plugin = t.Core.Plugin<ApprovePlugin>()!;
+        Assert.Empty(Inbox.Items(t.Core, [Device("a")]));
+        plugin.Model.Current = Approval("a");
+        var item = Assert.Single(Inbox.Items(t.Core, [Device("a")]));
+        Assert.Equal("approve|a|r1", item.Key);
+        // The approval of a computer shows only in its scope.
+        Assert.Empty(Inbox.InScope([item], "b"));
+        Assert.Single(Inbox.InScope([item], "a"));
     }
 
     [Fact]
@@ -205,6 +225,17 @@ public class InboxModelTests
         // Without a title and a project, the pane names the agent.
         Assert.Equal("w1:p1", works.Title);
         Assert.Equal("billing", new InboxItem(new InboxContent.Agent("a", waiting with { Title = "" }, true), "desk").Title);
+
+        var approve = new InboxItem(new InboxContent.Approval(Approval("a")), "name-a");
+        Assert.Equal(InboxKind.Approval, approve.Kind);
+        Assert.Equal("approve|a|r1", approve.Key);
+        Assert.Equal(["a"], approve.DeviceIds);
+        Assert.Equal("Needs approval", approve.StateWord);
+        Assert.Equal(InboxTone.Red, approve.Tone);
+        Assert.Equal(["sudo"], approve.SourceParts);
+        Assert.Equal("Approve sudo on host?", approve.Title);
+        Assert.Equal("Enroll this computer on host?",
+            new InboxItem(new InboxContent.Approval(Approval("a") with { Kind = ApproveKind.Enroll }), "name-a").Title);
 
         var pair = new InboxItem(new InboxContent.Pair("new"), "name-new");
         Assert.Equal(InboxKind.PairRequest, pair.Kind);

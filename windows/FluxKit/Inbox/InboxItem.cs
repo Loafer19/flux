@@ -43,10 +43,7 @@ public enum InboxTone
 }
 
 // What an Inbox item is about. Each content gives its kind, its key, its
-// computers, and its texts. The approval feature adds its content for a
-// sudo, polkit, or enrollment request as 1 more subclass, with the kind
-// Approval, the key "approve|<computer>|<request>", the state word "Needs
-// approval", and the title "Approve <service> on <host>?".
+// computers, and its texts: an agent, an approval, or a pair request.
 public abstract record InboxContent
 {
     public abstract InboxKind Kind { get; }
@@ -100,6 +97,20 @@ public abstract record InboxContent
             }
             return Value.Project.Length == 0 ? Value.Pane : Value.Project;
         }
+    }
+
+    // A sudo, polkit, or enrollment request that waits for Windows Hello.
+    // The approval feature gives the open request, see ApproveModel.Current.
+    public sealed record Approval(ApproveRequest Request) : InboxContent
+    {
+        public override InboxKind Kind => InboxKind.Approval;
+        public override string Key => $"approve|{Request.ComputerId}|{Request.Id}";
+        public override IReadOnlyList<string> DeviceIds => [Request.ComputerId];
+        public override string StateWord => "Needs approval";
+        public override IReadOnlyList<string> Source => [Request.Service];
+
+        // "Approve sudo on omarchy-xps?", or the enrollment form.
+        public override string Title(string computer) => ApproveTexts.Title(Request);
     }
 
     // A computer that is not paired and asks to pair. It has no computers,

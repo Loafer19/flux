@@ -26,7 +26,7 @@ public sealed partial class AppModel
         set => Set(ref chatReply, value);
     }
 
-    // The Inbox items of all computers: the agents and the pair requests.
+    // The Inbox items of all computers: the agents, the approval, and the pair requests.
     public IReadOnlyList<InboxItem> InboxItems() => FluxKit.Inbox.Items(Core, State.Devices);
 
     // Keeps the times and the prompts of the Inbox items of all computers
@@ -52,6 +52,16 @@ public sealed partial class AppModel
             herdr.Model.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(HerdrModel.States))
+                {
+                    EventsChanged();
+                }
+            };
+        }
+        if (Core.Plugin<ApprovePlugin>() is { } approve)
+        {
+            approve.Model.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ApproveModel.Current))
                 {
                     EventsChanged();
                 }
@@ -108,8 +118,8 @@ public sealed partial class AppModel
         return output.ToImmutable();
     }
 
-    // The models that a view of the Inbox items watches: the app model and
-    // the agents.
+    // The models that a view of the Inbox items watches: the app model, the
+    // agents, and the approvals.
     public IEnumerable<INotifyPropertyChanged> InboxModels() =>
-        new INotifyPropertyChanged?[] { this, Core.Plugin<HerdrPlugin>()?.Model }.OfType<INotifyPropertyChanged>();
+        new INotifyPropertyChanged?[] { this, Core.Plugin<HerdrPlugin>()?.Model, Core.Plugin<ApprovePlugin>()?.Model }.OfType<INotifyPropertyChanged>();
 }

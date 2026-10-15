@@ -75,10 +75,11 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Remote desktop | Shows the screen of the computer in a window, with its sound, and takes the pointer and the keys. The Windows key goes to Hyprland while the video has the focus. The video pauses while the window is minimized and while Windows is locked |
 | Omarchy panel | Shows the workspaces, the windows, and the key bindings of Hyprland next to the remote desktop, and runs them |
 | Get files | Browses the folders of the computer, searches them, and downloads files to Downloads |
+| Fingerprint approval | Approves `sudo`, polkit, and the `hyprlock` lock screen of the computer with Windows Hello: a fingerprint, a face, or the Windows Hello PIN. See [Fingerprint approval](#fingerprint-approval) |
 
 The touchpad, the remote desktop, the answers to agents, and **Start Agent** ask for Windows Hello first: a face, a fingerprint, or the Windows Hello PIN. A check stays valid for 5 minutes, and it ends when Windows locks, sleeps, or turns off the display. Without Windows Hello, these features do not open. Set up a PIN in Settings > Accounts > Sign-in options.
 
-These features of the Mac app are not in the Windows app yet: fingerprint approval, the microphone, the webcam, the screen mirror, and the camera modes.
+These features of the Mac app are not in the Windows app yet: the microphone, the webcam, the screen mirror, and the camera modes.
 
 Windows has no public interface that turns Do Not Disturb on or off, so the Windows app does not sync Do Not Disturb.
 
@@ -107,6 +108,25 @@ Text from a computer never goes back to that computer. Text larger than 1 MB doe
 Files go to the Downloads folder of Windows. Settings > Features > Files picks another folder.
 Flux never opens a received file by itself. It writes the Mark of the Web on each received file, so Windows and Office check the file before it opens, as a file from the internet.
 
+## Fingerprint approval
+
+Windows approves `sudo`, polkit, and the `hyprlock` lock screen of a paired computer, as the phone and the Mac do. [Fingerprint approval](approvals.md) tells how to set it up, and [the security design](approve.md#windows) tells how it works.
+
+1. Set up Windows Hello in Settings > Accounts > Sign-in options. A PIN is enough.
+2. On the Omarchy computer, run `sudo flux-cli approve setup`.
+3. Select **Enroll** in the prompt of Flux, and confirm with Windows Hello 2 times: once to make the key, and once to sign with it.
+4. Type the key code that Flux shows in the terminal, all 16 characters.
+
+Flux makes 1 key for each computer in Windows Hello, an RSA 2048 key in the TPM when the computer has one. The private key never leaves Windows Hello.
+Each request opens a prompt in front of the other windows, with the countdown, **Deny**, and **Approve**. **Approve** asks Windows Hello for each signature. `Esc` denies, and `Enter` does not approve.
+The request also shows in Chat, in the tray panel, and as a notification. **Approve** in the notification asks Windows Hello at once, and a click on the notification shows the prompt.
+
+Windows Hello always takes its PIN, so the PIN can approve too. Anyone who knows the PIN can approve at this computer. Use a PIN that other people do not know.
+A computer without Windows Hello refuses each request, and PAM asks for the password.
+On Windows 11 24H2 and later, the prompt of Windows Hello belongs to the prompt of Flux. On an older Windows, Flux brings it to the front.
+
+The page of the computer in Computers shows the key code, the recent requests, and **Remove Key**. **Remove Key** and an unpair delete the key of that computer. The key file on the Omarchy computer stays until you run `sudo flux-cli approve remove`.
+
 ## Pairing data
 
 Flux keeps its data in `%LOCALAPPDATA%\Flux`:
@@ -116,6 +136,7 @@ Flux keeps its data in `%LOCALAPPDATA%\Flux`:
 | `identity\identity.bin` | The certificate and private key of this computer, protected with DPAPI for the Windows user |
 | `trusted.json` | The paired computers and their pinned certificates |
 | `settings.json` | The settings of Flux and of the features |
+| `approve\` | The name and the public key of the Windows Hello key for each computer, with the host, the user, and the time of the enrollment |
 | `incoming\` | Parts of resumable files, removed after 7 days |
 | `flux.log` | The log. It never holds clipboard text, file contents, or notification text |
 
@@ -170,7 +191,7 @@ To point the app at a headless `fluxd`, set these variables:
 | `windows/Flux/Shell` | The main window, the sidebar, the header, and the scope menu |
 | `windows/Flux/Chat` | Chat: the thread, the cards, the dock, the notices, and the pairing guide |
 | `windows/Flux/Destinations` | Control, Computers, and the pairing pages |
-| `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, and other Windows parts |
+| `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, Windows Hello, and other Windows parts |
 | `windows/Flux.UiTests` | Builds each page with sample computers on Windows |
 
 The views are C# code, not XAML, so that the compiler checks each property. Each view draws itself from the models again after a change, as a SwiftUI view does.

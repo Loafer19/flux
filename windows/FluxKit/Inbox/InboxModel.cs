@@ -35,10 +35,9 @@ public static partial class Inbox
     // Collects the Inbox items of all computers: the agents that wait, are
     // done, or work, the pair requests, and the open approval. A computer
     // that is not reachable adds no agents. Each key shows once, because a
-    // computer can report 2 agents on 1 pane. The approval feature gives its
-    // open request as approval.
+    // computer can report 2 agents on 1 pane.
     public static IReadOnlyList<InboxItem> Items(IEnumerable<DeviceSnapshot> devices, IReadOnlyDictionary<string, HerdrState> herdr,
-                                                 InboxItem? approval = null)
+                                                 ApproveRequest? approval = null)
     {
         var output = new List<InboxItem>();
         foreach (var d in devices)
@@ -62,7 +61,7 @@ public static partial class Inbox
         }
         if (approval is not null)
         {
-            output.Add(approval);
+            output.Add(new InboxItem(new InboxContent.Approval(approval), approval.ComputerName));
         }
         var seen = new HashSet<string>();
         return output.Where(i => seen.Add(i.Key)).ToArray();
@@ -71,7 +70,8 @@ public static partial class Inbox
     // The items from the plugin models of core. devices is the device list
     // that the app shows.
     public static IReadOnlyList<InboxItem> Items(FluxCore core, IEnumerable<DeviceSnapshot> devices) =>
-        Items(devices, (IReadOnlyDictionary<string, HerdrState>?)core.Plugin<HerdrPlugin>()?.Model.States ?? new Dictionary<string, HerdrState>());
+        Items(devices, (IReadOnlyDictionary<string, HerdrState>?)core.Plugin<HerdrPlugin>()?.Model.States ?? new Dictionary<string, HerdrState>(),
+            core.Plugin<ApprovePlugin>()?.Model.Current);
 
     // The number of items that need the user.
     public static int NeedsYou(IEnumerable<InboxItem> items) => items.Count(i => i.Kind.NeedsYou());

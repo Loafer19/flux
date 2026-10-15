@@ -118,9 +118,9 @@ public sealed class ChatPage : Page
 public sealed record ChatEntryView(string Id, DateTimeOffset At, UIElement View, bool Mine = false);
 
 // The entries of the chat in the order of Chat.Entries of FluxKit: the
-// files, the texts, and the clips of the share feature, the last clip, and
-// the Inbox items with the times of the app model. The approval feature adds
-// the answers to approvals. ChatView.swift of the Mac app has the same order.
+// files, the texts, and the clips of the share feature, the last clip, the
+// answers to approvals, and the Inbox items with the times of the app model.
+// ChatView.swift of the Mac app has the same order.
 public static class ChatFeed
 {
     public static IEnumerable<System.ComponentModel.INotifyPropertyChanged> Models(AppModel model) =>
@@ -129,6 +129,7 @@ public static class ChatFeed
             model.Core.Plugin<ClipboardPlugin>()?.Model,
             model.Core.Plugin<SharePlugin>()?.Model,
             model.Core.Plugin<HerdrPlugin>()?.Model,
+            model.Core.Plugin<ApprovePlugin>()?.Model,
             ChatAnswers.Shared,
         }.OfType<System.ComponentModel.INotifyPropertyChanged>();
 
@@ -142,8 +143,9 @@ public static class ChatFeed
         var all = model.InboxItems();
         var share = model.Core.Plugin<SharePlugin>()?.Model;
         var herdr = model.Core.Plugin<HerdrPlugin>()?.Model;
+        var answers = (IEnumerable<ApproveRecord>?)model.Core.Plugin<ApprovePlugin>()?.Model.History ?? [];
         var entries = Chat.Entries((IEnumerable<SentItem>?)share?.Sent ?? [], (IEnumerable<FileTransfer>?)share?.Transfers ?? [],
-            model.Core.Plugin<ClipboardPlugin>()?.Model.Last, all, (id, pane) => herdr?.AgentSince(id, pane), model.ChatSeen(all), model.Scope);
+            model.Core.Plugin<ClipboardPlugin>()?.Model.Last, answers, all, (id, pane) => herdr?.AgentSince(id, pane), model.ChatSeen(all), model.Scope);
         var shared = ShareViews.Entries(model).ToDictionary(e => e.Id);
         cards.Keep(all.Select(i => i.Key));
         var list = new List<ChatEntryView>();
@@ -156,6 +158,10 @@ public static class ChatFeed
                     break;
                 case ChatEntry.Clip c:
                     list.Add(new ChatEntryView(e.Id, e.At, Cards.ClipCard(c.Value)));
+                    break;
+                case ChatEntry.Answer a:
+                    // The user just answered, so the thread follows it.
+                    list.Add(new ChatEntryView(e.Id, e.At, ApproveCards.AnswerCard(a.Record), Mine: true));
                     break;
                 default:
                     if (shared.TryGetValue(e.Id, out var view))

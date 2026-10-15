@@ -4,10 +4,9 @@ using System.Text.RegularExpressions;
 namespace FluxKit;
 
 // 1 entry of the chat. The computers write the files that come in, the last
-// clip, and the Inbox items. This device writes the links, texts, clips, and
-// files that it sent. The approval feature adds an entry for each answer to
-// an approval, at the time that the answer ended. Chat.swift of the Mac app
-// has the same entries.
+// clip, the answers to approvals, and the Inbox items. This device writes the
+// links, texts, clips, and files that it sent. Chat.swift of the Mac app has
+// the same entries.
 public abstract record ChatEntry
 {
     // The ID of the entry. It stays the same while the entry is the same.
@@ -41,6 +40,15 @@ public abstract record ChatEntry
         public override string Id => "clip";
         public override DateTimeOffset At => Value.At;
         public override bool Shows(string? scope) => scope is null || Value.DeviceIds.Contains(scope);
+    }
+
+    // The answer of this device to an approval. It takes the time that the
+    // answer ended.
+    public sealed record Answer(ApproveRecord Record) : ChatEntry
+    {
+        public override string Id => "answer|" + Record.Id;
+        public override DateTimeOffset At => Record.Resolved ?? Record.Received;
+        public override bool Shows(string? scope) => scope is null || Record.ComputerId == scope;
     }
 
     // An agent, an approval, or a pair request, at the time Time that it got its state.
@@ -100,13 +108,16 @@ public sealed class SeenClock(TimeSpan? grace = null)
 public static partial class Chat
 {
     // The entries of the chat in scope, oldest first. clip shows only when
-    // it came from a computer. An agent takes the start time of its status
-    // from since, by computer and pane. Any other item, and an agent with no
-    // start time, takes its time from seen, by key. Entries with the same
-    // time keep the order of the arguments.
+    // it came from a computer. answers are the approval records, and only
+    // the approved, enrolled, and denied ones with a Resolved time show. An
+    // agent takes the start time of its status from since, by computer and
+    // pane. Any other item, and an agent with no start time, takes its time
+    // from seen, by key. Entries with the same time keep the order of the
+    // arguments.
     public static IReadOnlyList<ChatEntry> Entries(IEnumerable<SentItem> sent, IEnumerable<FileTransfer> transfers, ClipEvent? clip,
-                                                   IEnumerable<InboxItem> items, Func<string, string, DateTimeOffset?> since,
-                                                   IReadOnlyDictionary<string, DateTimeOffset> seen, string? scope = null)
+                                                   IEnumerable<ApproveRecord> answers, IEnumerable<InboxItem> items,
+                                                   Func<string, string, DateTimeOffset?> since, IReadOnlyDictionary<string, DateTimeOffset> seen,
+                                                   string? scope = null)
     {
         var output = new List<ChatEntry>();
         output.AddRange(sent.Select(s => new ChatEntry.Sent(s)));
@@ -115,6 +126,9 @@ public static partial class Chat
         {
             output.Add(new ChatEntry.Clip(clip));
         }
+        output.AddRange(answers
+            .Where(r => r.Resolved is not null && r.Outcome.Kind is ApproveOutcomeKind.Approved or ApproveOutcomeKind.Enrolled or ApproveOutcomeKind.Denied)
+            .Select(r => new ChatEntry.Answer(r)));
         foreach (var item in items)
         {
             DateTimeOffset? start = item.Content is InboxContent.Agent a ? since(a.DeviceId, a.Value.Pane) : null;

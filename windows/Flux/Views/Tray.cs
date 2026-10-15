@@ -43,6 +43,10 @@ public sealed class Tray : IDisposable
         {
             herdr.Model.PropertyChanged += (_, _) => Draw();
         }
+        if (model.Core.Plugin<ApprovePlugin>() is { } approve)
+        {
+            approve.Model.PropertyChanged += (_, _) => Draw();
+        }
         Tn.Changed += Draw;
         Draw();
     }
@@ -118,11 +122,12 @@ public sealed class Tray : IDisposable
 }
 
 // The panel of the tray: the count of the items that need the user, the 2
-// newest items that need the user as chat cards with their choices, the next
-// 3 items as rows, a menu for each online computer, and the app actions. It
-// shows near the tray and hides when it loses the focus. A card reads a
-// fresh output each time that the panel opens. MenuBarView.swift of the Mac
-// app has the same parts. The panel does not use the scope.
+// newest items that need the user as chat cards with their choices or with
+// Deny and Approve, the next 3 items as rows, a menu for each online
+// computer, and the app actions. It shows near the tray and hides when it
+// loses the focus. A card reads a fresh output each time that the panel
+// opens. MenuBarView.swift of the Mac app has the same parts. The panel does
+// not use the scope.
 public sealed class TrayPanel : Window
 {
     readonly AppModel model;

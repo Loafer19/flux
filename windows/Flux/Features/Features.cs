@@ -73,6 +73,9 @@ public static class Features
         TrayActions.Makers.Add(ControlViews.TouchpadAction);
         TrayActions.Makers.Add(ControlViews.DesktopAction);
         TrayActions.Makers.Add(ControlViews.BrowseAction);
+        TrayActions.Makers.Add(ApproveFeature.TrayAction);
+
+        ComputerSections.Makers.Add(ApproveFeature.Section);
     }
 
     public static IReadOnlyList<IFluxPlugin> Plugins(Notifier notifier)
@@ -92,6 +95,7 @@ public static class Features
             new BatteryPlugin(new BatterySource()),
             new ThemePlugin(),
             new HerdrPlugin(),
+            new ApprovePlugin(new WindowsHelloSigner(ApprovePrompts.Owner)),
         ];
     }
 
@@ -117,6 +121,7 @@ public static class Features
     public static void DidLaunch(AppModel model)
     {
         AgentsFeature.DidLaunch(model);
+        ApproveFeature.DidLaunch(model);
         ReplyLock.Watch();
         if (model.Core.Plugin<ClipboardPlugin>() is { } clipboard && model.Core.Plugin<SharePlugin>() is { } share)
         {
@@ -155,6 +160,7 @@ public static class Features
         ControlViews.CloseWindows();
         model.Core.Plugin<ClipboardPlugin>()?.Dispose();
         AgentsWindows.CloseAll();
+        ApprovePrompts.Close();
     }
 
     static (string Label, UIElement Content)? ClipboardSettings(AppModel model)

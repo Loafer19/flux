@@ -206,10 +206,27 @@ public sealed partial class AppModel : Model
         pairedTimer = Later(TimeSpan.FromSeconds(6), pairedTimer, () => NewlyPairedId = null);
     }
 
-    // Unpairs the computer.
-    public void Unpair(string id) => Core.Unpair(id);
+    // Unpairs the computer. This computer also deletes its approval key for
+    // the computer, so that a new pairing needs a new enrollment.
+    public void Unpair(string id)
+    {
+        if (Core.Plugin<ApprovePlugin>() is { } approve)
+        {
+            approve.Unpair(id);
+        }
+        else
+        {
+            Core.Unpair(id);
+        }
+    }
 
-    public string UnpairMessage(DeviceSnapshot d) => $"{d.Name} and this computer forget each other. Pair again to use it.";
+    // The text of the unpair dialog. It names the approval key when this
+    // computer has one for the computer.
+    public string UnpairMessage(DeviceSnapshot d)
+    {
+        var text = $"{d.Name} and this computer forget each other. Pair again to use it.";
+        return Core.Plugin<ApprovePlugin>()?.Model.KeyFor(d.Id) is null ? text : text + " " + ApproveTexts.UnpairNote(d.Name);
+    }
 
     public void Show(string message)
     {

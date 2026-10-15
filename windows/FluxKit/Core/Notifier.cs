@@ -13,6 +13,10 @@ public sealed record SystemNotification(string Id, string Category, string Title
     // False for a notification without a sound, for example the rest of a burst.
     public bool Sound { get; init; } = true;
 
+    // A short line under the title, for example the app and the computer
+    // that sent the notification, or null.
+    public string? Subtitle { get; init; }
+
     // An image file that the notification shows, or null.
     public string? Image { get; init; }
 }

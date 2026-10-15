@@ -54,8 +54,10 @@ public class NetworkTests
     [Fact]
     public async Task BackendsLinkAndExchangePackets()
     {
-        using var a = new Side(29131, 29132, 29140);
-        using var b = new Side(29132, 29131, 29150);
+        // The announcements go to a port that nobody reads, so only the
+        // dial below makes a link.
+        using var a = new Side(29131, 29199, 29140);
+        using var b = new Side(29132, 29199, 29150);
         a.Backend.Start();
         b.Backend.Start();
         a.Backend.Connect("127.0.0.1", b.Backend.TcpPort, null);
@@ -101,8 +103,8 @@ public class NetworkTests
     [Fact]
     public async Task PinnedCertificateRefusesAnother()
     {
-        using var a = new Side(29331, 29332, 29340);
-        using var b = new Side(29332, 29331, 29350);
+        using var a = new Side(29331, 29399, 29340);
+        using var b = new Side(29332, 29399, 29350);
         a.Owner.Pinned = [1, 2, 3];
         a.Backend.Start();
         b.Backend.Start();
@@ -154,10 +156,18 @@ public class NetworkTests
         await ssl.FlushAsync();
         await ssl.ShutdownAsync();
         // Read to the end, so that the close sends no reset for unread data,
-        // such as a TLS 1.3 session ticket.
+        // such as a TLS 1.3 session ticket. Windows resets the connection
+        // when the server closes before it reads this close_notify. The data
+        // arrived before that.
         var rest = new byte[1024];
         using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (await ssl.ReadAsync(rest, wait.Token) > 0)
+        try
+        {
+            while (await ssl.ReadAsync(rest, wait.Token) > 0)
+            {
+            }
+        }
+        catch (IOException)
         {
         }
     }

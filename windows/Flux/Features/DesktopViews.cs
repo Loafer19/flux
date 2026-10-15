@@ -185,11 +185,12 @@ public sealed class RemoteDesktopWindow : Window
     }
 }
 
-// The remote desktop: a bar with the state, the sound, the monitor, and the
-// panel buttons, the video, the Omarchy panel at the side, and the keys at
-// the bottom. DesktopView.swift of the Mac app has the same layout. The
-// layout stays, so that the video and the type field keep the focus. The
-// dictation of the Mac is not on Windows yet.
+// The remote desktop: a bar with the state, the sound, the monitor, the
+// panel buttons, and the mic button, the video, the Omarchy panel at the
+// side, and the keys at the bottom. The computer types the words of a
+// dictation at its cursor. DesktopView.swift of the Mac app has the same
+// layout. The layout stays, so that the video and the type field keep the
+// focus.
 public sealed class DesktopView : View
 {
     readonly DesktopController controller;
@@ -208,7 +209,15 @@ public sealed class DesktopView : View
         Watch(controller);
         Surface = new DesktopSurface(controller);
         Omarchy = new OmarchyPanel(model, controller);
-        Keys = new RemoteKeysPanel(controller);
+        Keys = new RemoteKeysPanel(controller, model.Core, controller.TypeSpoken);
+        // The mic button of the bar follows the state of the dictation, not each word.
+        Keys.Voice.Dictation.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Dictation.State))
+            {
+                Invalidate();
+            }
+        };
         keysHost.Child = Keys;
         omarchyHost.Child = Omarchy;
         DockPanel.SetDock(bar, Dock.Top);
@@ -347,22 +356,36 @@ public sealed class DesktopView : View
             }
             items.Add(PanelButton(Icons.Keyboard, "Show the keys", controller.Panel == DesktopPanel.Keys,
                 () => controller.TogglePanel(DesktopPanel.Keys)));
+            var dictating = Keys.Voice.Dictation.State != Dictation.Phase.Idle;
+            items.Add(PanelButton(Icons.Mic, dictating ? "Stop the dictation" : $"Dictate on {name}", dictating, () =>
+            {
+                if (dictating)
+                {
+                    Keys.Voice.Stop();
+                    return;
+                }
+                // The listening panel shows in the keys.
+                controller.Panel = DesktopPanel.Keys;
+                Keys.Voice.Start();
+            }, tn.Red));
         }
         return Ui.H(10, items).Margin(12, 8, 12, 8);
     }
 
-    // A button that shows or hides a panel. It has the accent while it is on.
-    static UIElement PanelButton(string glyph, string help, bool on, Action toggle)
+    // A button that shows or hides a panel. It has the tint while it is on,
+    // the accent by default.
+    static UIElement PanelButton(string glyph, string help, bool on, Action toggle, Brush? tint = null)
     {
         var tn = Tn.Current;
+        var ink = tint ?? tn.Accent;
         var tile = new Border
         {
-            Child = Ui.Icon(glyph, 14, on ? tn.Accent : tn.Sub),
+            Child = Ui.Icon(glyph, 14, on ? ink : tn.Sub),
             Width = 36,
             Height = Metrics.ButtonHeight,
             CornerRadius = new CornerRadius(Metrics.SmallCorner),
             Background = on ? tn.AccentTile : tn.Tile,
-            BorderBrush = on ? tn.Accent : tn.Line,
+            BorderBrush = on ? ink : tn.Line,
             BorderThickness = new Thickness(1),
         };
         var b = new PlainButton(tile, toggle).Named(help).Help(help);

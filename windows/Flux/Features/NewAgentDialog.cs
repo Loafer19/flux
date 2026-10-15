@@ -109,7 +109,7 @@ public sealed class NewAgentDialog : Window
             System.Windows.Automation.AutomationProperties.SetName(task, "Task");
             queryFrame = new Border
             {
-                Child = Ui.H(8, Ui.Icon(Icons.Search, 13, Tn.Current.Sub), AgentParts.WithHint(query, queryHint).Fill(), AgentParts.ClearKey(query)),
+                Child = Ui.H(8, Ui.Icon(Icons.Search, 13, Tn.Current.Sub), AgentParts.WithHint(query, queryHint).Fill(), FieldKeys.Clear(query)),
                 CornerRadius = new CornerRadius(Metrics.TileCorner),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(12, 0, 8, 0),
@@ -117,7 +117,7 @@ public sealed class NewAgentDialog : Window
             };
             taskFrame = new Border
             {
-                Child = Ui.H(4, AgentParts.WithHint(task, taskHint).Fill(), AgentParts.ClearKey(task).Margin(0, 0, 8, 0)),
+                Child = Ui.H(4, AgentParts.WithHint(task, taskHint).Fill(), FieldKeys.Clear(task).Margin(0, 0, 8, 0)),
                 CornerRadius = new CornerRadius(Metrics.TileCorner),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(6, 0, 0, 0),

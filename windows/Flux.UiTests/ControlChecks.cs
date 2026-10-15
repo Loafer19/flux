@@ -71,7 +71,7 @@ public static class ControlChecks
         Computer(controller, paired);
         input.Model.Set(paired.Id, true, true, false);
         input.Model.Set(paired.Id, true, true, true);
-        var w = new TouchpadWindow(controller);
+        var w = new TouchpadWindow(controller, h.Core);
         w.Show();
         Pump();
         h.Check(controller.Ready, "the touchpad is ready");

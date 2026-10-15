@@ -23,7 +23,6 @@ static class ControlGlyphs
     public const string Video = "";
     public const string Window = "";
     public const string Home = "";
-    public const string Expand = "";
 }
 
 // Turns the key events of WPF into the keys of the computer, for the
@@ -146,9 +145,11 @@ sealed class ModifierChip : PlainButton
 // The key rows and the type field of the touchpad and the remote desktop:
 // Escape, Tab, the arrows, Backspace, and Enter, then ctrl, alt, shift, and
 // super, which hold for the next key or text, and the setting "Alt is Alt".
-// Under them, the type field and Enter. RemoteKeyRows and RemoteTypeField
-// of RemoteKeys.swift have the same parts. The layout stays, so that the
-// type field keeps its text and its focus.
+// Under them, the type field, the mic key, and Enter. The words of a
+// dictation go to spoken, and the computer types them at its cursor.
+// RemoteKeyRows and RemoteTypeField of RemoteKeys.swift and the keys of
+// TouchpadView.swift have the same parts. The layout stays, so that the type
+// field keeps its text and its focus.
 public sealed class RemoteKeysPanel : View
 {
     static readonly (RemoteKey Key, string Label, string Glyph, string Name)[] Keys =
@@ -172,9 +173,10 @@ public sealed class RemoteKeysPanel : View
     readonly CheckBox altIsAlt = new() { Content = "Alt is Alt", VerticalAlignment = VerticalAlignment.Center };
     readonly RemoteTypeField typeField;
     readonly FluxButton enter;
+    readonly VoiceBar voice;
     readonly Stack root;
 
-    public RemoteKeysPanel(RemoteKeyTarget target)
+    public RemoteKeysPanel(RemoteKeyTarget target, FluxCore core, Action<string> spoken)
     {
         this.target = target;
         Watch(target);
@@ -194,14 +196,23 @@ public sealed class RemoteKeysPanel : View
         typeField = new RemoteTypeField(target);
         enter = new FluxButton("", ButtonKind.Tonal, () => target.Key(RemoteKey.Enter), ControlGlyphs.Return).Named("Enter");
         enter.MinWidth = 44;
+        enter.Height = 34;
+        voice = new VoiceBar(core, typeField, spoken, enter);
         root = Ui.V(10,
             Ui.H(6, keys.Select(k => (UIElement)k.Button.Fill())),
             Ui.H(6, ctrl, alt, shift, super, Ui.Spacer(12), altIsAlt),
-            Ui.H(8, typeField.Fill(), enter));
+            voice);
     }
 
     // The type field, for the tests.
     internal TextBox Field => typeField.Box;
+
+    // The type field with its keys and the draft editor, for the tests.
+    internal RemoteTypeField TypeField => typeField;
+
+    // The type field with the mic key and Enter. The remote desktop starts a
+    // dictation from its bar too.
+    public VoiceBar Voice => voice;
 
     protected override UIElement Build()
     {
@@ -219,6 +230,7 @@ public sealed class RemoteKeysPanel : View
         altIsAlt.Foreground = Tn.Current.Text;
         enter.ToolTip = $"Press Enter on {name}";
         typeField.Update();
+        voice.Enabled = target.KeysReady;
         return root;
     }
 }
@@ -226,15 +238,15 @@ public sealed class RemoteKeysPanel : View
 // The text field that types on the computer. Each word goes out after its
 // space, Enter sends the rest and presses Enter, and Backspace in the empty
 // field presses Backspace on the computer. Text that an input method still
-// composes waits. The clear key empties the field, and the expand key opens
-// the draft editor. TypeField.swift of the Mac app has the same rules.
+// composes waits. The clear key empties the field. Only the text after the
+// last word is in the field, so the clear key sends no keys. The expand key
+// opens the draft editor: the text goes to the computer only at Type, so
+// that the spelling of this computer can correct it first. TypeField.swift
+// and RemoteTypeField of RemoteKeys.swift of the Mac app have the same rules.
 sealed class RemoteTypeField : Border
 {
     readonly RemoteKeyTarget target;
     readonly TextBlock placeholder = Ui.Text("", 13);
-    readonly TextBlock clearIcon = Ui.Icon(Icons.Close, 11);
-    readonly TextBlock expandIcon = Ui.Icon(ControlGlyphs.Expand, 12);
-    readonly PlainButton clear;
     readonly PlainButton expand;
     bool composing;
     bool updating;
@@ -254,13 +266,7 @@ sealed class RemoteTypeField : Border
         this.target = target;
         placeholder.IsHitTestVisible = false;
         placeholder.Margin = new Thickness(7, 0, 0, 0);
-        clear = new PlainButton(clearIcon.Margin(6), () =>
-        {
-            SetText("");
-            Box.Focus();
-        });
-        expand = new PlainButton(expandIcon.Margin(6), () => DraftEditor.Show(Window.GetWindow(this), target));
-        clear.Named("Clear").Help("Clear the field");
+        expand = FieldKeys.Expand(() => Editor().ShowDialog());
         Box.TextChanged += (_, _) => Changed();
         Box.PreviewKeyDown += Pressed;
         TextCompositionManager.AddPreviewTextInputStartHandler(Box, (_, e) => composing = e.TextComposition.CompositionText.Length > 0);
@@ -269,10 +275,10 @@ sealed class RemoteTypeField : Border
         var grid = new Grid();
         grid.Children.Add(placeholder);
         grid.Children.Add(Box);
-        Child = Ui.H(2, grid.Fill(), clear, expand);
+        Child = Ui.H(4, grid.Fill(), FieldKeys.Clear(Box, Update), expand);
         CornerRadius = new CornerRadius(Metrics.SmallCorner);
         BorderThickness = new Thickness(1);
-        Padding = new Thickness(4, 0, 2, 0);
+        Padding = new Thickness(4, 0, 6, 0);
         Box.GotKeyboardFocus += (_, _) => Update();
         Box.LostKeyboardFocus += (_, _) => Update();
     }
@@ -295,11 +301,15 @@ sealed class RemoteTypeField : Border
         {
             SetText(target.FieldText);
         }
-        clear.Visibility = Box.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         expand.Named("Write a longer text").Help($"Write a longer text, then type it on {name}");
-        clearIcon.Foreground = tn.Sub;
-        expandIcon.Foreground = tn.Sub;
     }
+
+    // The draft editor with Type. Each line break goes as Shift+Enter. The
+    // draft stays after the editor closes, and Type empties it.
+    internal FieldEditor Editor() => new(Window.GetWindow(this), $"Type on {target.Name}", target.Draft, text => target.Draft = text,
+        new FieldEditorAction("Type", () => target.CanTypeDraft, target.TypeDraft, $"Type the text on {target.Name}"),
+        $"Each line break goes as Shift+Enter. A draft holds at most {RemoteInput.MaxDraftLines} lines.",
+        RemoteInput.MaxDraft, RemoteInput.LimitDraft, "Close");
 
     void SetText(string text)
     {
@@ -329,7 +339,6 @@ sealed class RemoteTypeField : Border
             target.FieldText = keep;
         }
         placeholder.Visibility = Box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        clear.Visibility = Box.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void Pressed(object sender, KeyEventArgs e)
@@ -352,93 +361,5 @@ sealed class RemoteTypeField : Border
                 e.Handled = true;
                 break;
         }
-    }
-}
-
-// The draft editor: a longer text that goes to the computer only at Type,
-// so that the spelling of this computer can correct it first. Each line
-// break goes as Shift+Enter. FieldEditor of the Mac app has the same rules.
-public static class DraftEditor
-{
-    public static void Show(Window? owner, RemoteKeyTarget target)
-    {
-        var tn = Tn.Current;
-        Window? w = null;
-        var box = new TextBox
-        {
-            Text = target.Draft,
-            AcceptsReturn = true,
-            AcceptsTab = false,
-            TextWrapping = TextWrapping.Wrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            MinHeight = 200,
-            MaxHeight = 360,
-            FontSize = 13,
-            Padding = new Thickness(8),
-            Background = tn.Bg,
-            Foreground = tn.Text,
-            CaretBrush = tn.Accent,
-            BorderBrush = tn.LineHi,
-        };
-        AutomationProperties.SetName(box, $"Draft for {target.Name}");
-        SpellCheck.SetIsEnabled(box, true);
-        var count = Ui.Text("", 11, color: tn.Sub, mono: true);
-        var type = new FluxButton("Type", ButtonKind.Filled, () =>
-        {
-            target.TypeDraft();
-            w!.Close();
-        }, enabled: target.CanTypeDraft).Help($"Type the text on {target.Name} (Ctrl+Enter)");
-        void Count()
-        {
-            count.Text = $"{new StringInfo(box.Text).LengthInTextElements} of {RemoteInput.MaxDraft}";
-            type.IsEnabled = target.CanTypeDraft;
-        }
-        box.TextChanged += (_, _) =>
-        {
-            var limited = RemoteInput.LimitDraft(box.Text);
-            if (limited != box.Text)
-            {
-                var caret = box.CaretIndex;
-                box.Text = limited;
-                box.CaretIndex = Math.Min(caret, limited.Length);
-                return;
-            }
-            target.Draft = box.Text;
-            Count();
-        };
-        Count();
-        var body = Ui.V(12,
-            Ui.Text($"Type on {target.Name}", 17, FontWeights.SemiBold, wrap: true),
-            box,
-            Ui.Text($"Each line break goes as Shift+Enter. A draft holds at most {RemoteInput.MaxDraftLines} lines.", 12, color: tn.Sub, wrap: true),
-            Ui.H(8, count, Ui.Spacer(), new FluxButton("Close", ButtonKind.Outlined, () => w!.Close()), type).Margin(0, 6, 0, 0));
-        w = new Window
-        {
-            Title = $"Type on {target.Name}",
-            Owner = owner,
-            Width = 480,
-            SizeToContent = SizeToContent.Height,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-            Background = tn.TileHi,
-            FontFamily = Faces.Body,
-            Content = Ui.Box(body, 24, 22, 24, 20),
-        };
-        w.InputBindings.Add(new KeyBinding(new Relay(w.Close), Key.Escape, ModifierKeys.None));
-        w.InputBindings.Add(new KeyBinding(new Relay(() =>
-        {
-            if (target.CanTypeDraft)
-            {
-                target.TypeDraft();
-                w.Close();
-            }
-        }), Key.Enter, ModifierKeys.Control));
-        w.Loaded += (_, _) =>
-        {
-            box.Focus();
-            box.CaretIndex = box.Text.Length;
-        };
-        w.ShowDialog();
     }
 }

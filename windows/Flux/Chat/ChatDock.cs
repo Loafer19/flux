@@ -7,13 +7,17 @@ using FluxKit;
 namespace Flux;
 
 // The dock under the chat: the tools behind +, and a field for text or a
-// link with Send. Enter sends, and Shift+Enter adds a line. The field keeps
-// its text and its focus while the chat draws again. ChatDock.swift of the
-// Mac app has the same parts.
+// link with Send. Enter sends, and Shift+Enter adds a line. The field has
+// the mic key, the clear key, and the expand key, which opens a larger
+// editor with Send. The field keeps its text and its focus while the chat
+// draws again. ChatDock.swift of the Mac app has the same parts.
 public sealed class ChatDock
 {
     readonly AppModel model;
     readonly TextBox field;
+    readonly TextBlock hint = Ui.Text("", 13);
+    readonly Border fieldFrame;
+    readonly VoiceBar voice;
     readonly Popup tools = new() { StaysOpen = false, AllowsTransparency = true, Placement = PlacementMode.Top };
     readonly PlainButton plus;
     readonly PlainButton send;
@@ -49,13 +53,14 @@ public sealed class ChatDock
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             MaxHeight = 140,
-            MinHeight = 36,
+            MinHeight = 34,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(10, 6, 10, 6),
+            BorderThickness = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            Padding = new Thickness(2, 7, 2, 7),
             FontSize = 13,
         };
-        System.Windows.Automation.AutomationProperties.SetName(field, "Text or a link to send");
         field.PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
@@ -77,7 +82,17 @@ public sealed class ChatDock
         sendTile.Child = sendIcon;
         plus = new PlainButton(plusTile, OpenTools).Named("Tools").Help("Tools");
         send = new PlainButton(sendTile, Send).Named("Send").Help("Send (Enter)");
-        var row = Ui.H(8, plus, field.Fill(), send);
+        fieldFrame = new Border
+        {
+            Child = FieldKeys.Row(AgentParts.WithHint(field, hint), field, () => Editor().ShowDialog()),
+            CornerRadius = new CornerRadius(18),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(12, 0, 10, 0),
+            MinHeight = 36,
+        };
+        // A dictation puts its words at the cursor, else at the end of the text.
+        voice = VoiceBar.Insert(model.Core, field, fieldFrame, send, key: 36);
+        var row = Ui.H(8, plus.Top(), voice.Fill());
         tools.PlacementTarget = plus;
         clipBox.Child = clipText;
         clipKey.Child = Ui.H(6, Ui.Icon(Icons.Paste, 13), clipKeyText);
@@ -143,6 +158,21 @@ public sealed class ChatDock
         }
         _ = plugin.SendClipboardAsync(id);
     }
+
+    // The field, for the tests.
+    internal TextBox Field => this.field;
+
+    // The field with the mic key and Send, for the tests.
+    internal VoiceBar Voice => voice;
+
+    // The larger editor of the field, with Send: "Text or link", or the
+    // reply to an agent. The text changes in the field at once, and Send
+    // takes the same way as Send in the dock.
+    internal FieldEditor Editor() => new(Window.GetWindow(Root), model.ChatReply is { } reply ? $"Reply to {reply.Agent}" : "Text or link",
+        field.Text, text => field.Text = text, new FieldEditorAction("Send", CanSend, Send));
+
+    // True when Send has a place for the text and the field has text.
+    bool CanSend() => (SendText is not null || model.ChatReply is not null) && field.Text.Trim().Length > 0;
 
     // The features that send text or a link. The share feature sets it.
     public static Func<AppModel, string, string, bool>? SendText { get; set; }
@@ -222,19 +252,25 @@ public sealed class ChatDock
         replyProject.Foreground = tn.Sub;
         replyIcon.Foreground = tn.Accent;
         plus.Visibility = reply is null ? Visibility.Visible : Visibility.Collapsed;
-        var hint = reply is null ? "Text or a link to send" : $"Tell {reply.Agent} what to do differently";
-        System.Windows.Automation.AutomationProperties.SetName(field, hint);
-        field.ToolTip = reply is null ? null : hint;
+        var ready = model.ConnectedPaired.Where(d => d.Accepts(PacketType.Share) && (model.Scope is null || d.Id == model.Scope)).ToArray();
+        hint.Text = reply is not null ? $"Tell {reply.Agent} what to do differently"
+            : ready.Length == 1 ? $"Type text or a link for {ready[0].Name}"
+            : "Type text or a link";
+        hint.Foreground = tn.Dim;
+        System.Windows.Automation.AutomationProperties.SetName(field, hint.Text);
+        field.ToolTip = reply is null ? null : hint.Text;
         frame.Background = tn.Tile;
         frame.BorderBrush = tn.Line;
-        field.Background = tn.Bg;
+        fieldFrame.Background = tn.Bg;
+        fieldFrame.BorderBrush = field.IsKeyboardFocused || reply is not null ? tn.Accent : tn.LineHi;
         field.Foreground = tn.Text;
-        field.BorderBrush = field.IsKeyboardFocused || reply is not null ? tn.Accent : tn.LineHi;
         field.CaretBrush = tn.Accent;
         field.FontFamily = Faces.Body;
+        // The mic key shows while the text has a place to go.
+        voice.Enabled = reply is not null || ready.Length > 0;
         plusTile.Background = tn.Line;
         plusIcon.Foreground = tn.Text;
-        var canSend = (SendText is not null || reply is not null) && field.Text.Trim().Length > 0;
+        var canSend = CanSend();
         sendTile.Background = canSend ? tn.Accent : tn.Tile;
         sendTile.BorderBrush = canSend ? tn.Accent : tn.Line;
         sendIcon.Foreground = canSend ? tn.OnAccent : tn.Dim;

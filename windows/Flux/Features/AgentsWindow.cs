@@ -6,9 +6,9 @@ using FluxKit;
 
 namespace Flux;
 
-// The state of 1 agents window: the selected agent, the reply drafts of each
-// agent, and the dictation. AgentsWindows.swift of the Mac app has the same
-// state.
+// The state of 1 agents window: the selected agent and the reply drafts of
+// each agent. The reply field of an agent holds its own dictation, see
+// VoiceBar. AgentsWindows.swift of the Mac app has the same state.
 public sealed class AgentsWindowModel(AppModel app, string deviceId, HerdrPlugin plugin, string? selection) : Model
 {
     string? selected = selection;
@@ -26,8 +26,6 @@ public sealed class AgentsWindowModel(AppModel app, string deviceId, HerdrPlugin
 
     // The reply text of each pane. A draft stays when the user selects another agent.
     public Dictionary<string, string> Drafts { get; } = [];
-
-    public Dictation Dictation { get; } = new();
 
     public DeviceSnapshot? Device => App.DeviceOf(DeviceId);
 
@@ -128,7 +126,6 @@ public sealed class AgentsWindow : Window
             Tn.Changed -= Retheme;
             NewAgent?.Close();
             view.Close();
-            model.Dictation.Cancel();
         };
         InputBindings.Add(new KeyBinding(new Relay(Close), Key.Escape, ModifierKeys.None));
         InputBindings.Add(new KeyBinding(new Relay(() => view.Detail?.Refresh()), Key.R, ModifierKeys.Control));
@@ -401,7 +398,6 @@ public sealed class AgentDetail : View
         root.Children.Add(threadHost);
         Watch(model.App);
         Watch(model.Plugin.Model);
-        Watch(model.Dictation);
         scroll.ScrollChanged += (_, e) =>
         {
             if (e.ExtentHeightChange != 0)
@@ -451,6 +447,8 @@ public sealed class AgentDetail : View
         }
         closed = true;
         changes?.Close();
+        // The field of the reply is gone, so the words of a dictation have no place.
+        controls.Voice.Dictation.Cancel();
         model.Plugin.Unwatch(model.DeviceId, Pane);
     }
 
@@ -492,6 +490,9 @@ public sealed class AgentDetail : View
 
     // The changes window, while it shows. Tests read it.
     internal ChangesWindow? Changes => changes;
+
+    // The dock with the reply field. Tests read it.
+    internal ReplyControls Controls => controls;
 
     protected override UIElement Build()
     {

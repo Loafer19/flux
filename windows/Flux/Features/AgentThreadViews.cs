@@ -24,7 +24,6 @@ public static class AgentGlyphs
     public const string Question = "";
     public const string Home = "";
     public const string Drive = "";
-    public const string Clear = "";
 }
 
 // The marks, the dialog parts, and the texts of an agent. The cards of the
@@ -169,21 +168,6 @@ public static class AgentParts
     {
         protected override Size MeasureOverride(Size constraint) =>
             new(double.IsInfinity(constraint.Width) ? 200 * part : constraint.Width * part, 10);
-    }
-
-    // A small round key that empties a field, while the field has text.
-    public static PlainButton ClearKey(TextBox field, Action? cleared = null)
-    {
-        var key = new PlainButton(Ui.Icon(AgentGlyphs.Clear, 10, Tn.Current.Sub).Width(20).Height(20), () =>
-        {
-            field.Clear();
-            field.Focus();
-            cleared?.Invoke();
-        }).Named("Clear").Help("Clear the text");
-        key.Focusable = false;
-        key.Visibility = field.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        field.TextChanged += (_, _) => key.Visibility = field.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        return key;
     }
 
     // A text field of the agent views: 1 to 5 lines, with a hint while it

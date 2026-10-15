@@ -70,7 +70,7 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Commands | Runs the commands of the computer from Control |
 | Media | Plays, pauses, skips, seeks, and sets the volume of the players of the computer, from Control |
 | Ping | Sends a ping from the tray. A ping from the computer shows in the window |
-| herdr agents | Shows the agents of the computer in Chat, Control, and the tray panel. An agent that waits shows its choices in Chat, and a choice answers it. The agents window shows the thread of each agent, the changes, and the keys. **Start Agent** starts a coding agent in a folder of the computer. Dictation in the reply field uses the speech recognition of Windows |
+| herdr agents | Shows the agents of the computer in Chat, Control, and the tray panel. An agent that waits shows its choices in Chat, and a choice answers it. The agents window shows the thread of each agent, the changes, and the keys. **Start Agent** starts a coding agent in a folder of the computer |
 | Touchpad | Moves the pointer, clicks, scrolls, and types on the computer. A click on the pad holds the pointer, and `Ctrl+Alt` gives it back |
 | Remote desktop | Shows the screen of the computer in a window, with its sound, and takes the pointer and the keys. The Windows key goes to Hyprland while the video has the focus. The video pauses while the window is minimized and while Windows is locked |
 | Omarchy panel | Shows the workspaces, the windows, and the key bindings of Hyprland next to the remote desktop, and runs them |
@@ -82,6 +82,8 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Stream requests | `flux-cli webcam start` and `flux-cli mic start` ask Windows for a stream. A prompt shows the request while Flux is in front, else a notification. Only a click on start starts the stream |
 | Camera modes | Text, QR, Photo, Document, and Signature, as on the Mac. Open them from **Photo**, **Scan**, **Text**, and **QR** in the **+** menu of Chat, or from **Camera…** in the tray menu of a computer. See [Camera modes](#camera-modes) |
 | Screenshots | **Send new screenshots** sends each new screenshot of the Screenshots folder of Windows to the connected computers. See [Screenshots](#screenshots) |
+| Dictation | Each text field has a mic key: the agent replies, the touchpad and the remote desktop, the field of Chat, the scanned text, and the search of **All shortcuts**. Search fields get the words in place of the search. The touchpad and the remote desktop type the words on the computer. Other fields get them at the cursor or at the end of the text. All fields use the same language. Flux uses the online speech recognition of Windows. See [Dictation](#dictation) |
+| Clear and expand | The agent replies, the field of Chat, and the search of **All shortcuts** have a clear key while they have text. The scanned text has **Clear**. The agent replies and the field of Chat also have an expand key that opens a larger editor with **Send**. The type field of the touchpad and the remote desktop has a clear key and the draft editor with **Type**, as on the Mac. See [Type on the Mac](remote-input.md#type-on-the-mac). In an editor, `Ctrl+Enter` selects **Send** or **Type**, and `Esc` closes it |
 
 The touchpad, the remote desktop, the answers to agents, and **Start Agent** ask for Windows Hello first: a face, a fingerprint, or the Windows Hello PIN. A check stays valid for 5 minutes, and it ends when Windows locks, sleeps, or turns off the display. Without Windows Hello, these features do not open. Set up a PIN in Settings > Accounts > Sign-in options.
 
@@ -157,11 +159,37 @@ Text, QR, Document, and Signature also read an image from outside the camera. Se
 | `Ctrl+Enter` | Sends the scanned text |
 | `Esc` | Closes the window |
 
-- Text mode uses the text recognition of Windows in the languages of your user profile. If Flux cannot read text, add a language with **Optical character recognition** in Settings > Time & language > Language & region. The mic key next to the text adds words with the dictation of Windows.
+- Text mode uses the text recognition of Windows in the languages of your user profile. If Flux cannot read text, add a language with **Optical character recognition** in Settings > Time & language > Language & region. The mic key next to the text adds words with the dictation of Windows, see [Dictation](#dictation).
 - QR mode reads QR codes, Data Matrix, PDF417, Aztec, and the common barcodes with the ZXing.Net library, because Windows has no decoder for them.
 - Document mode looks for a bright page on a darker surface and flattens it. If Flux finds no page, the PDF gets the whole photo. The menu of a page switches between the found page and the whole image.
 - The camera modes use the camera at 1080 pixels on the short side, or less when the camera has no such format. A photo has the size of that format, and the Mac takes a photo in the full size of the camera.
 - The camera stops while the window is minimized, and when the window closes. Windows has no prompt for the camera. When **Let desktop apps access your camera** is off, the window shows **Open Privacy Settings**.
+
+## Dictation
+
+The mic key uses the speech recognition of Windows. Flux needs no download for it.
+
+- To start a dictation, click the mic key. To stop it, click the key again.
+- To talk only while you hold the key, press and hold it. The dictation stops when you release it.
+- To drop the dictation, select the close button in the panel.
+
+While Windows listens, a panel takes the place of the field. It shows the language, the time, and the words that Windows still revises.
+Each phrase that Windows settles goes into the field at once. The touchpad and the remote desktop send it to the computer, which types it at its cursor.
+A pause does not end the dictation. The dictation ends when you stop it, or after 20 seconds with no speech.
+The bar of the remote desktop also has a mic button. It shows the keys and starts the dictation.
+
+A dictation only writes text. A reply goes to an agent when you select **Send**, after Windows Hello.
+
+Windows transcribes online, so the audio goes to Microsoft.
+
+- Turn on **Online speech recognition** in Settings > Privacy & security > Speech. While the setting is off, the field shows the problem and **Open Privacy Settings**.
+- Windows does not ask a desktop app for the microphone. Turn on **Let desktop apps access your microphone** in Settings > Privacy & security > Microphone.
+
+All fields use the same language, and Flux keeps it for the next dictations.
+**Automatic** uses the speech language of Windows in Settings > Time & language > Speech.
+To choose another language, select the language button in the panel. The list holds the languages that the speech recognition of this computer supports.
+**Speech Settings…** at the end of the list opens Settings > Time & language > Speech. To add a language, add it with its speech features in Settings > Time & language > Language & region.
+When Windows does not support the language, the field shows the problem and **Choose a language**.
 
 ## Screenshots
 

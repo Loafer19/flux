@@ -9,9 +9,10 @@ namespace Flux;
 // and the choices, with Write for a text answer. A working agent shows its
 // step and Interrupt. A finished agent shows the end of its turn. The key
 // row shows while the Keys toggle is on. Under that, the composer takes a
-// prompt as text or as dictation. Each reply asks for Windows Hello first,
-// see ReplyLock. ReplyControls.swift and ReplyField.swift of the Mac app
-// have the same parts.
+// prompt as text or as dictation, with the clear key and the expand key.
+// Each reply asks for Windows Hello first, see ReplyLock.
+// ReplyControls.swift and ReplyField.swift of the Mac app have the same
+// parts.
 public sealed class ReplyControls : View
 {
     readonly AgentsWindowModel model;
@@ -22,18 +23,13 @@ public sealed class ReplyControls : View
     readonly Border fieldFrame;
     readonly Border sendTile = new() { Width = 34, Height = 34, CornerRadius = new CornerRadius(17) };
     readonly PlainButton sendKey;
-    readonly Border micTile = new() { Width = 34, Height = 34, CornerRadius = new CornerRadius(17) };
-    readonly PlainButton micKey;
     // The parts of the dock stay across the drawings, so that the reply
     // field keeps its place and its focus.
     readonly Border topHost = new();
     readonly Border keysHost = new();
-    readonly Border listeningHost = new();
     readonly Border problemHost = new();
-    readonly Stack composerRow;
+    readonly VoiceBar voice;
     readonly Border dock;
-    // Moves the time of a dictation each second.
-    readonly System.Windows.Threading.DispatcherTimer listenClock = new() { Interval = TimeSpan.FromSeconds(1) };
     HerdrAgent? agent;
     HerdrOutput? output;
     AgentThread? thread;
@@ -60,25 +56,28 @@ public sealed class ReplyControls : View
             model.Drafts[pane] = field.Text;
             UpdateSend();
         };
-        var clear = AgentParts.ClearKey(field);
-        var row = Ui.H(4, AgentParts.WithHint(field, hint).Fill(), clear.Margin(0, 0, 8, 0));
-        fieldFrame = new Border { Child = row, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1), Padding = new Thickness(6, 0, 0, 0) };
+        var row = FieldKeys.Row(AgentParts.WithHint(field, hint), field, () => Editor().ShowDialog());
+        fieldFrame = new Border { Child = row, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1), Padding = new Thickness(6, 0, 10, 0) };
         sendKey = new PlainButton(sendTile, Send).Named("Send");
-        micKey = new PlainButton(micTile, Dictate).Named("Dictate").Help("Dictate the text");
-        composerRow = Ui.H(8, fieldFrame.Fill(), micKey.Top(), sendKey.Top());
-        dock = Parts.PageDock(Ui.V(10, topHost, keysHost, composerRow, listeningHost, problemHost), 14);
+        // A dictation puts its words at the cursor. The text waits in the field for Send, so a prompt still needs the lock.
+        voice = VoiceBar.Insert(model.App.Core, field, fieldFrame, sendKey);
+        dock = Parts.PageDock(Ui.V(10, topHost, keysHost, voice, problemHost), 14);
         handledReply = Reply?.Seq ?? 0;
-        Watch(model.Dictation);
-        listenClock.Tick += (_, _) => Invalidate();
-        Unloaded += (_, _) => listenClock.Stop();
     }
 
     HerdrPlugin Plugin => model.Plugin;
     HerdrReply? Reply => Plugin.Model.Reply(model.DeviceId, pane);
-    Dictation Dictation => model.Dictation;
 
     // The text in the field. Tests read it.
     internal TextBox Field => this.field;
+
+    // The field with the mic key and Send. Tests read it.
+    internal VoiceBar Voice => voice;
+
+    // The larger editor of the reply, with Send. The text changes in the
+    // field at once.
+    internal FieldEditor Editor() => new(Window.GetWindow(this), $"Write to {agent?.Agent ?? "the agent"}", field.Text, text => field.Text = text,
+        new FieldEditorAction("Send", CanSend, Send, $"Send the text to {agent?.Agent ?? "the agent"}"));
 
     // Puts the text of a first task that did not go in the field, unless
     // the user wrote something there.
@@ -148,19 +147,9 @@ public sealed class ReplyControls : View
         }
         Put(topHost, top.Count == 0 ? null : Ui.V(10, top));
         Put(keysHost, detail.KeysOpen ? KeyRow(blocked && choices.Count == 0) : null);
-        var listening = Dictation.State != Dictation.Phase.Idle;
-        if (listening)
-        {
-            listenClock.Start();
-        }
-        else
-        {
-            listenClock.Stop();
-        }
         Composer(sendingPrompt);
-        composerRow.Shown(!asking && !listening);
-        Put(listeningHost, !asking && listening ? Listening() : null);
-        Put(problemHost, (lockError ?? Dictation.Error ?? reply?.Error) is { } problem ? ProblemRow(problem, reply) : null);
+        voice.Shown(!asking);
+        Put(problemHost, (lockError ?? reply?.Error) is { } problem ? ProblemRow(problem, reply) : null);
         dock.Background = tn.Tile;
         dock.BorderBrush = tn.Line;
         return dock;
@@ -253,7 +242,8 @@ public sealed class ReplyControls : View
     }
 
     // The composer: the reply field, the mic key, and the send key. While
-    // this computer listens, a bar with the words and Stop takes its place.
+    // this computer listens, the listening panel of the voice bar takes its
+    // place.
     void Composer(bool sending)
     {
         var tn = Tn.Current;
@@ -274,66 +264,23 @@ public sealed class ReplyControls : View
         sendTile.Background = tn.Accent;
         sendKey.Help($"Send the text to {a.Agent}");
         UpdateSend();
-        micTile.Background = tn.Line;
-        micTile.Child = Ui.Icon(Icons.Mic, 14, tn.Text);
     }
 
     void UpdateSend()
     {
-        var sending = Reply is { Sending: true, Action: "prompt" };
         // The key keeps its color with no text. It takes no click then.
-        sendKey.IsEnabled = field.Text.Trim().Length > 0 && !sending;
+        sendKey.IsEnabled = CanSend();
         sendKey.Opacity = 1;
     }
 
-    // The bar while this computer listens: the time, the words, and Stop.
-    UIElement Listening()
-    {
-        var tn = Tn.Current;
-        var d = Dictation;
-        var words = d.Partial.Length > 0 ? d.Partial : d.State == Dictation.Phase.Starting ? "Starting…" : "Listening…";
-        var stop = new PlainButton(new Border
-        {
-            Child = Ui.Icon(AgentGlyphs.Stop, 13, tn.OnAccent),
-            Width = 34,
-            Height = 34,
-            CornerRadius = new CornerRadius(17),
-            Background = tn.Red,
-        }, d.Stop).Named("Stop the dictation").Help("Stop the dictation");
-        var language = Plugin.Model.DictationLanguage;
-        var bar = Ui.H(10,
-            AgentParts.PulseDot(tn.Red),
-            Ui.V(2,
-                Ui.Text(Texts.ContextLine(language.Length == 0 ? "Automatic" : DictationText.LanguageName(language), d.Clock), 11, color: tn.Sub, mono: true),
-                Ui.Text(words, 13, wrap: true)).Fill(),
-            stop);
-        return new Border
-        {
-            Child = bar,
-            Background = tn.Bg,
-            BorderBrush = tn.Accent,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(18),
-            Padding = new Thickness(14, 6, 6, 6),
-        }.Named("Dictation");
-    }
+    // True when the field has text and no prompt goes out now.
+    bool CanSend() => field.Text.Trim().Length > 0 && Reply is not { Sending: true, Action: "prompt" };
 
     // The problem under the dock, with the action that solves it.
     UIElement ProblemRow(string problem, HerdrReply? reply)
     {
         var tn = Tn.Current;
         var actions = new List<UIElement?>();
-        if (problem == Dictation.Error && Dictation.LanguageError)
-        {
-            FluxButton? choose = null;
-            choose = new FluxButton("Choose a language", ButtonKind.Text, () => LanguageMenu(choose!)).Named("Choose a language");
-            actions.Add(choose);
-        }
-        if (problem is Dictation.SpeechDenied or Dictation.MicDenied)
-        {
-            var settings = problem == Dictation.SpeechDenied ? "ms-settings:privacy-speech" : "ms-settings:privacy-microphone";
-            actions.Add(new FluxButton("Open Privacy Settings", ButtonKind.Text, () => ThisComputer.Open(settings)).Named("Open Privacy Settings"));
-        }
         // fluxd refused the prompt because the agent waits for a choice. The
         // user can type the same text into the dialog.
         if (problem == reply?.Error && reply.Blocked && reply.Text is { } text)
@@ -341,24 +288,6 @@ public sealed class ReplyControls : View
             actions.Add(new FluxButton("Send as answer", ButtonKind.Text, () => AnswerText(text)).Named("Send as answer").Help($"Type the text into the dialog of {agent!.Agent}"));
         }
         return Ui.H(10, new UIElement?[] { Ui.Text(problem, 12, color: tn.Red, wrap: true).Fill() }.Concat(actions));
-    }
-
-    // The languages of the recognizer, with Automatic first. A pick starts the dictation again.
-    void LanguageMenu(FrameworkElement anchor)
-    {
-        var menu = new ContextMenu { PlacementTarget = anchor };
-        var current = Plugin.Model.DictationLanguage;
-        foreach (var tag in new[] { "" }.Concat(Dictation.Languages()))
-        {
-            var item = new MenuItem { Header = tag.Length == 0 ? "Automatic" : DictationText.LanguageName(tag), IsChecked = tag == current };
-            item.Click += (_, _) =>
-            {
-                Plugin.Model.DictationLanguage = tag;
-                Dictate();
-            };
-            menu.Items.Add(item);
-        }
-        menu.IsOpen = true;
     }
 
     void Guarded(Action action)
@@ -396,7 +325,7 @@ public sealed class ReplyControls : View
     void Send()
     {
         var text = field.Text;
-        if (text.Trim().Length == 0 || Reply is { Sending: true, Action: "prompt" })
+        if (!CanSend())
         {
             return;
         }
@@ -413,19 +342,5 @@ public sealed class ReplyControls : View
         }
         var deviceId = model.DeviceId;
         Guarded(() => Plugin.SendPrompt(deviceId, pane, text, answer: true));
-    }
-
-    // Starts a dictation into the field of this agent. The text waits in
-    // the field for Send, so a prompt still needs the lock.
-    void Dictate()
-    {
-        lockError = null;
-        Dictation.Start(Plugin.Model.DictationLanguage, spoken =>
-        {
-            var edit = DictationText.Insert(field.Text, field.SelectionStart, field.SelectionStart + field.SelectionLength, spoken);
-            field.Text = edit.Text;
-            field.CaretIndex = edit.Cursor;
-            field.Focus();
-        });
     }
 }

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using FluxKit;
 
 namespace Flux;
@@ -305,88 +306,106 @@ public sealed class OmarchyPanel : View
         return menu;
     }
 
-    void ShowAll() => AllShortcuts.Show(Window.GetWindow(this), controller);
+    void ShowAll() => AllShortcuts.Open(Window.GetWindow(this), model.Core, controller);
 }
 
 // All shortcuts of the computer, with a search. A click runs a shortcut,
-// and the star pins it to the panel. AllShortcuts of OmarchyPanel.swift has
-// the same parts.
-public static class AllShortcuts
+// and the star pins it to the panel. The search has the clear key and the
+// mic key, and a dictation replaces the search. AllShortcuts of
+// OmarchyPanel.swift has the same parts.
+public sealed class AllShortcuts : Window
 {
-    public static void Show(Window? owner, DesktopController controller)
+    readonly DesktopController controller;
+    readonly ScrollViewer list = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
+
+    // Shows the shortcuts in a dialog of the owner.
+    public static void Open(Window? owner, FluxCore core, DesktopController controller) => new AllShortcuts(owner, core, controller).ShowDialog();
+
+    public AllShortcuts(Window? owner, FluxCore core, DesktopController controller)
     {
+        this.controller = controller;
         var tn = Tn.Current;
-        var model = controller.Plugin.Model;
         var all = controller.Shortcuts?.Shortcuts ?? ValueList<DesktopShortcut>.Empty;
-        Window? w = null;
-        var search = new TextBox
+        Search = new TextBox
         {
             FontSize = 13,
             MinHeight = 34,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(8, 0, 8, 0),
-            Background = tn.Bg,
+            Padding = new Thickness(2, 0, 2, 0),
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
             Foreground = tn.Text,
             CaretBrush = tn.Accent,
-            BorderBrush = tn.LineHi,
+            FontFamily = Faces.Body,
         };
-        AutomationProperties.SetName(search, "Search the shortcuts");
-        var prompt = Ui.Text("Search, for example workspace or browser", 13, color: tn.Dim).Margin(10, 0, 0, 0);
-        prompt.IsHitTestVisible = false;
-        var field = new Grid();
-        field.Children.Add(search);
-        field.Children.Add(prompt);
-        var list = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
-        void Fill()
+        AutomationProperties.SetName(Search, "Search the shortcuts");
+        var prompt = Ui.Text("Search, for example workspace or browser", 13, color: tn.Dim);
+        var field = new Border
         {
-            prompt.Visibility = search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-            var rows = DesktopShortcuts.Search(all, search.Text).Select(s =>
-            {
-                var pinned = model.Pins.Contains(s.Description);
-                var run = new PlainButton(Ui.V(2,
-                    Ui.Text(s.Description, 13, FontWeights.SemiBold),
-                    s.Keys.Length > 0 ? Ui.Text(DesktopShortcuts.KeysLabel(s.Keys), 11, color: tn.Sub, mono: true) : null).Margin(4, 4, 4, 4), () =>
-                {
-                    w!.Close();
-                    controller.Shortcut(DesktopShortcuts.Run(s));
-                }).Named(s.Description).Help($"Run {s.Description}");
-                var star = new PlainButton(Ui.Icon(pinned ? ControlGlyphs.StarFilled : ControlGlyphs.Star, 14, pinned ? tn.Yellow : tn.Sub).Margin(8), () =>
-                {
-                    model.TogglePin(s);
-                    Fill();
-                });
-                var help = pinned ? $"Unpin {s.Description}" : $"Pin {s.Description} to Launch";
-                star.Named(help).Help(help);
-                return (UIElement)Ui.H(8, run.Fill(), star);
-            });
-            list.Content = Ui.V(2, rows);
-        }
-        search.TextChanged += (_, _) => Fill();
-        Fill();
-        var done = new FluxButton("Done", ButtonKind.Filled, () => w!.Close()) { IsDefault = true };
+            Child = FieldKeys.Row(AgentParts.WithHint(Search, prompt), Search),
+            CornerRadius = new CornerRadius(Metrics.SmallCorner),
+            BorderThickness = new Thickness(1),
+            Background = tn.Bg,
+            BorderBrush = tn.LineHi,
+            Padding = new Thickness(6, 0, 6, 0),
+        };
+        Voice = VoiceBar.Search(core, Search, field);
+        Search.TextChanged += (_, _) => Fill(all);
+        Fill(all);
+        var done = new FluxButton("Done", ButtonKind.Filled, Close) { IsDefault = true };
         var layout = new DockPanel();
-        var head = Ui.V(12, Ui.Text($"All shortcuts · {all.Count}", 15, FontWeights.SemiBold), field).Margin(0, 0, 0, 12);
+        var head = Ui.V(12, Ui.Text($"All shortcuts · {all.Count}", 15, FontWeights.SemiBold), Voice).Margin(0, 0, 0, 12);
         var foot = Ui.H(8, Ui.Spacer(), done).Margin(0, 12, 0, 0);
         DockPanel.SetDock(head, Dock.Top);
         DockPanel.SetDock(foot, Dock.Bottom);
         layout.Children.Add(head);
         layout.Children.Add(foot);
         layout.Children.Add(list);
-        w = new Window
+        Title = "All shortcuts";
+        Owner = owner;
+        Width = 440;
+        Height = 520;
+        ResizeMode = ResizeMode.NoResize;
+        WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
+        ShowInTaskbar = false;
+        Background = tn.TileHi;
+        Foreground = tn.Text;
+        FontFamily = Faces.Body;
+        Content = Ui.Box(layout, 20, 20, 20, 20);
+        InputBindings.Add(new KeyBinding(new Relay(Close), Key.Escape, ModifierKeys.None));
+        Loaded += (_, _) => Search.Focus();
+    }
+
+    // The search field. Tests set it.
+    internal TextBox Search { get; }
+
+    // The search with the mic key. Tests read it.
+    internal VoiceBar Voice { get; }
+
+    // Lists the shortcuts that match the search.
+    void Fill(IReadOnlyList<DesktopShortcut> all)
+    {
+        var tn = Tn.Current;
+        var model = controller.Plugin.Model;
+        var rows = DesktopShortcuts.Search(all, Search.Text).Select(s =>
         {
-            Title = "All shortcuts",
-            Owner = owner,
-            Width = 440,
-            Height = 520,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-            Background = tn.TileHi,
-            FontFamily = Faces.Body,
-            Content = Ui.Box(layout, 20, 20, 20, 20),
-        };
-        w.InputBindings.Add(new KeyBinding(new Relay(w.Close), Key.Escape, ModifierKeys.None));
-        w.Loaded += (_, _) => search.Focus();
-        w.ShowDialog();
+            var pinned = model.Pins.Contains(s.Description);
+            var run = new PlainButton(Ui.V(2,
+                Ui.Text(s.Description, 13, FontWeights.SemiBold),
+                s.Keys.Length > 0 ? Ui.Text(DesktopShortcuts.KeysLabel(s.Keys), 11, color: tn.Sub, mono: true) : null).Margin(4, 4, 4, 4), () =>
+            {
+                Close();
+                controller.Shortcut(DesktopShortcuts.Run(s));
+            }).Named(s.Description).Help($"Run {s.Description}");
+            var star = new PlainButton(Ui.Icon(pinned ? ControlGlyphs.StarFilled : ControlGlyphs.Star, 14, pinned ? tn.Yellow : tn.Sub).Margin(8), () =>
+            {
+                model.TogglePin(s);
+                Fill(all);
+            });
+            var help = pinned ? $"Unpin {s.Description}" : $"Pin {s.Description} to Launch";
+            star.Named(help).Help(help);
+            return (UIElement)Ui.H(8, run.Fill(), star);
+        });
+        list.Content = Ui.V(2, rows);
     }
 }

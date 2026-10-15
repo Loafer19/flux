@@ -45,7 +45,7 @@ public static class TouchpadWindows
         {
             return;
         }
-        var w = new TouchpadWindow(new TouchpadController(model.Core, plugin, device));
+        var w = new TouchpadWindow(new TouchpadController(model.Core, plugin, device), model.Core);
         Open[device.Id] = w;
         w.Closed += (_, _) => Open.Remove(device.Id);
         w.ShowFront();
@@ -59,7 +59,7 @@ public sealed class TouchpadWindow : Window
 
     public TouchpadController Controller { get; }
 
-    public TouchpadWindow(TouchpadController controller)
+    public TouchpadWindow(TouchpadController controller, FluxCore core)
     {
         Controller = controller;
         Title = $"Touchpad and Keyboard for {controller.Name}";
@@ -69,7 +69,7 @@ public sealed class TouchpadWindow : Window
         MinHeight = 440;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = Faces.Body;
-        view = new TouchpadView(controller);
+        view = new TouchpadView(controller, core);
         Content = view;
         Theme();
         Tn.Changed += Theme;
@@ -104,21 +104,21 @@ public sealed class TouchpadWindow : Window
     }
 }
 
-// The touchpad and the keyboard for a computer: the pad, the key rows, and
-// the type field. The computer runs the input only while its remote_input
-// setting is on. TouchpadView.swift of the Mac app has the same layout. The
-// dictation of the Mac is not on Windows yet.
+// The touchpad and the keyboard for a computer: the pad, the key rows, the
+// type field, and the mic key. The computer types the words of a dictation
+// at its cursor. The computer runs the input only while its remote_input
+// setting is on. TouchpadView.swift of the Mac app has the same layout.
 public sealed class TouchpadView : View
 {
     readonly TouchpadController controller;
     readonly Grid root = new() { Margin = new Thickness(16) };
 
-    public TouchpadView(TouchpadController controller)
+    public TouchpadView(TouchpadController controller, FluxCore core)
     {
         this.controller = controller;
         Watch(controller);
         Pad = new TouchpadPad(controller);
-        Keys = new RemoteKeysPanel(controller);
+        Keys = new RemoteKeysPanel(controller, core, controller.TypeSpoken);
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 200 });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(Keys, 1);

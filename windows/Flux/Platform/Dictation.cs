@@ -36,6 +36,7 @@ public sealed class Dictation : Model
     string partial = "";
     string? error;
     bool languageError;
+    string language = "";
     SpeechRecognizer? recognizer;
     Action<string>? onText;
     Dispatcher? ui;
@@ -70,6 +71,14 @@ public sealed class Dictation : Model
         private set => Set(ref languageError, value);
     }
 
+    // The tag of the language of the last dictation, such as en-US. It is
+    // empty for Automatic until the recognizer starts.
+    public string LanguageTag
+    {
+        get => language;
+        private set => Set(ref language, value);
+    }
+
     // The time of the dictation, such as 0:07.
     public string Clock => DictationText.Clock((DateTimeOffset.Now - started).TotalSeconds);
 
@@ -86,6 +95,20 @@ public sealed class Dictation : Model
         }
     }
 
+    // The speech language of Windows as a tag, or empty when Windows has
+    // none. A dictation in Automatic uses it.
+    public static string SystemLanguage()
+    {
+        try
+        {
+            return SpeechRecognizer.SystemSpeechLanguage?.LanguageTag ?? "";
+        }
+        catch (COMException)
+        {
+            return "";
+        }
+    }
+
     // Starts a dictation in the language tag, or in the speech language of
     // Windows when the tag is empty. onText gets each final text.
     public void Start(string language, Action<string> text)
@@ -99,6 +122,8 @@ public sealed class Dictation : Model
         Error = null;
         LanguageError = false;
         Partial = "";
+        // The tag that the user chose, until the recognizer tells its own.
+        LanguageTag = language;
         State = Phase.Starting;
         _ = StartAsync(language, ++run);
     }
@@ -126,6 +151,7 @@ public sealed class Dictation : Model
                 return;
             }
             var tag = r.CurrentLanguage.LanguageTag;
+            LanguageTag = tag;
             if (compiled.Status != SpeechRecognitionResultStatus.Success)
             {
                 r.Dispose();

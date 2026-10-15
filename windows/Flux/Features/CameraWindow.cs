@@ -164,7 +164,6 @@ public sealed class CameraView : View
     static readonly ThemeColors Paper = new(ThemePalette.TokyoNightDay);
 
     readonly CameraWindowModel model;
-    readonly Dictation dictation = new();
     readonly Image preview = new() { Stretch = Stretch.UniformToFill };
     readonly Canvas outlines = new() { IsHitTestVisible = false, ClipToBounds = true };
     readonly Grid live = new() { ClipToBounds = true };
@@ -179,6 +178,8 @@ public sealed class CameraView : View
         Padding = new Thickness(8, 6, 8, 6),
         FontSize = 13,
     };
+    // The text field with the mic key. A dictation puts its words at the cursor, else at the end of the text.
+    readonly VoiceBar voice;
     readonly InkCanvas ink = new() { EditingMode = InkCanvasEditingMode.Ink };
     readonly ComboBox cameraBox = new() { MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
     readonly ConditionalWeakTable<BgraImage, BitmapSource> bitmaps = new();
@@ -194,7 +195,7 @@ public sealed class CameraView : View
         Watch(model.Photo);
         Watch(model.Document);
         Watch(model.Signature);
-        Watch(dictation);
+        voice = VoiceBar.Insert(model.App.Core, editor, editor, key: 36);
         AutomationProperties.SetName(preview, "Camera preview");
         live.Children.Add(preview);
         live.Children.Add(outlines);
@@ -266,7 +267,7 @@ public sealed class CameraView : View
     }
 
     // Stops the dictation when the window closes.
-    public void Stop() => dictation.Cancel();
+    public void Stop() => voice.Dictation.Cancel();
 
     void Dragging(object sender, DragEventArgs e)
     {
@@ -695,12 +696,7 @@ public sealed class CameraView : View
             editor.BorderBrush = tn.LineHi;
             editor.CaretBrush = tn.Accent;
             editor.FontFamily = Faces.Body;
-            Ui.Detach(editor);
-            items.Add(Ui.H(8, editor.Fill(), MicKey()));
-            if (DictationLine() is { } line)
-            {
-                items.Add(line);
-            }
+            items.Add(voice);
         }
         var canSend = scan.Text.Trim().Length > 0;
         items.Add(Ui.H(8,
@@ -709,55 +705,6 @@ public sealed class CameraView : View
             new FluxButton("Retake", ButtonKind.Outlined, scan.Retake, Icons.Refresh).Named("Retake"),
             canSend ? new FluxButton($"Send to {model.DeviceName}", ButtonKind.Filled, scan.Send, Icons.Send).Named($"Send to {model.DeviceName}").Help("Send the text (Ctrl+Enter)") : null));
         return Ui.V(12, items).Margin(16, 0, 16, 16);
-    }
-
-    // The mic key of the text field. A dictation adds its words at the end of the text.
-    UIElement MicKey()
-    {
-        var tn = Tn.Current;
-        var listening = dictation.State != Dictation.Phase.Idle;
-        var key = new Border
-        {
-            Child = Ui.Icon(Icons.Mic, 15, listening ? tn.OnAccent : tn.Text),
-            Width = 36,
-            Height = 36,
-            CornerRadius = new CornerRadius(18),
-            Background = listening ? tn.Red : tn.Line,
-        };
-        var language = model.App.Core.Plugin<HerdrPlugin>()?.Model.DictationLanguage ?? "";
-        return new PlainButton(key, () =>
-        {
-            if (listening)
-            {
-                dictation.Stop();
-                return;
-            }
-            dictation.Start(language, spoken =>
-            {
-                var text = model.Text.Text;
-                model.Text.Text = DictationText.Insert(text, text.Length, text.Length, spoken).Text;
-            });
-        }) { VerticalAlignment = VerticalAlignment.Top }.Named(listening ? "Stop the dictation" : "Dictate").Help(listening ? "Stop the dictation" : "Add words with your voice");
-    }
-
-    // The words that the dictation hears, or why it failed.
-    UIElement? DictationLine()
-    {
-        var tn = Tn.Current;
-        if (dictation.State != Dictation.Phase.Idle)
-        {
-            var words = dictation.Partial.Length > 0 ? dictation.Partial : dictation.State == Dictation.Phase.Starting ? "Starting…" : "Listening…";
-            return Ui.H(8, Ui.Dot(tn.Red), Ui.Text(words, 12, color: tn.Sub, wrap: true).Fill());
-        }
-        if (dictation.Error is not { } problem)
-        {
-            return null;
-        }
-        UIElement? action = problem is Dictation.SpeechDenied or Dictation.MicDenied
-            ? new FluxButton("Open Privacy Settings", ButtonKind.Text,
-                () => ThisComputer.Open(problem == Dictation.SpeechDenied ? "ms-settings:privacy-speech" : "ms-settings:privacy-microphone")).Named("Open Privacy Settings")
-            : null;
-        return Ui.H(8, Ui.Text(problem, 12, color: tn.Red, wrap: true).Fill(), action);
     }
 
     // QR

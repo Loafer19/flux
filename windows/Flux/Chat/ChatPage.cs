@@ -47,6 +47,9 @@ public sealed class ChatPage : Page
         };
     }
 
+    // The dock with the field, for the tests.
+    internal ChatDock Composer => chatDock;
+
     public override string Title => "Chat";
 
     public override string Subtitle => Model.Paired.Count == 0 ? "" : Status().Context;

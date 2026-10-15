@@ -451,7 +451,7 @@ public sealed class ApprovePlugin : IFluxPlugin
             var signature = await signer.SignAsync(key!.Name, message, ApproveTexts.ApproveReason(r), cancel).ConfigureAwait(false);
             if (!ApproveMessage.Verify(key.PublicKey, message, signature))
             {
-                throw new ApproveKeyException(ApproveKeyError.Failed, "the signature does not verify with the stored public key");
+                throw new ApproveKeyException(ApproveKeyError.Failed, "the signature does not verify with the stored public key" + ApproveMessage.Scheme(key.PublicKey, message, signature));
             }
             return new SignResult(signature, null);
         }
@@ -463,7 +463,7 @@ public sealed class ApprovePlugin : IFluxPlugin
             var signature = await signer.SignAsync(created.Name, message, ApproveTexts.EnrollReason(r.User, r.Host), cancel).ConfigureAwait(false);
             if (!ApproveMessage.Verify(created.PublicKey, message, signature))
             {
-                throw new ApproveKeyException(ApproveKeyError.Failed, "the signature does not verify with the new public key");
+                throw new ApproveKeyException(ApproveKeyError.Failed, "the signature does not verify with the new public key" + ApproveMessage.Scheme(created.PublicKey, message, signature));
             }
             kept = true;
             return new SignResult(signature, created);

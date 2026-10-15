@@ -123,6 +123,8 @@ The request also shows in Chat, in the tray panel, and as a notification. **Appr
 
 Windows Hello always takes its PIN, so the PIN can approve too. Anyone who knows the PIN can approve at this computer. Use a PIN that other people do not know.
 A computer without Windows Hello refuses each request, and PAM asks for the password.
+
+The Omarchy computer needs a `fluxd` newer than 0.17.0. Version 0.17.0 and earlier drop the answers of Windows Hello, because its RSA signature is larger than an EC signature.
 On Windows 11 24H2 and later, the prompt of Windows Hello belongs to the prompt of Flux. On an older Windows, Flux brings it to the front.
 
 The page of the computer in Computers shows the key code, the recent requests, and **Remove Key**. **Remove Key** and an unpair delete the key of that computer. The key file on the Omarchy computer stays until you run `sudo flux-cli approve remove`.

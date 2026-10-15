@@ -11,12 +11,20 @@ public static class Features
     // The clipboard of Windows, for the clipboard sync and the dock of the chat.
     public static readonly WindowsClipboard Clipboard = new();
 
+    // The sound output of the remote desktop.
+    static readonly DesktopSound Sound = new();
+
     static Features()
     {
         ControlTools.ModelMakers.Add(m => m.Core.Plugin<MprisPlugin>()?.Model);
         ControlTools.ModelMakers.Add(m => m.Core.Plugin<RunCommandPlugin>()?.Model);
         ControlTools.ModelMakers.Add(m => m.Core.Plugin<HerdrPlugin>()?.Model);
         ControlTools.Sections.Add(AgentsFeature.ControlSection);
+        ControlTools.ModelMakers.Add(m => m.Core.Plugin<RemoteInputPlugin>()?.Model);
+        ControlTools.ModelMakers.Add(m => m.Core.Plugin<DesktopPlugin>()?.Model);
+        ControlTools.Tools.Add(ControlViews.OmarchyTool);
+        ControlTools.Tools.Add(ControlViews.DesktopTool);
+        ControlTools.Tools.Add(ControlViews.TouchpadTool);
         ControlTools.Tools.Add(m => m.Core.Plugin<RunCommandPlugin>() is null || !ControlTools.HasFeature(m, PacketType.RunCommandRequest) ? null
             : ControlTools.Tool(m, Icons.Commands, "Commands", "Run a command", PacketType.RunCommandRequest,
                 d => m.Push(new Route.Feature(Card.Commands, d.Id))));
@@ -31,9 +39,11 @@ public static class Features
         FeatureSettings.Makers.Add(ClipboardSettings);
         FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<HerdrPlugin>()?.Model);
         FeatureSettings.Makers.Add(AgentsFeature.Settings);
+        FeatureSettings.Makers.Add(ControlViews.Settings);
 
         ChatDock.SendText = (m, id, text) => m.Core.Plugin<SharePlugin>()?.SendText(text, id) == true;
         ChatDock.Tools.Add(m => m.Core.Plugin<SharePlugin>() is null ? null : ("Send files", Icons.Upload, () => ShareViews.PickAndSend(m)));
+        ChatDock.Tools.Add(ControlViews.GetFilesTool);
 
         TrayActions.Makers.Add((m, d) => m.Core.Plugin<SharePlugin>() is { } s && d.Accepts(PacketType.Share)
             ? ("Send file…", () =>
@@ -60,6 +70,9 @@ public static class Features
                 m.ShowMain?.Invoke();
             })
             : null);
+        TrayActions.Makers.Add(ControlViews.TouchpadAction);
+        TrayActions.Makers.Add(ControlViews.DesktopAction);
+        TrayActions.Makers.Add(ControlViews.BrowseAction);
     }
 
     public static IReadOnlyList<IFluxPlugin> Plugins(Notifier notifier)
@@ -72,6 +85,9 @@ public static class Features
             clipboard,
             new RunCommandPlugin(),
             new MprisPlugin(),
+            new RemoteInputPlugin(),
+            new DesktopPlugin(Sound),
+            new BrowsePlugin(new WindowsBrowseFiles()),
             new NotificationsPlugin(new ToastHistory()),
             new BatteryPlugin(new BatterySource()),
             new ThemePlugin(),
@@ -101,6 +117,7 @@ public static class Features
     public static void DidLaunch(AppModel model)
     {
         AgentsFeature.DidLaunch(model);
+        HelloLock.Watch();
         if (model.Core.Plugin<ClipboardPlugin>() is { } clipboard && model.Core.Plugin<SharePlugin>() is { } share)
         {
             // A clip that Send clipboard sent shows in the chat.
@@ -124,6 +141,7 @@ public static class Features
     // Runs when the app quits.
     public static void WillQuit(AppModel model)
     {
+        ControlViews.CloseWindows();
         model.Core.Plugin<ClipboardPlugin>()?.Dispose();
         AgentsWindows.CloseAll();
     }

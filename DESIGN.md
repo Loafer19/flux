@@ -1,5 +1,5 @@
 ---
-name: Flux for Android, iOS, and macOS
+name: Flux for Android, iOS, macOS, and Windows
 description: The device side of Flux. 1 chat of the computers and the device, with what needs the user in the thread, in the live Omarchy theme of the computer.
 colors:
   bg: "#16161E"
@@ -205,7 +205,7 @@ components:
     padding: "2px 2px 2px 12px"
 ---
 
-# Design System: Flux for Android, iOS, and macOS
+# Design System: Flux for Android, iOS, macOS, and Windows
 
 ## Overview
 
@@ -218,6 +218,8 @@ The app has no palette of its own. The colors come from the live Omarchy theme o
 The density is that of a tiled desktop: 8 dp gaps, 12 dp corners, flat tiles, and no shadows. Mono sets what the computer says, such as window titles, prompts, keys, and data. Roboto sets what Flux says. The app rejects the category default of a device list, then a grid of feature cards for each device.
 
 Flux for iOS and Flux for macOS use the same system. They share the token roles, the contrast guard, the Tokyo Night fallback, the chat order, the window title with the state word first, and the one-tap rule for agent choices. The Android app is the reference for every section. The section "Apple platforms" gives only what differs on iOS and macOS. That section comes from the Swift code, because no capture of the Apple apps exists yet.
+
+Flux for Windows uses the same system with the macOS metrics. The section "Windows" gives what differs. It comes from the C# code in `windows/Flux`.
 
 **Key Characteristics:**
 
@@ -519,6 +521,32 @@ The Mac app follows the macOS 14 structure. The code is in `macos/App/`.
 - **Feature windows:** The windows for agents, browse, camera, remote desktop, and touchpad keep their layout. They take the theme background, the accent, and the light or dark mode.
 - **Differences from Android:** A sidebar in the place of the navigation bar. 28 pt pointer targets in the place of 48 dp touch targets. A hover state. Buttons on the 8 pt small corner. A pressed tile dims and keeps its border. A 12 pt gutter. The menu bar extra exists only on the Mac.
 - **Preserved surfaces:** The pairing view shows on the theme background of the window, and takes the accent and the light or dark mode. The pair request sheet, `PairRequestSheet`, and the Touch ID approval window, `ApprovePrompt`, keep their own background, and take only the accent and the light or dark mode.
+
+## Windows
+
+Flux for Windows uses the system of this file with the metrics of macOS, because both are pointer desktops. This section gives only what differs from macOS. All other sections apply.
+
+This section comes from the C# code in `windows/Flux`. No capture of the Windows app exists yet.
+
+### Shared code
+
+- **Theme engine:** `windows/FluxKit/Theme/ThemePalette.cs` is the port of `ThemePalette.swift`, with the same contrast needs and the same Tokyo Night and Tokyo Night Day values. `ThemeMode` has Computer, System, Light, and Dark.
+- **Roles in a view:** `ThemeColors` in `windows/Flux/Kit/Tn.cs` gives each role as a frozen WPF brush through `Tn.Current`. `Tn.Changed` draws the open views again.
+- **Shell kit:** `windows/Flux/Kit` holds `Metrics`, `Faces`, `Stack`, `FluxButton` with the 5 kinds, and `Parts`: the master tool, the tool row, the grid tool, `SectionLabel`, `ListHeading`, `NeedsBadge`, `LinkDot`, `BatteryDot`, `RingMark`, the spinner, the progress line, `KeyView`, `CommandBlock`, and the page dock.
+- **Views in code:** The views are C# code, not XAML. A view draws itself from the models again after a change, as a SwiftUI view does. Fields and lists that keep their state stay across the drawings.
+
+### Windows rules
+
+- **Type faces:** Segoe UI Variable Text, or Segoe UI, sets Flux text. Cascadia Mono, or Consolas, sets computer data. Segoe Fluent Icons, or Segoe MDL2 Assets on Windows 10, draws the icons. The Mono Is the Computer Rule applies with Segoe UI in the place of Roboto.
+- **Main window:** At least 760 by 520 px, 900 by 620 px by default. A sidebar of 200 px holds the Flux mark and the word `flux` in mono, the 3 destinations, and this computer at the bottom. The selected destination takes a `line` fill and a 600 label. The Chat row shows the needs badge.
+- **Header:** The title of the page in 15 px 600, the context line in mono 11 px and `sub`, a back button on a route, and the scope chip on a destination root.
+- **Title bar:** The window frame takes the light or dark mode of the palette. On Windows 11, the caption takes `bg` and `text`.
+- **Standard controls:** Text fields, check boxes, sliders, menus, and scroll bars use the Fluent theme of WPF in the light or dark mode of the palette. A field of the dock takes `bg`, a `line-hi` border, and an accent border with the focus.
+- **Dialogs:** A dialog is a window on `tile-hi` with the content and the buttons at the end. Escape cancels it. The pair request dialog keeps the layout of the Mac sheet.
+- **Tray:** The Flux mark on the 16-unit grid of the website mark, drawn for the light or dark taskbar, dimmed while no paired computer is connected, with a red dot when an item needs the user. A click opens a panel of 360 px at the bottom right of the screen: the count line, the pair requests, a menu for each online computer, and Open Flux, Settings, and Quit Flux. The right button opens a menu with the same app actions.
+- **Notifications:** Windows toasts. The computer name shows as the attribution line. The actions of a category are toast buttons.
+- **Keys:** `Ctrl+1` to `Ctrl+3` open the destinations. `Esc` and `Alt+Left` go back. `Ctrl+,` opens the settings. Tab reaches each action, and a focused control shows a 2 px accent ring.
+- **Differences from macOS:** A tray icon and panel in the place of the menu bar extra. A sidebar of a fixed width. Dialogs in the place of sheets. The Fluent controls of WPF in the place of the AppKit controls.
 
 ## Website
 

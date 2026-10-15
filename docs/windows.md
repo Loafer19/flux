@@ -9,6 +9,20 @@ The app requires Windows 10 version 2004 or later, or Windows 11.
 
 The Windows app is new. Its views run on the Windows runner of CI, but nobody checked them on a Windows computer yet.
 
+## Install
+
+Each release has the app as `flux-windows-VERSION.exe` on the [releases page](https://github.com/bjarneo/flux/releases). It is 1 file that holds .NET, so the computer needs no .NET runtime. Put it in a folder of your choice and start it.
+
+The file has no Authenticode signature yet. Windows SmartScreen then shows "Windows protected your PC". Check the file against `SHA256SUMS` of the release first:
+
+```powershell
+Get-FileHash flux-windows-VERSION.exe -Algorithm SHA256
+```
+
+Then select **More info** and **Run anyway**.
+
+At the first start, Flux adds a shortcut to the Start menu. Windows needs it to show the notifications of Flux.
+
 ## Build and run
 
 Install the .NET 10 SDK. From the repository root, run the tests and build the app:

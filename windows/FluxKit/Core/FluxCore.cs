@@ -36,6 +36,13 @@ public sealed record FluxHost
 
     // Runs an action on the UI thread. The actions keep their order.
     public Action<Action> Post { get; init; } = SerialQueue.Shared.Post;
+
+    // The system notifications. The app sets its backend.
+    public Notifier Notifier { get; init; } = new();
+
+    // The folder for received and downloaded files.
+    public Func<string> Downloads { get; init; } = () =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 }
 
 // Runs actions one at a time, in order, on a thread of the pool. Tests and

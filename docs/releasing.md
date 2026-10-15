@@ -13,6 +13,7 @@ An optional final job pushes the tested recipe to AUR.
 | `build.yml` | Push to `master` that changes more than the website, manual run, or reusable call | Arch package, Go tests, Android tests, lint, debug APK, unsigned release build, FluxKit tests, ad hoc signed macOS app, the iOS app with its simulator tests, an unsigned iOS Release build, and checks of its permission texts and privacy manifests. Pull requests run no build. |
 | `release.yml` | Push a `v*` tag or manually select an existing tag | Validated stable tag on `master`, tested desktop package, APK built without secrets and signed in a separate job, ad hoc signed macOS app, unsigned iOS app, `SHA256SUMS` and its signature, and GitHub release |
 | `aur.yml` | Reusable call after release publication | AUR commit with `PKGBUILD`, `.SRCINFO`, and the install hook |
+| `windows.yml` | Push to `master` that changes `windows/` or `windows.yml`, or manual run | Protocol checks and WPF UI checks of the Windows client, and a self-contained `win-x64` executable. Pull requests run no build. |
 | `pages.yml` | Push to `master` that changes `site/` or `pages.yml`, or manual run | The website in `site/` on GitHub Pages, without `site/tools/` and `site/README.md` |
 
 The workflows live in [`.github/workflows/`](../.github/workflows/).

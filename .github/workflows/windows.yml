@@ -1,11 +1,14 @@
 name: Windows prototype checks
 
+# Pull requests run no build, to save GitHub minutes. Pushes to master
+# that change the Windows client, and manual runs, run it.
 on:
-  workflow_dispatch:
-  pull_request:
+  push:
+    branches: [master]
     paths:
       - 'windows/**'
       - '.github/workflows/windows.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read

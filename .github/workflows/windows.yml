@@ -25,11 +25,43 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Restore locked dependencies
         run: |
+          dotnet restore windows/FluxKit.Tests --locked-mode
           dotnet restore windows/Flux.Protocol.Tests --locked-mode
           dotnet restore windows/Flux.Windows.Ui.Tests --locked-mode
+      # The fluxd tests skip here. The fluxd job runs them on Linux.
+      - name: FluxKit tests
+        run: dotnet test windows/FluxKit.Tests -c Release --no-restore
       - name: Protocol checks
         run: dotnet run --project windows/Flux.Protocol.Tests -c Release --no-restore
       - name: WPF UI checks
         run: dotnet run --project windows/Flux.Windows.Ui.Tests -c Release --no-restore
       - name: Build self-contained Windows executable
         run: dotnet publish windows/Flux.Windows -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o windows/artifacts/win-x64
+
+  # FluxKit against a headless fluxd from the same commit.
+  fluxd:
+    runs-on: ubuntu-latest
+    # The image of the arch job in build.yml, by digest.
+    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install Go and .NET
+        run: |
+          pacman -Sy --noconfirm --needed archlinux-keyring
+          pacman -Su --noconfirm --needed go dotnet-sdk
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build fluxd and flux-cli
+        run: |
+          mkdir -p windows/artifacts/e2e
+          CGO_ENABLED=0 go build -trimpath -o windows/artifacts/e2e/fluxd ./cmd/fluxd
+          CGO_ENABLED=0 go build -trimpath -o windows/artifacts/e2e/flux-cli ./cmd/flux
+      - name: FluxKit tests against fluxd
+        env:
+          FLUX_E2E_BIN: ${{ github.workspace }}/windows/artifacts/e2e
+        run: |
+          dotnet restore windows/FluxKit.Tests --locked-mode
+          dotnet test windows/FluxKit.Tests -c Release --no-restore

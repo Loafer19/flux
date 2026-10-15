@@ -32,7 +32,7 @@ public static class DesktopWindows
         {
             return;
         }
-        HelloLock.Run($"show and control the screen of {device.Name}", () => Create(model, device, panel), model.Show);
+        ReplyLock.Run($"show and control the screen of {device.Name}", Application.Current?.MainWindow, () => Create(model, device, panel), model.Show);
     }
 
     static bool Front(string deviceId, DesktopPanel? panel)

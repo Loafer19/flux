@@ -26,7 +26,9 @@ public static class BrowseWindows
             open.ShowFront();
             return;
         }
-        if (model.Core.Plugin<BrowsePlugin>() is not { } plugin || plugin.Browser(deviceId) is not { } browser)
+        // The folder picker of a new agent can hold the same session, so the
+        // window takes a lease, and the last release closes the session.
+        if (BrowseLease.Take(model, deviceId) is not { } browser)
         {
             return;
         }
@@ -35,7 +37,7 @@ public static class BrowseWindows
         w.Closed += (_, _) =>
         {
             Open.Remove(deviceId);
-            plugin.Close(deviceId);
+            BrowseLease.Release(model, deviceId);
         };
         w.ShowFront();
     }

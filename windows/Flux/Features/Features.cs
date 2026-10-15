@@ -117,7 +117,7 @@ public static class Features
     public static void DidLaunch(AppModel model)
     {
         AgentsFeature.DidLaunch(model);
-        HelloLock.Watch();
+        ReplyLock.Watch();
         if (model.Core.Plugin<ClipboardPlugin>() is { } clipboard && model.Core.Plugin<SharePlugin>() is { } share)
         {
             // A clip that Send clipboard sent shows in the chat.

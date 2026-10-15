@@ -70,8 +70,15 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Commands | Runs the commands of the computer from Control |
 | Media | Plays, pauses, skips, seeks, and sets the volume of the players of the computer, from Control |
 | Ping | Sends a ping from the tray. A ping from the computer shows in the window |
+| herdr agents | Shows the agents of the computer in Chat, Control, and the tray panel. An agent that waits shows its choices in Chat, and a choice answers it. The agents window shows the thread of each agent, the changes, and the keys. **Start Agent** starts a coding agent in a folder of the computer. Dictation in the reply field uses the speech recognition of Windows |
+| Touchpad | Moves the pointer, clicks, scrolls, and types on the computer. A click on the pad holds the pointer, and `Ctrl+Alt` gives it back |
+| Remote desktop | Shows the screen of the computer in a window, with its sound, and takes the pointer and the keys. The Windows key goes to Hyprland while the video has the focus. The video pauses while the window is minimized and while Windows is locked |
+| Omarchy panel | Shows the workspaces, the windows, and the key bindings of Hyprland next to the remote desktop, and runs them |
+| Get files | Browses the folders of the computer, searches them, and downloads files to Downloads |
 
-These features of the Mac app are not in the Windows app yet: herdr agents, fingerprint approval, the touchpad, the remote desktop, the Omarchy panel, Get files, the microphone, the webcam, the screen mirror, and the camera modes.
+The touchpad, the remote desktop, the answers to agents, and **Start Agent** ask for Windows Hello first: a face, a fingerprint, or the Windows Hello PIN. A check stays valid for 5 minutes, and it ends when Windows locks, sleeps, or turns off the display. Without Windows Hello, these features do not open. Set up a PIN in Settings > Accounts > Sign-in options.
+
+These features of the Mac app are not in the Windows app yet: fingerprint approval, the microphone, the webcam, the screen mirror, and the camera modes.
 
 Windows has no public interface that turns Do Not Disturb on or off, so the Windows app does not sync Do Not Disturb.
 

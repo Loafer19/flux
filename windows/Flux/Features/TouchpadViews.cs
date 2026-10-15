@@ -26,7 +26,7 @@ public static class TouchpadWindows
         {
             return;
         }
-        HelloLock.Run($"control the pointer and the keys of {device.Name}", () => Create(model, device), model.Show);
+        ReplyLock.Run($"control the pointer and the keys of {device.Name}", Application.Current?.MainWindow, () => Create(model, device), model.Show);
     }
 
     static bool Front(string deviceId)

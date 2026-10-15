@@ -214,7 +214,7 @@ public static class ControlViews
                 }
             }),
             SettingsView.Note("On, Alt with a letter is a shortcut on the computer. Off, AltGr types the characters of the layout of this computer, such as @ on a Nordic keyboard."),
-            SettingsView.Note("The touchpad and the remote desktop ask for Windows Hello first. Without Windows Hello, they open at once.")));
+            SettingsView.Note("The touchpad, the remote desktop, and the answers to agents ask for Windows Hello first. A check stays valid for 5 minutes. Without Windows Hello, they do not open. Set up a PIN in Settings > Accounts > Sign-in options.")));
     }
 
     // Closes the windows of the features, so that the pointer comes back

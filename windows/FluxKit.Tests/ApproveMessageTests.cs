@@ -282,4 +282,20 @@ public class ApproveMessageTests
         var back = Packet.Parse(a.Serialize());
         Assert.Equal(a.String("signature"), back?.String("signature"));
     }
+
+    [Fact]
+    public void AWindowsHelloKeyPassesTheCheck()
+    {
+        using var rsa = RSA.Create(2048);
+        var spki = rsa.ExportSubjectPublicKeyInfo();
+        var message = System.Text.Encoding.UTF8.GetBytes("flux-approve-v1\nhost=h\n");
+        var signature = rsa.SignData(message, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        Assert.True(ApproveMessage.Verify(spki, message, signature));
+        Assert.False(ApproveMessage.Verify(spki, [.. message, 1], signature));
+        // PSS is not the scheme of Windows Hello.
+        Assert.False(ApproveMessage.Verify(spki, message, rsa.SignData(message, HashAlgorithmName.SHA256, RSASignaturePadding.Pss)));
+        using var small = RSA.Create(1024);
+        Assert.False(ApproveMessage.Verify(small.ExportSubjectPublicKeyInfo(), message,
+            small.SignData(message, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)));
+    }
 }

@@ -227,12 +227,18 @@ public static class ApproveMessage
         ["signature"] = Convert.ToBase64String(signature),
     });
 
-    // Reports whether signature is an ASN.1 DER ECDSA signature of the P-256
-    // key spki over the SHA-256 of message. The helper on the computer makes
-    // the same check with ecdsa.VerifyASN1. This computer checks each
-    // signature of the platform before it sends it. So a signature in another
-    // format or from another key fails here with a clear message.
-    public static bool Verify(byte[] spki, byte[] message, byte[] signature)
+    // Reports whether signature is a valid signature of the key spki over
+    // the SHA-256 of message: an ASN.1 DER ECDSA signature for an EC P-256
+    // key, or an RSASSA-PKCS1-v1_5 signature for an RSA 2048 key with the
+    // exponent 65537, which is the key of Windows Hello. The helper on the
+    // computer accepts the same 2 kinds, see docs/approve.md. This computer
+    // checks each signature of the platform before it sends it. So a
+    // signature in another format or from another key fails here with a
+    // clear message.
+    public static bool Verify(byte[] spki, byte[] message, byte[] signature) =>
+        VerifyEc(spki, message, signature) || VerifyRsa(spki, message, signature);
+
+    static bool VerifyEc(byte[] spki, byte[] message, byte[] signature)
     {
         try
         {
@@ -243,6 +249,26 @@ public static class ApproveMessage
                 return false;
             }
             return key.VerifyData(message, signature, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
+    }
+
+    static bool VerifyRsa(byte[] spki, byte[] message, byte[] signature)
+    {
+        try
+        {
+            using var key = RSA.Create();
+            key.ImportSubjectPublicKeyInfo(spki, out var read);
+            var exponent = key.ExportParameters(false).Exponent;
+            if (read != spki.Length || key.KeySize != 2048 || exponent is null || !exponent.AsSpan().SequenceEqual(new byte[] { 1, 0, 1 }) ||
+                signature.Length != 256)
+            {
+                return false;
+            }
+            return key.VerifyData(message, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         }
         catch (CryptographicException)
         {

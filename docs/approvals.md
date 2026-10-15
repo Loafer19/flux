@@ -2,8 +2,9 @@
 
 [Documentation index](README.md)
 
-Flux for Android, Flux for iOS, and Flux for macOS can approve `sudo` requests.
+Flux for Android, Flux for iOS, Flux for macOS, and Flux for Windows can approve `sudo` requests.
 The Android phone asks for a fingerprint. The iPhone asks for Face ID or Touch ID, and the Mac asks for Touch ID.
+Windows asks for Windows Hello: a fingerprint, a face, or the Windows Hello PIN.
 The same device can approve the `hyprlock` lock screen, but not the Omarchy lock screen. See [lock screens](#lock-screens).
 It can approve polkit requests only on a system with a setuid `polkit-agent-helper-1`. See [polkit](#polkit).
 The device signs the request with its hardware-backed key.
@@ -14,16 +15,18 @@ The iPhone gets requests only while Flux is open on it.
 The Mac and the iPhone need a Secure Enclave.
 An iPhone without one, such as the iOS simulator, refuses each request.
 A Mac without one has no Touch ID, so **Approve** fails with an error.
+A Windows computer without Windows Hello refuses each request.
+On Windows, the Windows Hello PIN can approve. Anyone who knows the PIN can approve at that computer. See the [security design](approve.md#windows).
 
 Read the [security design](approve.md) before you change the implementation.
 
 ## Enable sudo approval
 
 The complete desktop install provides `/usr/lib/flux/flux-approve`.
-The device needs a configured fingerprint, Face ID, or Touch ID, and an active Flux connection.
+The device needs a configured fingerprint, Face ID, Touch ID, or Windows Hello, and an active Flux connection.
 Installation alone does not enable approval.
 
-1. Open Flux on the phone, the iPhone, or the Mac.
+1. Open Flux on the phone, the iPhone, the Mac, or the Windows computer.
 2. Check that the desktop is connected.
 3. Start setup from your desktop account:
 
@@ -31,8 +34,8 @@ Installation alone does not enable approval.
    sudo flux-cli approve setup
    ```
 
-4. Select Enroll on the phone, the iPhone, or the Mac.
-5. Touch the fingerprint sensor, or confirm with Face ID or Touch ID.
+4. Select Enroll on the phone, the iPhone, the Mac, or the Windows computer.
+5. Touch the fingerprint sensor, or confirm with Face ID, Touch ID, or Windows Hello.
 6. Type the key code that the device shows, all 16 characters. Spaces, hyphens, and case do not matter. You have 3 tries.
 7. Test in a new terminal:
 

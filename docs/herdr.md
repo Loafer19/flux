@@ -444,11 +444,13 @@ The mic key does not show when the phone has no speech recognizer.
 
 Flux for macOS shows the same agents and sends the same replies as the phone.
 It shows up to 1000 lines of output.
-It does not start agents, close them, open terminals, or show the live terminal.
+It starts agents, but it does not close them, open terminals, or show the live terminal.
 
 - **Control** has the **Agents and terminals** tool. Its line counts the agents and the terminals. Its badge shows the number of blocked agents.
 - **Chat** shows each agent that waits for input, works, or is done. An agent that waits shows its choices there. See [Chat and navigation](macos.md#chat-and-navigation).
 - **Agents and terminals** opens a window with the agent list on the left and the thread of the selected agent on the right. When more than 1 computer has agents, Flux asks which one.
+- To start an agent, select **Start Agent** in **Control**, the add button under the agent list, or **Start an agent** when the computer has no agents yet. The sheet works as [Start an agent](#start-an-agent) describes, with agents only, and asks for Touch ID or the Mac password before the start. The window then selects the new agent. A line above the reply field shows the state of the first task.
+- **Browse…** next to the folder search shows the folders of the computer, and opens at the chosen folder. It uses [Get files](features.md#browse-pc), so it shows the same folders, without hidden ones, and the computer shows that Get files is open. The picker and the Get files window share 1 session, so a folder that opens in one also opens in the other.
 - **Open thread** on the card of an agent in **Chat** opens the agent in that window. The menu of each computer in the menu bar panel has **Agents…** too.
 - The output uses the colors of Tokyo Night in dark mode and Tokyo Night Day in light mode.
 - The Mac fits the output to the width of the window, as the phone does. See [See your agents](#see-your-agents).

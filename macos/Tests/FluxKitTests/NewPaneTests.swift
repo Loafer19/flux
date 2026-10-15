@@ -92,4 +92,52 @@ final class NewPaneTests: XCTestCase {
         XCTAssertEqual(NewPane.agentProduct("agy"), "Antigravity")
         XCTAssertNil(NewPane.agentProduct("somethingnew"))
     }
+
+    func testHomeFolderFromBrowseIsTilde() {
+        XCTAssertEqual(NewPane.homeRelative("/home/snorre", home: "/home/snorre"), "~")
+        XCTAssertEqual(NewPane.homeRelative("/home/snorre/", home: "/home/snorre"), "~")
+    }
+
+    func testFolderInHomeFromBrowseStartsWithTilde() {
+        XCTAssertEqual(NewPane.homeRelative("/home/snorre/Code/app", home: "/home/snorre"), "~/Code/app")
+        XCTAssertEqual(NewPane.homeRelative("/home/snorre/Code/app/", home: "/home/snorre/"), "~/Code/app")
+    }
+
+    func testFolderOutsideHomeStaysAbsolute() {
+        XCTAssertEqual(NewPane.homeRelative("/home/snorre2/x", home: "/home/snorre"), "/home/snorre2/x")
+        XCTAssertEqual(NewPane.homeRelative("/srv/data", home: "/home/snorre"), "/srv/data")
+        XCTAssertEqual(NewPane.homeRelative("/srv/data", home: ""), "/srv/data")
+    }
+
+    func testBrowsedFolderMatchesItsWorkspace() {
+        let folder = NewPane.homeRelative("/home/snorre/Code/flux", home: "/home/snorre")
+        XCTAssertEqual(NewPane.workspaceFor(state, folder)?.id, NewPane.workspaceFor(state, "~/Code/flux")?.id)
+    }
+
+    func testTildeOpensTheHomeFolderInBrowse() {
+        XCTAssertEqual(NewPane.absoluteFolder("~", home: "/home/snorre"), "/home/snorre")
+        XCTAssertEqual(NewPane.absoluteFolder("~/", home: "/home/snorre/"), "/home/snorre")
+    }
+
+    func testFolderInHomeOpensUnderTheHomeFolderInBrowse() {
+        XCTAssertEqual(NewPane.absoluteFolder("~/Code/app", home: "/home/snorre"), "/home/snorre/Code/app")
+        XCTAssertEqual(NewPane.absoluteFolder("~/Code/app/", home: "/home/snorre/"), "/home/snorre/Code/app")
+    }
+
+    func testAbsoluteFolderOpensAsItIsInBrowse() {
+        XCTAssertEqual(NewPane.absoluteFolder("/srv/data/", home: "/home/snorre"), "/srv/data")
+        XCTAssertEqual(NewPane.absoluteFolder("/srv/data", home: ""), "/srv/data")
+    }
+
+    func testFolderWithoutAKnownHomeHasNoPathInBrowse() {
+        XCTAssertNil(NewPane.absoluteFolder("~/Code/app", home: ""))
+        XCTAssertNil(NewPane.absoluteFolder("~", home: "/"))
+        XCTAssertNil(NewPane.absoluteFolder("~other/x", home: "/home/snorre"))
+        XCTAssertNil(NewPane.absoluteFolder("Code/app", home: "/home/snorre"))
+    }
+
+    func testChosenFolderOpensWhereBrowseFoundIt() {
+        let folder = NewPane.homeRelative("/home/snorre/Code/flux", home: "/home/snorre")
+        XCTAssertEqual(NewPane.absoluteFolder(folder, home: "/home/snorre"), "/home/snorre/Code/flux")
+    }
 }

@@ -13,6 +13,8 @@ final class AgentsWindowModel {
     let plugin: HerdrPlugin
     /// The pane of the selected agent.
     var selection: String?
+    /// True while the sheet that starts an agent shows.
+    var newAgent = false
     /// The reply text of each pane. A draft stays when the user selects another agent.
     var drafts: [String: String] = [:]
     /// The cursor of each reply field, in UTF-16 units.
@@ -79,16 +81,19 @@ final class AgentsWindows: NSObject, NSWindowDelegate {
     private var open: [String: Entry] = [:]
 
     /// Shows the agents window of a computer, and opens it when it is not
-    /// open. `pane` selects that agent.
-    func show(_ deviceId: String, pane: String? = nil, app: AppModel) {
+    /// open. `pane` selects that agent. `startAgent` shows the sheet that
+    /// starts an agent.
+    func show(_ deviceId: String, pane: String? = nil, startAgent: Bool = false, app: AppModel) {
         if let entry = open[deviceId] {
             if let pane { entry.model.selection = pane }
+            if startAgent { entry.model.newAgent = true }
             entry.window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         guard let plugin = app.core.plugin(HerdrPlugin.self) else { return }
         let model = AgentsWindowModel(deviceId: deviceId, app: app, plugin: plugin, selection: pane)
+        model.newAgent = startAgent
         let hosting = NSHostingController(rootView: AgentsView(model: model).themeWindow(app))
         hosting.sizingOptions = [.minSize]
         let window = NSWindow(contentViewController: hosting)

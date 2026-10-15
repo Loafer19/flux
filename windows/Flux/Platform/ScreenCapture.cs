@@ -120,7 +120,10 @@ sealed class WindowsScreenCapture(GraphicsCaptureItem item, IDirect3DDevice devi
         try
         {
             // Windows 11 can leave out the yellow border around the display.
-            session.IsBorderRequired = false;
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348))
+            {
+                session.IsBorderRequired = false;
+            }
         }
         catch (Exception e) when (e is COMException or InvalidCastException or UnauthorizedAccessException)
         {

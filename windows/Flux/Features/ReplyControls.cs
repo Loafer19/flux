@@ -32,6 +32,8 @@ public sealed class ReplyControls : View
     readonly Border problemHost = new();
     readonly Stack composerRow;
     readonly Border dock;
+    // Moves the time of a dictation each second.
+    readonly System.Windows.Threading.DispatcherTimer listenClock = new() { Interval = TimeSpan.FromSeconds(1) };
     HerdrAgent? agent;
     HerdrOutput? output;
     AgentThread? thread;
@@ -67,6 +69,8 @@ public sealed class ReplyControls : View
         dock = Parts.PageDock(Ui.V(10, topHost, keysHost, composerRow, listeningHost, problemHost), 14);
         handledReply = Reply?.Seq ?? 0;
         Watch(model.Dictation);
+        listenClock.Tick += (_, _) => Invalidate();
+        Unloaded += (_, _) => listenClock.Stop();
     }
 
     HerdrPlugin Plugin => model.Plugin;
@@ -145,6 +149,14 @@ public sealed class ReplyControls : View
         Put(topHost, top.Count == 0 ? null : Ui.V(10, top));
         Put(keysHost, detail.KeysOpen ? KeyRow(blocked && choices.Count == 0) : null);
         var listening = Dictation.State != Dictation.Phase.Idle;
+        if (listening)
+        {
+            listenClock.Start();
+        }
+        else
+        {
+            listenClock.Stop();
+        }
         Composer(sendingPrompt);
         composerRow.Shown(!asking && !listening);
         Put(listeningHost, !asking && listening ? Listening() : null);

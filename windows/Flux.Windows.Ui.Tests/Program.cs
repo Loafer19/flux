@@ -82,7 +82,7 @@ internal static class Program
             devices.SelectedItem = devices.Items.Cast<PeerRow>().Single(r => r.Peer.Identity.DeviceId == second.Identity.DeviceId);
             Check(((SolidColorBrush)window.FindResource("BackgroundBrush")).Color == Color.FromRgb(0x1a,0x1b,0x26),
                 "Another device must use its own theme or Tokyo Night fallback.");
-            devices.SelectedIndex = 0;
+            devices.SelectedItem = devices.Items.Cast<PeerRow>().Single(r => r.Peer.Identity.DeviceId == first.Identity.DeviceId);
             Check(((SolidColorBrush)window.FindResource("BackgroundBrush")).Color == Color.FromRgb(0x20,0x20,0x20),
                 "Returning to a device must restore its theme.");
             window.SetDeviceTheme(first.Identity.DeviceId, null);

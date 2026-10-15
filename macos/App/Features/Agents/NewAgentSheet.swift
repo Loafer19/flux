@@ -50,11 +50,12 @@ struct NewAgentSheet: View {
     }
 
     var body: some View {
-        let herdr = model.herdr
+        let herdr = model.shown
+        let session = (model.herdr?.sessions.count ?? 0) > 1 ? model.plugin.model.session(model.deviceId) : nil
         let action = model.plugin.model.actions[model.deviceId].flatMap { $0.action == "create" && $0.seq > after ? $0 : nil }
         VStack(spacing: 0) {
             HStack {
-                Text("Start an agent on \(name)")
+                Text(session.map { "Start an agent in \($0.label) on \(name)" } ?? "Start an agent on \(name)")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(tn.text)
                     .accessibilityAddTraits(.isHeader)
@@ -255,7 +256,8 @@ struct NewAgentSheet: View {
         ReplyLock.run(reason: "start an agent on \(name)") {
             after = last
             NewAgentPrefs.save(model.deviceId, run: kind, folder: target)
-            model.plugin.create(model.deviceId, what: "agent", kind: kind, cwd: target, workspace: workspace, task: task)
+            model.plugin.create(model.deviceId, what: "agent", kind: kind, cwd: target, workspace: workspace, task: task,
+                                session: model.plugin.model.createSession(model.deviceId))
         } onError: { lockError = $0 }
     }
 }

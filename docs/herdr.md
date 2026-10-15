@@ -499,39 +499,41 @@ systemctl --user reload fluxd
 
 The phone then shows that the feature is off on the computer.
 
-## Use another herdr session
+## Use herdr sessions
 
-`fluxd` follows the default herdr session.
-It uses the first path that applies:
+`fluxd` follows the default herdr session and each named session at the same time.
+A named session is a session that you start with `herdr session attach NAME`.
+When a computer has more than one session, the agent list of the app shows a session picker.
+Pick a session to see its agents and terminals and to start agents in it.
+The app keeps the choice for each computer.
+Each session shows the number of its agents that wait for you.
+Notifications come from the agents of all sessions.
+
+`fluxd` finds the default session at the first path that applies:
 
 1. `$HERDR_SOCKET_PATH`
 2. `$XDG_CONFIG_HOME/herdr/herdr.sock`
 3. `~/.config/herdr/herdr.sock`
 
-To list the socket of each session, run:
+It finds the named sessions in `$XDG_CONFIG_HOME/herdr/sessions/`, or in `~/.config/herdr/sessions/`.
+Each folder there with a `herdr.sock` socket is a session.
+`fluxd` looks for new and removed sessions every 10 seconds, and when the app opens the agent list.
+The app lists only the named sessions that run.
+
+To list the sessions, run:
 
 ```sh
 herdr session list --json
 ```
 
-To follow a named session, set the variable for the service:
+When `HERDR_SOCKET_PATH` names the socket of a named session, `fluxd` follows that session as the default session and does not list it again.
 
-```sh
-systemctl --user edit fluxd
-```
+An app without session support and an older `fluxd` keep working together with the new versions.
+An older app shows the default session only.
+An app with session support shows no picker when the computer has an older `fluxd`.
 
-Add these lines, then restart the service:
-
-```ini
-[Service]
-Environment=HERDR_SOCKET_PATH=SOCKET_PATH
-```
-
-Replace `SOCKET_PATH` with the `socket_path` value of the session from `herdr session list --json`.
-
-```sh
-systemctl --user restart fluxd
-```
+The live terminal works in each session.
+`fluxd` checks the herdr version of the live terminal with the default session, so the default session must run.
 
 ## Access and privacy
 
@@ -576,6 +578,7 @@ The output and the live terminal go only to paired devices over the Flux TLS lin
 
 ## How it works
 
+`fluxd` follows each herdr session with its own connection, as below.
 `fluxd` subscribes to herdr events for new agents, closed panes, moved panes, and workspace changes.
 It also subscribes to the status of each agent pane, because herdr needs a pane ID for that event.
 After each event, `fluxd` reads the session snapshot and sends the agent list when it changed.
@@ -659,7 +662,7 @@ The `kind` field selects the message.
 
 | Kind | Sender | Body |
 | --- | --- | --- |
-| `state` | Computer | `enabled`, `running`, `control`, `terminals`, `bridge`, `review`, `agents`, `panes`, `workspaces`, and `kinds` |
+| `state` | Computer | `enabled`, `running`, `control`, `terminals`, `bridge`, `review`, `agents`, `panes`, `workspaces`, `kinds`, and `sessions` |
 | `output` | Computer | `pane` and `format`, then `text` and `truncated`, or `error` |
 | `sent` | Computer | `pane` and `action`. When the reply failed, also `error`, and `code` for some errors. |
 | `created` | Computer | `what`, then `pane` or `error` |
@@ -669,7 +672,7 @@ The `kind` field selects the message.
 | `keys` | Phone | `pane` and `keys`, 1 to 8 key names. The computer answers with `sent`. |
 | `prompt` | Phone | `pane`, `text`, and `answer`. The computer answers with `sent`. |
 | `input` | Phone | `pane` of a terminal, `text`, and 0 to 8 `keys`. The computer answers with `sent`. |
-| `create` | Phone | `what` is `agent` or `terminal`, then `agent`, `cwd`, and `workspace`. The computer answers with `created`. |
+| `create` | Phone | `what` is `agent` or `terminal`, then `agent`, `cwd`, `workspace`, and the optional `herdr_session`. The computer answers with `created`. |
 | `close` | Phone | `pane`. The computer answers with `closed`. |
 | `terminal_open` | Phone | `request`, `pane`, and `mode`, `observe` or `control`. `control` can add `cols` and `rows` of the grid, from 1 to 1000. The computer answers with `terminal_opened`. |
 | `terminal_opened` | Computer | `request`, `pane`, and `mode`, then `session`, `width`, and `height`, or `error`. A temporary error also has `retry`. |
@@ -683,6 +686,18 @@ The `kind` field selects the message.
 | `terminal_paste` | Phone | `session` and `text`. `fluxd` sends the text as one bracketed paste. |
 | `terminal_paste_image` | Phone | `session`, and a PNG image as the payload |
 | `terminal_input_error` | Computer | `session`, `code`, and `error`. The error of an image paste also has `image`. |
+
+`agents`, `panes`, and `workspaces` of `state` hold the default session only, so an older app sees the default session as before.
+The optional `sessions` list of `state` holds the default session first and then each named session that runs, in name order.
+Each session has `name`, `default`, `running`, `agents`, `panes`, and `workspaces`, with the same fields as in `state`.
+The default session has the name `default`.
+The IDs of panes and workspaces in a named session start with the session name and a slash, for example `omarchy/w5:p1`.
+The IDs of the default session have no prefix.
+Thus an ID is unique on the computer, and the phone sends it back as it is in `read`, `keys`, `prompt`, `input`, `close`, and `terminal_open`.
+`fluxd` sends the request to the session of the ID, with the ID of herdr.
+A `create` with a workspace opens the pane in the session of the workspace.
+A `create` without a workspace opens a new workspace in the session that `herdr_session` names, or in the default session when the field is empty or `default`.
+A phone without `sessions` in `state` talks to an older `fluxd`, and it shows the default session only.
 
 The optional `bridge` list of `state` names the actions of the live terminal: `observe`, `control`, `scroll`, `mouse`, `input`, `paste`, and `image`.
 A phone sends `terminal_input` only with `input`, `terminal_paste` only with `paste`, and `terminal_paste_image` only with `image`.

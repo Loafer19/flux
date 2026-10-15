@@ -120,7 +120,16 @@ type fakeHerdr struct {
 
 func newFakeHerdr(t *testing.T) *fakeHerdr {
 	t.Helper()
-	f := &fakeHerdr{path: filepath.Join(t.TempDir(), "herdr.sock"), snapshot: `{"protocol":22,"workspaces":[],"agents":[]}`}
+	return newFakeHerdrAt(t, filepath.Join(t.TempDir(), "herdr.sock"))
+}
+
+// newFakeHerdrAt is newFakeHerdr with the socket at path.
+func newFakeHerdrAt(t *testing.T, path string) *fakeHerdr {
+	t.Helper()
+	f := &fakeHerdr{path: path, snapshot: `{"protocol":22,"workspaces":[],"agents":[]}`}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	ln, err := net.Listen("unix", f.path)
 	if err != nil {
 		t.Fatal(err)
@@ -1043,7 +1052,7 @@ func TestHerdrCreate(t *testing.T) {
 	d.herdrKinds = []string{"claude"}
 	d.herdrPlaces = []HerdrWorkspace{{ID: "w1", Label: "flux", Cwd: dir}}
 
-	if body := createdBody(t, d.herdrCreate(dev, "agent", "claude", dir, ""), "created"); body["error"] != errHerdrControlOff {
+	if body := createdBody(t, d.herdrCreate(dev, "agent", "claude", dir, "", ""), "created"); body["error"] != errHerdrControlOff {
 		t.Fatalf("control off: %v", body)
 	}
 	d.cfg.HerdrControl = true
@@ -1059,7 +1068,7 @@ func TestHerdrCreate(t *testing.T) {
 		{"missing folder", "agent", "claude", dir + "/nope", "", "The folder " + dir + "/nope does not exist"},
 	}
 	for _, c := range refused {
-		if body := createdBody(t, d.herdrCreate(dev, c.what, c.kind, c.cwd, c.ws), "created"); body["error"] != c.want {
+		if body := createdBody(t, d.herdrCreate(dev, c.what, c.kind, c.cwd, c.ws, ""), "created"); body["error"] != c.want {
 			t.Errorf("%s: %v", c.name, body)
 		}
 	}
@@ -1072,7 +1081,7 @@ func TestHerdrCreate(t *testing.T) {
 
 	// One start runs at a time for each device.
 	d.herdrJobs.creating[dev.ID] = true
-	if body := createdBody(t, d.herdrCreate(dev, "agent", "claude", dir, ""), "created"); body["error"] != errHerdrCreateBusy {
+	if body := createdBody(t, d.herdrCreate(dev, "agent", "claude", dir, "", ""), "created"); body["error"] != errHerdrCreateBusy {
 		t.Errorf("second start: %v", body)
 	}
 	if !d.herdrJobs.creating[dev.ID] {
@@ -1106,7 +1115,7 @@ func TestHerdrCreate(t *testing.T) {
 		defer d.mu.Unlock()
 		return slices.Equal(d.herdrKinds, []string{"claude"}) && len(d.herdrPlaces) == 1
 	})
-	body := createdBody(t, d.herdrCreate(dev, "agent", "claude", dir, "w1"), "created")
+	body := createdBody(t, d.herdrCreate(dev, "agent", "claude", dir, "w1", ""), "created")
 	if body["error"] != nil || body["pane"] != "w1:p2" || body["what"] != "agent" {
 		t.Fatalf("agent: %v", body)
 	}
@@ -1136,7 +1145,7 @@ func TestHerdrCreate(t *testing.T) {
 	f.replies["workspace.create"] = `"result":{"type":"workspace_created","workspace":{"workspace_id":"w2"},"root_pane":{"pane_id":"w2:p1"}}`
 	f.mu.Unlock()
 	f.set(`{"protocol":22,"workspaces":[],"panes":[{"pane_id":"w2:p1","workspace_id":"w2"}],"agents":[]}`)
-	body = createdBody(t, d.herdrCreate(dev, "terminal", "", "~", ""), "created")
+	body = createdBody(t, d.herdrCreate(dev, "terminal", "", "~", "", ""), "created")
 	home, _ := os.UserHomeDir()
 	if body["error"] != nil || body["pane"] != "w2:p1" {
 		t.Fatalf("terminal: %v", body)
@@ -1156,7 +1165,7 @@ func TestHerdrCreateCloseOnFailure(t *testing.T) {
 		"workspace.create": `"result":{"type":"workspace_created","root_pane":{"pane_id":"w3:p1"}}`,
 		"agent.start":      `"error":{"code":"agent_invalid_kind","message":"unknown agent kind"}`,
 	}
-	body := createdBody(t, d.herdrCreate(dev, "agent", "gemini", "", ""), "created")
+	body := createdBody(t, d.herdrCreate(dev, "agent", "gemini", "", "", ""), "created")
 	if body["error"] != "herdr: unknown agent kind" || body["pane"] != nil {
 		t.Fatalf("failed start: %v", body)
 	}

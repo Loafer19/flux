@@ -239,11 +239,12 @@ func (d *Daemon) readReview(pane, path string) *proto.Packet {
 	}
 	ctx, cancel := context.WithTimeout(d.ctx, 10*time.Second)
 	defer cancel()
-	snap, err := herdr.GetSnapshot(ctx, d.herdrPath)
+	sock, id := d.herdrAt(pane)
+	snap, err := herdr.GetSnapshot(ctx, sock)
 	var dir string
 	if err == nil {
 		for _, agent := range snap.Agents {
-			if agent.PaneID == pane {
+			if agent.PaneID == id {
 				dir = agent.ForegroundCwd
 				if dir == "" {
 					dir = agent.Cwd

@@ -30,7 +30,15 @@ enum class AgentStatus(val wire: String) {
     }
 }
 
-/** One coding agent in a herdr pane on a computer. [pane] is the herdr pane ID, for example w5:p1. */
+/** The name of the default herdr session on the wire. */
+const val HERDR_DEFAULT_SESSION = "default"
+
+/**
+ * One coding agent in a herdr pane on a computer. [pane] is the herdr pane
+ * ID, for example w5:p1. In a named session, fluxd puts the session name
+ * before it, for example omarchy/w5:p1, so the phone uses it as it is.
+ * [session] is the name of the herdr session of the pane.
+ */
 data class HerdrAgent(
     val pane: String,
     val agent: String,
@@ -38,6 +46,7 @@ data class HerdrAgent(
     val title: String = "",
     val project: String = "",
     val workspace: String = "",
+    val session: String = HERDR_DEFAULT_SESSION,
 )
 
 /** A herdr pane without an agent: a terminal. [title] is the terminal title, which a shell often sets to the command. */
@@ -46,10 +55,21 @@ data class HerdrTerminal(
     val title: String = "",
     val project: String = "",
     val workspace: String = "",
+    val session: String = HERDR_DEFAULT_SESSION,
 )
 
 /** A herdr workspace that can get a new tab. [cwd] is the folder of its active tab on the computer. */
-data class HerdrWorkspace(val id: String, val label: String, val cwd: String = "")
+data class HerdrWorkspace(val id: String, val label: String, val cwd: String = "", val session: String = HERDR_DEFAULT_SESSION)
+
+/**
+ * A herdr session on a computer. [default] is true for the default
+ * session, whose name is [HERDR_DEFAULT_SESSION]. [running] is true when
+ * fluxd reaches its herdr server.
+ */
+data class HerdrSessionInfo(val name: String, val default: Boolean = false, val running: Boolean = true) {
+    /** The name to show: "Default" for the default session. */
+    val label: String get() = if (default) "Default" else name
+}
 
 /**
  * What a computer reports about herdr. [enabled] is false when the computer
@@ -58,7 +78,10 @@ data class HerdrWorkspace(val id: String, val label: String, val cwd: String = "
  * replies from this phone, and new agents. [terminals] is true when the
  * computer also opens terminals for this phone and lists them in [panes].
  * [workspaces] and [kinds] are the places and the agent kinds for a new
- * agent.
+ * agent. [agents], [panes], and [workspaces] hold the items of all herdr
+ * sessions, and each item names its session. [sessions] lists the
+ * sessions that a newer fluxd reports, and it is empty from an older one.
+ * [running] is about the default session.
  */
 data class HerdrState(
     val enabled: Boolean,
@@ -72,7 +95,45 @@ data class HerdrState(
     val review: Boolean = false,
     /** The terminal-session actions of the herdr bridge, such as "observe" and "control". */
     val bridge: List<String> = emptyList(),
+    val sessions: List<HerdrSessionInfo> = emptyList(),
 ) {
+    /** The sessions, or only the default session when the computer reports none. */
+    val sessionList: List<HerdrSessionInfo>
+        get() = sessions.ifEmpty { listOf(HerdrSessionInfo(HERDR_DEFAULT_SESSION, default = true, running = running)) }
+
+    /** True when the computer has more than the default session, so the user picks one. */
+    val manySessions: Boolean get() = sessionList.size > 1
+
+    /** True when herdr runs in the default session or in another session. */
+    val anyRunning: Boolean get() = running || sessions.any { it.running }
+
+    /** The name of the default session. */
+    val defaultSession: String get() = sessionList.firstOrNull { it.default }?.name ?: HERDR_DEFAULT_SESSION
+
+    /** The session [name] when the computer has it, or else the default session. */
+    fun sessionOrDefault(name: String?): HerdrSessionInfo =
+        sessionList.firstOrNull { it.name == name } ?: sessionList.firstOrNull { it.default } ?: sessionList.first()
+
+    /**
+     * The state with only the agents, terminals, and workspaces of the
+     * session [name], and its running state. A session that the computer
+     * does not have gives the default session. With only the default
+     * session, it is this state.
+     */
+    fun scoped(name: String?): HerdrState {
+        if (!manySessions) return this
+        val s = sessionOrDefault(name)
+        return copy(
+            running = enabled && s.running,
+            agents = agents.filter { it.session == s.name },
+            panes = panes.filter { it.session == s.name },
+            workspaces = workspaces.filter { it.session == s.name },
+        )
+    }
+
+    /** The number of agents in the session [name] that need input. */
+    fun blockedIn(name: String): Int = agents.count { it.session == name && it.status == AgentStatus.Blocked }
+
     /** The agents with [AgentStatus.Blocked] first, then done, working, idle, and unknown. */
     val sorted: List<HerdrAgent> get() = sortAgents(agents)
 
@@ -222,10 +283,9 @@ data class HerdrDone(val action: String, val pane: String?, val error: String?, 
 /** Sorts by status in the order of [AgentStatus]. The sort is stable, so herdr order stays inside a group. */
 fun sortAgents(agents: List<HerdrAgent>): List<HerdrAgent> = agents.sortedBy { it.status.ordinal }
 
-/** Parses the body of a state packet. It returns null for a body that is not a state. */
-fun parseHerdrState(body: JsonObject): HerdrState? {
-    if (body.str("kind") != "state") return null
-    val agents = (body["agents"] as? JsonArray).orEmpty().mapNotNull { e ->
+/** The agents of [body], an object with an agents list, in the session [session]. */
+private fun parseAgents(body: JsonObject, session: String): List<HerdrAgent> =
+    (body["agents"] as? JsonArray).orEmpty().mapNotNull { e ->
         val o = e as? JsonObject ?: return@mapNotNull null
         val pane = o.str("pane")?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
         HerdrAgent(
@@ -235,21 +295,55 @@ fun parseHerdrState(body: JsonObject): HerdrState? {
             title = o.str("title").orEmpty(),
             project = o.str("project").orEmpty(),
             workspace = o.str("workspace").orEmpty(),
+            session = session,
         )
     }
-    val panes = (body["panes"] as? JsonArray).orEmpty().mapNotNull { e ->
+
+/** The terminals of [body], an object with a panes list, in the session [session]. */
+private fun parsePanes(body: JsonObject, session: String): List<HerdrTerminal> =
+    (body["panes"] as? JsonArray).orEmpty().mapNotNull { e ->
         val o = e as? JsonObject ?: return@mapNotNull null
         val pane = o.str("pane")?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-        HerdrTerminal(pane, o.str("title").orEmpty(), o.str("project").orEmpty(), o.str("workspace").orEmpty())
+        HerdrTerminal(pane, o.str("title").orEmpty(), o.str("project").orEmpty(), o.str("workspace").orEmpty(), session)
     }
-    val workspaces = (body["workspaces"] as? JsonArray).orEmpty().mapNotNull { e ->
+
+/** The workspaces of [body], an object with a workspaces list, in the session [session]. */
+private fun parseWorkspaces(body: JsonObject, session: String): List<HerdrWorkspace> =
+    (body["workspaces"] as? JsonArray).orEmpty().mapNotNull { e ->
         val o = e as? JsonObject ?: return@mapNotNull null
         val id = o.str("id")?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-        HerdrWorkspace(id, o.str("label").orEmpty().ifEmpty { id }, o.str("cwd").orEmpty())
+        HerdrWorkspace(id, o.str("label").orEmpty().ifEmpty { id }, o.str("cwd").orEmpty(), session)
+    }
+
+/**
+ * Parses the body of a state packet. It returns null for a body that is
+ * not a state. A newer fluxd also sends the sessions list with the agents,
+ * terminals, and workspaces of each herdr session. The top-level lists
+ * are those of the default session, so without a sessions list they are
+ * all the items.
+ */
+fun parseHerdrState(body: JsonObject): HerdrState? {
+    if (body.str("kind") != "state") return null
+    val enabled = body.bool("enabled") ?: true
+    val sessionObjects = (body["sessions"] as? JsonArray).orEmpty().mapNotNull { e ->
+        val o = e as? JsonObject ?: return@mapNotNull null
+        val name = o.str("name")?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        o to HerdrSessionInfo(name, o.bool("default") ?: (name == HERDR_DEFAULT_SESSION), enabled && (o.bool("running") ?: false))
+    }.distinctBy { it.second.name }
+    val agents: List<HerdrAgent>
+    val panes: List<HerdrTerminal>
+    val workspaces: List<HerdrWorkspace>
+    if (sessionObjects.isEmpty()) {
+        agents = parseAgents(body, HERDR_DEFAULT_SESSION)
+        panes = parsePanes(body, HERDR_DEFAULT_SESSION)
+        workspaces = parseWorkspaces(body, HERDR_DEFAULT_SESSION)
+    } else {
+        agents = sessionObjects.flatMap { (o, s) -> parseAgents(o, s.name) }
+        panes = sessionObjects.flatMap { (o, s) -> parsePanes(o, s.name) }
+        workspaces = sessionObjects.flatMap { (o, s) -> parseWorkspaces(o, s.name) }
     }
     val kinds = (body["kinds"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { k -> k.isNotEmpty() } }
     val bridge = (body["bridge"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { k -> k.isNotEmpty() } }
-    val enabled = body.bool("enabled") ?: true
     val control = enabled && (body.bool("control") ?: false)
     val terminals = control && (body.bool("terminals") ?: false)
     return HerdrState(
@@ -263,7 +357,23 @@ fun parseHerdrState(body: JsonObject): HerdrState? {
         kinds = if (control) kinds else emptyList(),
         review = enabled && (body.bool("review") ?: false),
         bridge = bridge,
+        sessions = sessionObjects.map { it.second },
     )
+}
+
+/**
+ * The body of a create: an agent of [kind] when [what] is "agent", or a
+ * shell when it is "terminal", in [cwd]. The pane opens as a new tab of
+ * [workspace], or in a new workspace when [workspace] is empty. A new
+ * workspace opens in the herdr session [session]. The field names the
+ * session only when it is not the default session, because an older
+ * fluxd knows only the default session.
+ */
+fun herdrCreateBody(what: String, kind: String, cwd: String, workspace: String, session: String?, request: Long): JsonObject {
+    val fields = listOf<Pair<String, Any?>>(
+        "kind" to "create", "what" to what, "agent" to kind, "cwd" to cwd.trim(), "workspace" to workspace, "request" to request,
+    ) + if (workspace.isEmpty() && !session.isNullOrEmpty() && session != HERDR_DEFAULT_SESSION) listOf("herdr_session" to session) else emptyList()
+    return bodyOf(*fields.toTypedArray())
 }
 
 /** The longest output text that the phone reads, in characters. fluxd sends at most 1 MiB. */

@@ -233,7 +233,8 @@ func (d *Daemon) herdrTerminalOpen(dev *Device, l *lan.Link, req json.Number, pa
 	}
 	if width == 0 {
 		lctx, lcancel := context.WithTimeout(d.ctx, min(herdrCallTimeout, time.Until(deadline)))
-		layout, err := herdr.GetLayout(lctx, d.herdrPath, pane)
+		sock, id := d.herdrAt(pane)
+		layout, err := herdr.GetLayout(lctx, sock, id)
 		lcancel()
 		if err != nil {
 			d.logf("%s: pane.layout of %s: %v", d.nameOf(dev), pane, err)
@@ -248,8 +249,9 @@ func (d *Daemon) herdrTerminalOpen(dev *Device, l *lan.Link, req json.Number, pa
 		return
 	}
 	ctx, cancel := context.WithCancel(d.ctx)
+	sock, id := d.herdrAt(pane)
 	session, err := herdr.OpenSession(ctx, herdr.SessionConfig{
-		Path: d.herdrBinName(), Socket: d.herdrPath, Target: pane,
+		Path: d.herdrBinName(), Socket: sock, Target: id,
 		Cols: width, Rows: height, Control: mode == "control",
 		OpenTimeout: wait,
 	})
@@ -1121,16 +1123,17 @@ func (d *Daemon) runHerdrTerminal(t *herdrTerminal) {
 		"kind": "terminal_closed", "session": t.id, "code": code, "reason": reason}), req))
 }
 
-// pruneHerdrStreamsLocked ends the streams whose pane or agent is gone.
+// pruneHerdrStreamsLocked ends the streams whose pane or agent is gone,
+// and the streams of the session when it does not run.
 // It returns them to drop after the lock is released. d.mu must be held,
 // with the new state already recorded.
-func (d *Daemon) pruneHerdrStreamsLocked(running bool) []*herdrTerminal {
+func (d *Daemon) pruneHerdrStreamsLocked(session string, running bool) []*herdrTerminal {
 	var gone []*herdrTerminal
 	for _, t := range d.herdrStreams {
 		known := d.herdrAgentLocked(t.pane) || d.herdrTerminalLocked(t.pane)
 		code := ""
 		switch {
-		case !running:
+		case !running && herdrSessionOf(t.pane) == session:
 			code = herdrTermStopped
 		case !known:
 			code = herdrTermPaneGone

@@ -93,10 +93,11 @@ struct ControlView: View {
 
     // MARK: Agents
 
-    /// The agent lists of the computers in scope, by device ID. The demo shows its sample agents.
+    /// The agent lists of the computers in scope, by device ID, each in the
+    /// herdr session that the user picked. The demo shows its sample agents.
     private var herdrStates: [String: HerdrState] {
         if model.demo, let laptop = DemoMode.computers.first { return [laptop.id: DemoMode.herdr] }
-        return model.core.plugin(HerdrPlugin.self)?.model.states ?? [:]
+        return model.core.plugin(HerdrPlugin.self)?.model.scopedStates ?? [:]
     }
 
     /// The order of the agents of Control: the agents that need the user, then the agents that work, then the rest.
@@ -114,6 +115,13 @@ struct ControlView: View {
             "\(agents.count) \(agents.count == 1 ? "agent" : "agents")",
             blocked > 0 ? "\(blocked) \(blocked == 1 ? "needs" : "need") you" : "")
         ListHeader("Agents", trailing: summary)
+        if !model.demo, let herdr = model.core.plugin(HerdrPlugin.self)?.model {
+            ForEach(devices) { d in
+                if let all = herdr.states[d.id], all.sessions.count > 1, let shown = herdr.session(d.id) {
+                    SessionChip(state: all, selected: shown, computer: devices.count > 1 ? d.name : nil) { herdr.selectSession(d.id, $0) }
+                }
+            }
+        }
         if let note = agentNote(devices, states, empty: agents.isEmpty && terminals.isEmpty) {
             Text(note)
                 .font(.footnote)
@@ -441,6 +449,68 @@ private struct TerminalCard: View {
         .buttonStyle(TiledPressStyle(fill: tn.tile, border: tn.line))
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the terminal")
+    }
+}
+
+/// The herdr session of the agent list of a computer, as a chip that opens
+/// the menu of its sessions. Each session in the menu tells how many of its
+/// agents need the user, and the chip counts them in the other sessions.
+/// The list shows it only for a computer with more than 1 session.
+struct SessionChip: View {
+    /// The agents of all sessions of the computer.
+    let state: HerdrState
+    let selected: HerdrSession
+    /// The name of the computer, when the list shows more than 1 computer.
+    var computer: String?
+    let select: (String) -> Void
+    @Environment(\.tn) private var tn
+
+    var body: some View {
+        let others = state.sessions.filter { $0.name != selected.name }.reduce(0) { $0 + state.blockedCount(in: $1.name) }
+        let name = computer.map { "\($0) · \(selected.label)" } ?? selected.label
+        Menu {
+            Picker("Session", selection: Binding(get: { selected.name }, set: { select($0) })) {
+                ForEach(state.sessions) { s in
+                    let n = state.blockedCount(in: s.name)
+                    Label {
+                        Text(s.label)
+                        if n > 0 { Text("\(n) \(n == 1 ? "needs" : "need") you") }
+                    } icon: {
+                        Image(systemName: "rectangle.stack")
+                    }
+                    .tag(s.name)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "rectangle.stack")
+                    .font(.caption)
+                    .foregroundStyle(tn.sub)
+                Text(name)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(tn.text)
+                    .lineLimit(1)
+                if others > 0 {
+                    Text("\(others)")
+                        .font(.caption2.weight(.bold).monospacedDigit())
+                        .foregroundStyle(tn.onAccent)
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: 18)
+                        .background(Capsule().fill(tn.red))
+                }
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tn.sub)
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
+            .frame(minHeight: 36)
+            .background(tileShape(TiledMetrics.chipCorner).fill(tn.tile))
+            .overlay(tileShape(TiledMetrics.chipCorner).strokeBorder(tn.line, lineWidth: 1))
+            .contentShape(tileShape(TiledMetrics.chipCorner))
+        }
+        .accessibilityLabel("Session: \(name)" + (others > 0 ? ". \(others) in other sessions \(others == 1 ? "needs" : "need") you" : ""))
+        .accessibilityHint("Changes the herdr session")
     }
 }
 

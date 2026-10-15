@@ -47,6 +47,11 @@ object DebugDemo {
             "  \u001b[38;5;8m⎿\u001b[0m  \u001b[38;5;2m20 passed\u001b[0m\n\n" +
             "\u001b[38;2;215;119;87m●\u001b[0m Done. The test passed 20 times in a row.\n\n" +
             "\u001b[38;5;8m✻ Worked for 6m 12s\u001b[0m\n\n" + INPUT_BOX,
+        "omarchy/w2:p1" to "\u001b[38;2;215;119;87m●\u001b[0m I packaged the theme with its colors, the wallpaper, and the waybar style.\n\n" +
+            "\u001b[38;5;2m●\u001b[0m \u001b[1mBash\u001b[0m(omarchy-theme-install ./dist/harbor)\n" +
+            "  \u001b[38;5;8m⎿\u001b[0m  Installed the theme \u001b[38;5;6mharbor\u001b[0m\n\n" +
+            "\u001b[38;2;215;119;87m●\u001b[0m Done. Pick it with Super + Ctrl + Shift + Space.\n\n" +
+            "\u001b[38;5;8m✻ Worked for 3m 40s\u001b[0m\n\n" + INPUT_BOX,
     )
 
     /** Sample review diffs of the demo agents, by pane, in the format of fluxd. */
@@ -90,6 +95,44 @@ object DebugDemo {
     /** Debug-only terminal grid of [terminalSample], such as "120x40". */
     @Volatile var terminalGrid: String? = null
 
+    /**
+     * Debug-only: the sample computer also has the named herdr sessions
+     * infra and omarchy, so the session picker shows. Without it, the
+     * sample computer has only the default session, and the screenshots of
+     * the site do not change.
+     */
+    @Volatile var sessions = false
+
+    /** The agents, terminals, and workspaces of the named sample sessions, with the qualified IDs of fluxd. */
+    private val sessionAgents = listOf(
+        HerdrAgent("infra/w1:p1", "claude", AgentStatus.Working, "Move the backups to the new bucket", "ops", "ops", "infra"),
+        HerdrAgent("infra/w2:p1", "codex", AgentStatus.Idle, "", "dns", "dns", "infra"),
+        HerdrAgent("omarchy/w1:p1", "claude", AgentStatus.Blocked, "Theme the lock screen", "omarchy", "omarchy", "omarchy"),
+        HerdrAgent("omarchy/w1:p2", "opencode", AgentStatus.Blocked, "Update the waybar config", "omarchy", "omarchy", "omarchy"),
+        HerdrAgent("omarchy/w2:p1", "claude", AgentStatus.Done, "Package the new theme", "themes", "themes", "omarchy"),
+    )
+    private val sessionPanes = listOf(
+        HerdrTerminal("infra/w1:p2", "journalctl -fu backup", "ops", "ops", "infra"),
+    )
+    private val sessionWorkspaces = listOf(
+        HerdrWorkspace("infra/w1", "ops", "~/Code/ops", "infra"),
+        HerdrWorkspace("infra/w2", "dns", "~/Code/dns", "infra"),
+        HerdrWorkspace("omarchy/w1", "omarchy", "~/Code/omarchy", "omarchy"),
+        HerdrWorkspace("omarchy/w2", "themes", "~/Code/themes", "omarchy"),
+    )
+
+    /** [state] with the named sample sessions when [sessions] is on. */
+    private fun withSessions(state: HerdrState): HerdrState = if (!sessions) state else state.copy(
+        agents = state.agents + sessionAgents,
+        panes = state.panes + sessionPanes,
+        workspaces = state.workspaces + sessionWorkspaces,
+        sessions = listOf(
+            HerdrSessionInfo(HERDR_DEFAULT_SESSION, default = true),
+            HerdrSessionInfo("infra"),
+            HerdrSessionInfo("omarchy"),
+        ),
+    )
+
     fun isDemo(id: String?) = id != null && id.startsWith("demo-")
 
     fun devices(): List<DeviceUi> {
@@ -115,7 +158,7 @@ object DebugDemo {
                 remoteInput = true,
                 desktopSupported = true,
                 remoteDesktop = true,
-                herdr = HerdrState(
+                herdr = withSessions(HerdrState(
                     enabled = true,
                     running = true,
                     control = true,
@@ -138,7 +181,7 @@ object DebugDemo {
                     ),
                     kinds = listOf("claude", "codex", "opencode"),
                     bridge = listOf("observe", "control", "scroll", "mouse"),
-                ),
+                )),
                 herdrOutput = HerdrOutput(
                     pane = "w2:p1",
                     loading = false,

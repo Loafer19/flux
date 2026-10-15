@@ -52,7 +52,9 @@ struct NewPaneSheet: View {
         let device = model.device(deviceId)
         let name = device?.name ?? "the computer"
         let plugin = model.core.plugin(HerdrPlugin.self)
-        let herdr = plugin?.model.states[deviceId]
+        // The workspaces and agents of the herdr session that the agent list shows.
+        let herdr = plugin?.model.scoped(deviceId)
+        let session = (plugin?.model.states[deviceId]?.sessions.count ?? 0) > 1 ? plugin?.model.session(deviceId) : nil
         let action = plugin?.model.actions[deviceId].flatMap { $0.action == "create" && $0.seq > after ? $0 : nil }
         NavigationStack {
             Group {
@@ -72,7 +74,7 @@ struct NewPaneSheet: View {
                 }
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("New on \(name)")
+            .navigationTitle(session.map { "New in \($0.label) on \(name)" } ?? "New on \(name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -275,7 +277,8 @@ struct NewPaneSheet: View {
         ReplyLock.run(reason: what == "agent" ? "Start an agent on \(name)." : "Open a terminal on \(name).") {
             after = last
             NewPanePrefs.save(deviceId, run: choice, folder: target)
-            plugin.create(deviceId, what: what, kind: choice, cwd: target, workspace: workspace, task: firstTask)
+            plugin.create(deviceId, what: what, kind: choice, cwd: target, workspace: workspace, task: firstTask,
+                          session: plugin.model.createSession(deviceId))
         } onError: { lockError = $0 }
     }
 }

@@ -26,11 +26,14 @@ jobs:
       - name: Restore locked dependencies
         run: |
           dotnet restore windows/FluxKit.Tests --locked-mode
+          dotnet restore windows/Flux.UiTests --locked-mode
           dotnet restore windows/Flux.Protocol.Tests --locked-mode
           dotnet restore windows/Flux.Windows.Ui.Tests --locked-mode
       # The fluxd tests skip here. The fluxd job runs them on Linux.
       - name: FluxKit tests
         run: dotnet test windows/FluxKit.Tests -c Release --no-restore
+      - name: Flux UI checks
+        run: dotnet run --project windows/Flux.UiTests -c Release --no-restore
       - name: Protocol checks
         run: dotnet run --project windows/Flux.Protocol.Tests -c Release --no-restore
       - name: WPF UI checks

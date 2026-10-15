@@ -16,12 +16,15 @@ public sealed class ChatPage : Page
     readonly ChatDock chatDock;
     readonly DockPanel layout = new();
     readonly Border lineHost = new();
+    readonly EventCards cards;
     bool atEnd = true;
     int lastCount;
+    string online = "";
 
     public ChatPage(AppModel model) : base(model)
     {
         chatDock = new ChatDock(model);
+        cards = new EventCards(model);
         // Files, text, and links that the user drops on the page go to the computer.
         AllowDrop = true;
         Drop += (_, e) => ShareViews.Drop(model, e);
@@ -62,8 +65,18 @@ public sealed class ChatPage : Page
         }
         chatDock.Root.Visibility = Visibility.Visible;
         chatDock.Update();
+        // The chat asks each computer that comes online for its agents.
+        var ids = string.Join(",", Model.ConnectedPaired.Select(d => d.Id));
+        if (ids != online)
+        {
+            online = ids;
+            foreach (var d in Model.ConnectedPaired)
+            {
+                Model.Core.Plugin<HerdrPlugin>()?.Request(d.Id);
+            }
+        }
 
-        var entries = ChatFeed.Entries(Model);
+        var entries = ChatFeed.Entries(Model, cards);
         var items = new List<UIElement?>();
         if (entries.Count == 0)
         {
@@ -104,40 +117,55 @@ public sealed class ChatPage : Page
 // 1 entry of the chat: its time, its view, and whether this computer wrote it.
 public sealed record ChatEntryView(string Id, DateTimeOffset At, UIElement View, bool Mine = false);
 
-// The entries of the chat from the features. The pair requests come from the
-// core. The features add the files, the clips, the agents, and the approvals.
+// The entries of the chat in the order of Chat.Entries of FluxKit: the
+// files, the texts, and the clips of the share feature, the last clip, and
+// the Inbox items with the times of the app model. The approval feature adds
+// the answers to approvals. ChatView.swift of the Mac app has the same order.
 public static class ChatFeed
 {
-    // The first time that the chat saw each item, by key.
-    static readonly Dictionary<string, DateTimeOffset> Seen = [];
-
     public static IEnumerable<System.ComponentModel.INotifyPropertyChanged> Models(AppModel model) =>
-        new System.ComponentModel.INotifyPropertyChanged?[] { model.Core.Plugin<ClipboardPlugin>()?.Model, model.Core.Plugin<SharePlugin>()?.Model }
-            .OfType<System.ComponentModel.INotifyPropertyChanged>();
+        new System.ComponentModel.INotifyPropertyChanged?[]
+        {
+            model.Core.Plugin<ClipboardPlugin>()?.Model,
+            model.Core.Plugin<SharePlugin>()?.Model,
+            model.Core.Plugin<HerdrPlugin>()?.Model,
+            ChatAnswers.Shared,
+        }.OfType<System.ComponentModel.INotifyPropertyChanged>();
 
     // The progress of the files that come in or go out, or null.
     public static double? Progress(AppModel model) => ShareViews.Progress(model);
 
-    public static IReadOnlyList<ChatEntryView> Entries(AppModel model)
+    // The entries of the chat in scope, oldest first. cards keeps the cards
+    // of the Inbox items between the drawings.
+    public static IReadOnlyList<ChatEntryView> Entries(AppModel model, EventCards cards)
     {
+        var all = model.InboxItems();
+        var share = model.Core.Plugin<SharePlugin>()?.Model;
+        var herdr = model.Core.Plugin<HerdrPlugin>()?.Model;
+        var entries = Chat.Entries((IEnumerable<SentItem>?)share?.Sent ?? [], (IEnumerable<FileTransfer>?)share?.Transfers ?? [],
+            model.Core.Plugin<ClipboardPlugin>()?.Model.Last, all, (id, pane) => herdr?.AgentSince(id, pane), model.ChatSeen(all), model.Scope);
+        var shared = ShareViews.Entries(model).ToDictionary(e => e.Id);
+        cards.Keep(all.Select(i => i.Key));
         var list = new List<ChatEntryView>();
-        foreach (var d in model.State.Devices.Where(d => !d.Paired && d.PairState == PairState.Incoming))
+        foreach (var e in entries)
         {
-            var key = "pair|" + d.Id;
-            if (!Seen.TryGetValue(key, out var at))
+            switch (e)
             {
-                Seen[key] = at = DateTimeOffset.Now;
+                case ChatEntry.Event ev:
+                    list.Add(new ChatEntryView(e.Id, e.At, cards.Card(ev.Item, ev.Time)));
+                    break;
+                case ChatEntry.Clip c:
+                    list.Add(new ChatEntryView(e.Id, e.At, Cards.ClipCard(c.Value)));
+                    break;
+                default:
+                    if (shared.TryGetValue(e.Id, out var view))
+                    {
+                        list.Add(view);
+                    }
+                    break;
             }
-            list.Add(new ChatEntryView(key, at, Cards.PairCard(model, d, at)));
         }
-        list.AddRange(ShareViews.Entries(model));
-        // The last clip shows only when it came from a computer.
-        if (model.Core.Plugin<ClipboardPlugin>()?.Model.Last is { Sent: false } clip &&
-            (model.Scope is null || clip.DeviceIds.Contains(model.Scope)))
-        {
-            list.Add(new ChatEntryView("clip", clip.At, Cards.ClipCard(clip)));
-        }
-        return list.OrderBy(e => e.At).ToArray();
+        return list;
     }
 }
 
@@ -156,24 +184,21 @@ public sealed record ChatStatus(int Needs, int Elsewhere, string? ScopeName, IRe
 
     public static ChatStatus Make(AppModel model)
     {
-        var paired = model.Paired.Where(d => model.Scope is null || d.Id == model.Scope).ToArray();
-        var offline = paired.Where(d => !d.Online).ToArray();
-        var noneOnline = paired.Length > 0 && offline.Length == paired.Length;
-        var all = Inbox.NeedsYou(model);
-        // A pair request shows in every scope.
-        var needs = all;
+        var all = model.InboxItems();
+        var reach = FluxKit.Inbox.Reach(model.Scope, model.State.Devices);
+        var needs = FluxKit.Inbox.NeedsYou(FluxKit.Inbox.InScope(all, model.Scope));
         string? pairedName = null;
         if (model.NewlyPairedId is { } id && (model.Scope is null || model.Scope == id))
         {
             pairedName = model.PairedDevice(id)?.Name;
         }
         string? connecting = null;
-        if (noneOnline && model.Connecting)
+        if (reach.NoneOnline && model.Connecting)
         {
-            connecting = offline.Length == 1 ? offline[0].Name : "";
+            connecting = reach.Offline.Count == 1 ? reach.Offline[0].Name : "";
         }
-        return new ChatStatus(needs, all - needs, model.PairedDevice(model.Scope)?.Name,
-            model.Connecting ? [] : offline.Select(d => d.Name).ToArray(), connecting, pairedName);
+        return new ChatStatus(needs, FluxKit.Inbox.NeedsYou(all) - needs, model.PairedDevice(model.Scope)?.Name,
+            model.Connecting ? [] : reach.Offline.Select(d => d.Name).ToArray(), connecting, pairedName);
     }
 }
 

@@ -6,7 +6,7 @@ namespace Flux;
 // The UI state of the app. It mirrors the core and holds the destination,
 // the scope, the pages on top of each destination, and the theme setting.
 // AppModel.swift of the Mac app has the same job.
-public sealed class AppModel : Model
+public sealed partial class AppModel : Model
 {
     public const string PairCategory = "pair";
 

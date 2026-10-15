@@ -31,6 +31,12 @@ public sealed class ChatDock
     readonly System.Windows.Threading.DispatcherTimer clipTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     long clipStamp = -1;
     bool clipEmpty = true;
+    // The reply to an agent, see AppModel.ChatReply.
+    readonly Stack replyRow;
+    readonly TextBlock replyTitle = Ui.Text("", 13, FontWeights.Medium);
+    readonly TextBlock replyProject = Ui.Text("", 11, mono: true);
+    readonly TextBlock replyIcon = Ui.Icon(AgentGlyphs.Reply, 13);
+    ChatReply? shownReply;
 
     // The dock. It stays the same element, so that the field keeps its focus.
     public Border Root { get; }
@@ -57,6 +63,12 @@ public sealed class ChatDock
                 e.Handled = true;
                 Send();
             }
+            // Escape closes a reply.
+            if (e.Key == Key.Escape && model.ChatReply is not null)
+            {
+                e.Handled = true;
+                model.ChatReply = null;
+            }
         };
         field.TextChanged += (_, _) => Update();
         field.GotKeyboardFocus += (_, _) => Update();
@@ -72,10 +84,14 @@ public sealed class ChatDock
         clipSend = new PlainButton(clipKey, SendClipboard).Named("Send the clipboard").Help("Send the clipboard of this computer");
         clipRow = Ui.H(8, clipBox.Fill(), clipSend);
         clipRow.Height = 40;
+        replyRow = Ui.H(8, replyIcon, replyTitle, replyProject, Ui.Spacer(8),
+            new FluxButton("Cancel", ButtonKind.Text, () => model.ChatReply = null).Named("Cancel the reply").Help("Close the reply. The agent keeps its question. (Esc)"));
+        replyRow.MinHeight = Metrics.ButtonHeight;
+        replyRow.Margin = new Thickness(4, 0, 0, 0);
         clipTimer.Tick += (_, _) => ReadClipboard();
         frame = new Border
         {
-            Child = new Border { Child = Ui.V(10, clipRow, row), MaxWidth = Metrics.MaxContentWidth },
+            Child = new Border { Child = Ui.V(10, clipRow, replyRow, row), MaxWidth = Metrics.MaxContentWidth },
             BorderThickness = new Thickness(1, 1, 1, 0),
             CornerRadius = new CornerRadius(20, 20, 0, 0),
             Padding = new Thickness(Metrics.Gutter, 12, Metrics.Gutter, 10),
@@ -138,6 +154,14 @@ public sealed class ChatDock
     void Send()
     {
         var text = field.Text.Trim();
+        if (model.ChatReply is { } reply)
+        {
+            if (text.Length > 0)
+            {
+                Tell(reply, text);
+            }
+            return;
+        }
         if (text.Length == 0 || SendText is null)
         {
             return;
@@ -152,26 +176,71 @@ public sealed class ChatDock
         }
     }
 
+    // Sends the choice of the reply, then the text as the next prompt, after
+    // Windows Hello, as each answer to an agent does. The keys of the choice
+    // go out only while the agent shows the question that the user read.
+    void Tell(ChatReply reply, string text)
+    {
+        ReplyLock.Run($"answer agents on {reply.Computer}", Window.GetWindow(Root), () =>
+        {
+            if (model.Core.Plugin<HerdrPlugin>() is not { } plugin)
+            {
+                return;
+            }
+            if (model.ChatReply != reply || !Equals(plugin.Model.Prompt(reply.DeviceId, reply.Pane)?.Lines, reply.Lines))
+            {
+                model.ChatReply = null;
+                model.Show("The question changed. Read it, then answer again.");
+                return;
+            }
+            ChatAnswers.Shared.Sent(text, reply.DeviceId, reply.Pane, reply.Lines);
+            plugin.Tell(reply.DeviceId, reply.Pane, reply.Choice.Keys, text);
+            field.Clear();
+            model.ChatReply = null;
+        }, model.Show);
+    }
+
     // Draws the colors and the state of the keys. The field stays.
     public void Update()
     {
         var tn = Tn.Current;
+        var reply = model.ChatReply;
+        // A new reply starts with an empty field that has the focus.
+        if (reply != shownReply)
+        {
+            shownReply = reply;
+            field.Clear();
+            if (reply is not null)
+            {
+                field.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () => field.Focus());
+            }
+        }
+        replyRow.Visibility = reply is null ? Visibility.Collapsed : Visibility.Visible;
+        replyTitle.Text = reply is null ? "" : $"Reply to {reply.Agent}";
+        replyTitle.Foreground = tn.Text;
+        replyProject.Text = reply is null || reply.Project.Length == 0 ? "" : "· " + reply.Project;
+        replyProject.Foreground = tn.Sub;
+        replyIcon.Foreground = tn.Accent;
+        plus.Visibility = reply is null ? Visibility.Visible : Visibility.Collapsed;
+        var hint = reply is null ? "Text or a link to send" : $"Tell {reply.Agent} what to do differently";
+        System.Windows.Automation.AutomationProperties.SetName(field, hint);
+        field.ToolTip = reply is null ? null : hint;
         frame.Background = tn.Tile;
         frame.BorderBrush = tn.Line;
         field.Background = tn.Bg;
         field.Foreground = tn.Text;
-        field.BorderBrush = field.IsKeyboardFocused ? tn.Accent : tn.LineHi;
+        field.BorderBrush = field.IsKeyboardFocused || reply is not null ? tn.Accent : tn.LineHi;
         field.CaretBrush = tn.Accent;
         field.FontFamily = Faces.Body;
         plusTile.Background = tn.Line;
         plusIcon.Foreground = tn.Text;
-        var canSend = SendText is not null && field.Text.Trim().Length > 0;
+        var canSend = (SendText is not null || reply is not null) && field.Text.Trim().Length > 0;
         sendTile.Background = canSend ? tn.Accent : tn.Tile;
         sendTile.BorderBrush = canSend ? tn.Accent : tn.Line;
         sendIcon.Foreground = canSend ? tn.OnAccent : tn.Dim;
         send.IsEnabled = canSend;
         var clipboard = model.Core.Plugin<ClipboardPlugin>() is not null;
-        clipRow.Visibility = clipboard ? Visibility.Visible : Visibility.Collapsed;
+        clipRow.Visibility = clipboard && reply is null ? Visibility.Visible : Visibility.Collapsed;
         clipBox.Background = tn.Bg;
         clipBox.BorderBrush = tn.Line;
         clipText.Foreground = clipEmpty ? tn.Sub : tn.Text;

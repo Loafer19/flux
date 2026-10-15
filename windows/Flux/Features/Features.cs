@@ -15,6 +15,8 @@ public static class Features
     {
         ControlTools.ModelMakers.Add(m => m.Core.Plugin<MprisPlugin>()?.Model);
         ControlTools.ModelMakers.Add(m => m.Core.Plugin<RunCommandPlugin>()?.Model);
+        ControlTools.ModelMakers.Add(m => m.Core.Plugin<HerdrPlugin>()?.Model);
+        ControlTools.Sections.Add(AgentsFeature.ControlSection);
         ControlTools.Tools.Add(m => m.Core.Plugin<RunCommandPlugin>() is null || !ControlTools.HasFeature(m, PacketType.RunCommandRequest) ? null
             : ControlTools.Tool(m, Icons.Commands, "Commands", "Run a command", PacketType.RunCommandRequest,
                 d => m.Push(new Route.Feature(Card.Commands, d.Id))));
@@ -27,6 +29,8 @@ public static class Features
         FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<SharePlugin>()?.Model);
         FeatureSettings.Makers.Add(ShareViews.Settings);
         FeatureSettings.Makers.Add(ClipboardSettings);
+        FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<HerdrPlugin>()?.Model);
+        FeatureSettings.Makers.Add(AgentsFeature.Settings);
 
         ChatDock.SendText = (m, id, text) => m.Core.Plugin<SharePlugin>()?.SendText(text, id) == true;
         ChatDock.Tools.Add(m => m.Core.Plugin<SharePlugin>() is null ? null : ("Send files", Icons.Upload, () => ShareViews.PickAndSend(m)));
@@ -47,6 +51,7 @@ public static class Features
         TrayActions.Makers.Add((m, d) => m.Core.Plugin<MprisPlugin>() is { } p && p.Model.Media(d.Id).Player is { } player
             ? (player.Playing ? "Pause" : "Play", () => p.Action(d.Id, "PlayPause"))
             : null);
+        TrayActions.Makers.Add(AgentsFeature.TrayAction);
         TrayActions.Makers.Add((m, d) => m.Core.Plugin<RunCommandPlugin>() is not null && d.Accepts(PacketType.RunCommandRequest)
             ? ("Commands…", () =>
             {
@@ -70,6 +75,7 @@ public static class Features
             new NotificationsPlugin(new ToastHistory()),
             new BatteryPlugin(new BatterySource()),
             new ThemePlugin(),
+            new HerdrPlugin(),
         ];
     }
 
@@ -94,6 +100,7 @@ public static class Features
     // Runs once after the start, before the network starts.
     public static void DidLaunch(AppModel model)
     {
+        AgentsFeature.DidLaunch(model);
         if (model.Core.Plugin<ClipboardPlugin>() is { } clipboard && model.Core.Plugin<SharePlugin>() is { } share)
         {
             // A clip that Send clipboard sent shows in the chat.
@@ -118,6 +125,7 @@ public static class Features
     public static void WillQuit(AppModel model)
     {
         model.Core.Plugin<ClipboardPlugin>()?.Dispose();
+        AgentsWindows.CloseAll();
     }
 
     static (string Label, UIElement Content)? ClipboardSettings(AppModel model)

@@ -80,10 +80,10 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Webcam | Sends a camera of this computer to the computer, where apps see **Flux Camera**. The page shows a preview and sets the shape, the resolution, the mirror, the zoom, the exposure, and the colors. **Also send the microphone** sends the microphone with the camera |
 | Screen mirror | Shows a display of this computer in a window on the computer |
 | Stream requests | `flux-cli webcam start` and `flux-cli mic start` ask Windows for a stream. A prompt shows the request while Flux is in front, else a notification. Only a click on start starts the stream |
+| Camera modes | Text, QR, Photo, Document, and Signature, as on the Mac. Open them from **Photo**, **Scan**, **Text**, and **QR** in the **+** menu of Chat, or from **Camera…** in the tray menu of a computer. See [Camera modes](#camera-modes) |
+| Screenshots | **Send new screenshots** sends each new screenshot of the Screenshots folder of Windows to the connected computers. See [Screenshots](#screenshots) |
 
 The touchpad, the remote desktop, the answers to agents, and **Start Agent** ask for Windows Hello first: a face, a fingerprint, or the Windows Hello PIN. A check stays valid for 5 minutes, and it ends when Windows locks, sleeps, or turns off the display. Without Windows Hello, these features do not open. Set up a PIN in Settings > Accounts > Sign-in options.
-
-The camera modes of the Mac app are not in the Windows app yet.
 
 Windows has no public interface that turns Do Not Disturb on or off, so the Windows app does not sync Do Not Disturb.
 
@@ -132,6 +132,47 @@ The Omarchy computer needs a `fluxd` newer than 0.17.0. Version 0.17.0 and earli
 On Windows 11 24H2 and later, the prompt of Windows Hello belongs to the prompt of Flux. On an older Windows, Flux brings it to the front.
 
 The page of the computer in Computers shows the key code, the recent requests, and **Remove Key**. **Remove Key** and an unpair delete the key of that computer. The key file on the Omarchy computer stays until you run `sudo flux-cli approve remove`.
+
+## Camera modes
+
+The camera window has the 5 modes of the Mac app. Select a mode in the mode bar at the top. The camera picker shows when this computer has more than 1 camera.
+
+| Mode | What Flux sends | Where the computer puts it |
+| --- | --- | --- |
+| Text | The text that Flux reads, after you edit it | A text file in `scan_dir` |
+| QR | The link of a code opens in the browser of the computer, or its text goes on the clipboard or in a file | The browser, the clipboard, or `scan_dir` |
+| Photo | A JPEG named `IMG_yyyyMMdd_HHmmss.jpg` | `photo_dir` |
+| Document | A PDF named `scan-yyyyMMdd-HHmmss.pdf`, with 1 page for each photo | `scan_dir` |
+| Signature | A transparent PNG named `signature-yyyyMMdd-HHmmss.png` | The clipboard, and a copy in `<photo_dir>/signatures` |
+
+[Configuration](configuration.md) gives the default folders. [Signature](camera.md#signature) tells how to sign on paper.
+
+Text, QR, Document, and Signature also read an image from outside the camera. Select **From Image**, then **Open Image…**, **Screen Region…**, or **Paste Image**, or drop an image on the camera. **Screen Region…** hides the camera window, and you drag over the part of the screen to read. Photo mode takes photos with the camera only. In Signature, **Paper** reads a photo of paper, and **Draw** takes a signature that you draw with the mouse, a pen, or a touch screen.
+
+| Key | Action |
+| --- | --- |
+| `Space` | Presses the shutter |
+| `Ctrl+V` | Pastes an image |
+| `Ctrl+Z` | Removes the last stroke of a drawn signature |
+| `Ctrl+Enter` | Sends the scanned text |
+| `Esc` | Closes the window |
+
+- Text mode uses the text recognition of Windows in the languages of your user profile. If Flux cannot read text, add a language with **Optical character recognition** in Settings > Time & language > Language & region. The mic key next to the text adds words with the dictation of Windows.
+- QR mode reads QR codes, Data Matrix, PDF417, Aztec, and the common barcodes with the ZXing.Net library, because Windows has no decoder for them.
+- Document mode looks for a bright page on a darker surface and flattens it. If Flux finds no page, the PDF gets the whole photo. The menu of a page switches between the found page and the whole image.
+- The camera modes use the camera at 1080 pixels on the short side, or less when the camera has no such format. A photo has the size of that format, and the Mac takes a photo in the full size of the camera.
+- The camera stops while the window is minimized, and when the window closes. Windows has no prompt for the camera. When **Let desktop apps access your camera** is off, the window shows **Open Privacy Settings**.
+
+## Screenshots
+
+Settings > Features > **Send new screenshots** sends each new screenshot to the connected computers once. The setting is off by default.
+
+- Flux watches the Screenshots folder of Windows, usually `Pictures\Screenshots`. `Windows+Print Screen` saves there, and so does the Snipping Tool of Windows 11.
+- A screenshot from before you turned on the setting stays on this computer. A screenshot that a copy puts into the folder goes out as a new screenshot.
+- A screenshot waits until a computer connects. 1 scan sends at most 50 screenshots. The rest go with the next scan, for example after the next screenshot or the next connect.
+- The computer saves each screenshot in `<photo_dir>/screenshots`.
+
+The Mac app also sends new photos from the Photos library. Windows has no such photo library, so the Windows app sends only screenshots.
 
 ## Streams
 
@@ -206,7 +247,7 @@ To point the app at a headless `fluxd`, set these variables:
 | `windows/Flux/Shell` | The main window, the sidebar, the header, and the scope menu |
 | `windows/Flux/Chat` | Chat: the thread, the cards, the dock, the notices, and the pairing guide |
 | `windows/Flux/Destinations` | Control, Computers, and the pairing pages |
-| `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, Windows Hello, the microphone, the cameras, the screen capture, the H.264 encoder and decoder, and other Windows parts |
+| `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, Windows Hello, the microphone, the cameras, the screen capture, the H.264 encoder and decoder, the images and the text recognition of the camera modes, the screen region, the Screenshots folder, and other Windows parts |
 | `windows/Flux.UiTests` | Builds each page with sample computers on Windows |
 
 The views are C# code, not XAML, so that the compiler checks each property. Each view draws itself from the models again after a change, as a SwiftUI view does.

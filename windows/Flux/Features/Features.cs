@@ -43,10 +43,16 @@ public static class Features
         FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<HerdrPlugin>()?.Model);
         FeatureSettings.Makers.Add(AgentsFeature.Settings);
         FeatureSettings.Makers.Add(ControlViews.Settings);
+        FeatureSettings.ModelMakers.Add(m => m.Core.Plugin<CaptureWatchPlugin>()?.Model);
+        FeatureSettings.Makers.Add(CameraFeature.CaptureSettings);
 
         ChatDock.SendText = (m, id, text) => m.Core.Plugin<SharePlugin>()?.SendText(text, id) == true;
         ChatDock.Tools.Add(m => m.Core.Plugin<SharePlugin>() is null ? null : ("Send files", Icons.Upload, () => ShareViews.PickAndSend(m)));
         ChatDock.Tools.Add(ControlViews.GetFilesTool);
+        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Photo, "Photo"));
+        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Document, "Scan"));
+        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Text, "Text"));
+        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Qr, "QR"));
 
         TrayActions.Makers.Add((m, d) => m.Core.Plugin<SharePlugin>() is { } s && d.Accepts(PacketType.Share)
             ? ("Send file…", () =>
@@ -82,6 +88,7 @@ public static class Features
         TrayActions.Makers.Add(StreamFeature.StopWebcamAction);
         TrayActions.Makers.Add(StreamFeature.StopMirrorAction);
         TrayActions.Makers.Add(StreamFeature.MicAction);
+        TrayActions.Makers.Add(CameraFeature.TrayAction);
     }
 
     public static IReadOnlyList<IFluxPlugin> Plugins(Notifier notifier)
@@ -92,6 +99,7 @@ public static class Features
             new PingPlugin(),
             new SharePlugin(new WindowsShare(clipboard), new SharedNotificationLimit(notifier)),
             clipboard,
+            new CaptureWatchPlugin(new WindowsScreenshots()),
             new RunCommandPlugin(),
             new MprisPlugin(),
             new RemoteInputPlugin(),
@@ -175,6 +183,7 @@ public static class Features
         AgentsWindows.CloseAll();
         ApprovePrompts.Close();
         StreamFeature.WillQuit(model);
+        CameraFeature.WillQuit(model);
     }
 
     static (string Label, UIElement Content)? ClipboardSettings(AppModel model)

@@ -77,7 +77,7 @@ public class ShareSendTests
         share.Handle(new Packet(PacketType.Share, new JsonObject { ["url"] = "file:///C:/Windows/notepad.exe" }), computer);
         await Wait.UntilAsync(() => platform.Texts.Count == 2, "the clipboard");
         Assert.Equal([("hello", "computer1"), ("file:///C:/Windows/notepad.exe", "computer1")], platform.Texts);
-        Assert.Contains("Text from Omarchy is on the clipboard", t.Toasts);
+        await Wait.UntilAsync(() => t.Toasts.Contains("Text from Omarchy is on the clipboard"), "the toast");
         Assert.Empty(platform.Links);
     }
 

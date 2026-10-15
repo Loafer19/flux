@@ -153,9 +153,10 @@ static class Program
             model.Go(Destination.Chat);
             Pump();
             Check(Shows(window, "copied text"), "the chat shows the clip from the computer");
-            Check(Shows(window, "https://omarchy.org") && Shows(window, "Link · opened in the browser"), "the chat shows the sent link");
+            // With 2 paired computers and no scope, the lines name the computer.
+            Check(Shows(window, "https://omarchy.org") && Shows(window, "Link · opened on omarchy-xps"), "the chat shows the sent link");
             Check(Shows(window, "report.pdf") && Shows(window, "Receiving"), "the chat shows the file that comes in");
-            Check(Shows(window, "photo.png") && Shows(window, "Sent ·"), "the chat shows the sent file");
+            Check(Shows(window, "photo.png") && Shows(window, "Sent to omarchy-xps"), "the chat shows the sent file");
 
             model.Go(Destination.Control);
             Pump();

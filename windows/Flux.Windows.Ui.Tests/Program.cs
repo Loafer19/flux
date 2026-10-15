@@ -78,7 +78,8 @@ internal static class Program
             window.SetDeviceTheme(first.Identity.DeviceId, sampleTheme);
             Check(((SolidColorBrush)window.FindResource("BackgroundBrush")).Color == Color.FromRgb(0x20,0x20,0x20),
                 "Selected device theme must update WPF brushes.");
-            devices.SelectedIndex = 1;
+            // Discovery lists the second device first, so select it by its ID.
+            devices.SelectedItem = devices.Items.Cast<PeerRow>().Single(r => r.Peer.Identity.DeviceId == second.Identity.DeviceId);
             Check(((SolidColorBrush)window.FindResource("BackgroundBrush")).Color == Color.FromRgb(0x1a,0x1b,0x26),
                 "Another device must use its own theme or Tokyo Night fallback.");
             devices.SelectedIndex = 0;

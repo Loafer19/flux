@@ -1,0 +1,380 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using FluxKit;
+
+namespace Flux;
+
+// The dock under the chat: the tools behind +, and a field for text or a
+// link with Send. Enter sends, and Shift+Enter adds a line. The field has
+// the mic key, the clear key, and the expand key, which opens a larger
+// editor with Send. The field keeps its text and its focus while the chat
+// draws again. ChatDock.swift of the Mac app has the same parts.
+public sealed class ChatDock
+{
+    readonly AppModel model;
+    readonly TextBox field;
+    readonly TextBlock hint = Ui.Text("", 13);
+    readonly Border fieldFrame;
+    readonly VoiceBar voice;
+    readonly Popup tools = new() { StaysOpen = false, AllowsTransparency = true, Placement = PlacementMode.Top };
+    readonly PlainButton plus;
+    readonly PlainButton send;
+    readonly Border plusTile = new() { Width = 36, Height = 36, CornerRadius = new CornerRadius(18) };
+    readonly Border sendTile = new() { Width = 36, Height = 36, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1) };
+    readonly TextBlock plusIcon = Ui.Icon(Icons.Add, 16);
+    readonly TextBlock sendIcon = Ui.Icon(Icons.Send, 15);
+    readonly Border frame;
+    readonly Border clipBox = new() { CornerRadius = new CornerRadius(Metrics.TileCorner), BorderThickness = new Thickness(1), Padding = new Thickness(10, 0, 10, 0) };
+    readonly TextBlock clipText = Ui.Text("", 12, mono: true);
+    readonly Border clipKey = new() { CornerRadius = new CornerRadius(Metrics.TileCorner), BorderThickness = new Thickness(1), Padding = new Thickness(12, 0, 12, 0) };
+    readonly TextBlock clipKeyText = Ui.Text("Send", 13, FontWeights.SemiBold);
+    readonly PlainButton clipSend;
+    readonly Stack clipRow;
+    readonly System.Windows.Threading.DispatcherTimer clipTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    long clipStamp = -1;
+    bool clipEmpty = true;
+    // The reply to an agent, see AppModel.ChatReply.
+    readonly Stack replyRow;
+    readonly TextBlock replyTitle = Ui.Text("", 13, FontWeights.Medium);
+    readonly TextBlock replyProject = Ui.Text("", 11, mono: true);
+    readonly TextBlock replyIcon = Ui.Icon(AgentGlyphs.Reply, 13);
+    ChatReply? shownReply;
+
+    // The dock. It stays the same element, so that the field keeps its focus.
+    public Border Root { get; }
+
+    public ChatDock(AppModel model)
+    {
+        this.model = model;
+        field = new TextBox
+        {
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MaxHeight = 140,
+            MinHeight = 34,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            BorderThickness = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            Padding = new Thickness(2, 7, 2, 7),
+            FontSize = 13,
+        };
+        field.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                e.Handled = true;
+                Send();
+            }
+            // Escape closes a reply.
+            if (e.Key == Key.Escape && model.ChatReply is not null)
+            {
+                e.Handled = true;
+                model.ChatReply = null;
+            }
+        };
+        field.TextChanged += (_, _) => Update();
+        field.GotKeyboardFocus += (_, _) => Update();
+        field.LostKeyboardFocus += (_, _) => Update();
+        plusTile.Child = plusIcon;
+        sendTile.Child = sendIcon;
+        plus = new PlainButton(plusTile, OpenTools).Named("Tools").Help("Tools");
+        send = new PlainButton(sendTile, Send).Named("Send").Help("Send (Enter)");
+        fieldFrame = new Border
+        {
+            Child = FieldKeys.Row(AgentParts.WithHint(field, hint), field, () => Editor().ShowDialog()),
+            CornerRadius = new CornerRadius(18),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(12, 0, 10, 0),
+            MinHeight = 36,
+        };
+        // A dictation puts its words at the cursor, else at the end of the text.
+        voice = VoiceBar.Insert(model.Core, field, fieldFrame, send, key: 36);
+        var row = Ui.H(8, plus.Top(), voice.Fill());
+        tools.PlacementTarget = plus;
+        clipBox.Child = clipText;
+        clipKey.Child = Ui.H(6, Ui.Icon(Icons.Paste, 13), clipKeyText);
+        clipSend = new PlainButton(clipKey, SendClipboard).Named("Send the clipboard").Help("Send the clipboard of this computer");
+        clipRow = Ui.H(8, clipBox.Fill(), clipSend);
+        clipRow.Height = 40;
+        replyRow = Ui.H(8, replyIcon, replyTitle, replyProject, Ui.Spacer(8),
+            new FluxButton("Cancel", ButtonKind.Text, () => model.ChatReply = null).Named("Cancel the reply").Help("Close the reply. The agent keeps its question. (Esc)"));
+        replyRow.MinHeight = Metrics.ButtonHeight;
+        replyRow.Margin = new Thickness(4, 0, 0, 0);
+        clipTimer.Tick += (_, _) => ReadClipboard();
+        frame = new Border
+        {
+            Child = new Border { Child = Ui.V(10, clipRow, replyRow, row), MaxWidth = Metrics.MaxContentWidth },
+            BorderThickness = new Thickness(1, 1, 1, 0),
+            CornerRadius = new CornerRadius(20, 20, 0, 0),
+            Padding = new Thickness(Metrics.Gutter, 12, Metrics.Gutter, 10),
+        };
+        Root = frame;
+        frame.Loaded += (_, _) =>
+        {
+            ReadClipboard();
+            clipTimer.Start();
+        };
+        frame.Unloaded += (_, _) => clipTimer.Stop();
+        Update();
+    }
+
+    // Reads the clipboard of this computer when its change count is new. A
+    // copy that the source marks as private shows "Hidden text".
+    void ReadClipboard()
+    {
+        var clipboard = Features.Clipboard;
+        var stamp = clipboard.ChangeCount;
+        if (stamp == clipStamp)
+        {
+            return;
+        }
+        clipStamp = stamp;
+        string shown;
+        try
+        {
+            shown = clipboard.HoldsPrivate ? ClipEvent.HiddenText
+                : clipboard.ReadText() is { } text && text.Trim().Length > 0 ? ClipEvent.MakePreview(text, 400) : "";
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // The clipboard is busy. The next tick reads it again.
+            clipStamp = -1;
+            return;
+        }
+        clipEmpty = shown.Length == 0;
+        clipText.Text = clipEmpty ? "The clipboard is empty" : shown;
+        clipText.FontFamily = clipEmpty || shown == ClipEvent.HiddenText ? Faces.Body : Faces.Mono;
+        Update();
+    }
+
+    void SendClipboard()
+    {
+        if (model.Core.Plugin<ClipboardPlugin>() is not { } plugin || Targets.Pick(model, PacketType.Clipboard) is not { } id)
+        {
+            return;
+        }
+        _ = plugin.SendClipboardAsync(id);
+    }
+
+    // The field, for the tests.
+    internal TextBox Field => this.field;
+
+    // The field with the mic key and Send, for the tests.
+    internal VoiceBar Voice => voice;
+
+    // The larger editor of the field, with Send: "Text or link", or the
+    // reply to an agent. The text changes in the field at once, and Send
+    // takes the same way as Send in the dock.
+    internal FieldEditor Editor() => new(Window.GetWindow(Root), model.ChatReply is { } reply ? $"Reply to {reply.Agent}" : "Text or link",
+        field.Text, text => field.Text = text, new FieldEditorAction("Send", CanSend, Send));
+
+    // True when Send has a place for the text and the field has text.
+    bool CanSend() => (SendText is not null || model.ChatReply is not null) && field.Text.Trim().Length > 0;
+
+    // The features that send text or a link. The share feature sets it.
+    public static Func<AppModel, string, string, bool>? SendText { get; set; }
+
+    // The tools of the + menu, as a title, an icon, and an action for the
+    // computer in the scope. The features add them.
+    public static List<Func<AppModel, (string Title, string Glyph, Action Run)?>> Tools { get; } = [];
+
+    void Send()
+    {
+        var text = field.Text.Trim();
+        if (model.ChatReply is { } reply)
+        {
+            if (text.Length > 0)
+            {
+                Tell(reply, text);
+            }
+            return;
+        }
+        if (text.Length == 0 || SendText is null)
+        {
+            return;
+        }
+        if (Targets.Pick(model, PacketType.Share) is not { } id)
+        {
+            return;
+        }
+        if (SendText(model, id, text))
+        {
+            field.Clear();
+        }
+    }
+
+    // Sends the choice of the reply, then the text as the next prompt, after
+    // Windows Hello, as each answer to an agent does. The keys of the choice
+    // go out only while the agent shows the question that the user read.
+    void Tell(ChatReply reply, string text)
+    {
+        ReplyLock.Run($"answer agents on {reply.Computer}", Window.GetWindow(Root), () =>
+        {
+            if (model.Core.Plugin<HerdrPlugin>() is not { } plugin)
+            {
+                return;
+            }
+            if (model.ChatReply != reply || !Equals(plugin.Model.Prompt(reply.DeviceId, reply.Pane)?.Lines, reply.Lines))
+            {
+                model.ChatReply = null;
+                model.Show("The question changed. Read it, then answer again.");
+                return;
+            }
+            ChatAnswers.Shared.Sent(text, reply.DeviceId, reply.Pane, reply.Lines);
+            plugin.Tell(reply.DeviceId, reply.Pane, reply.Choice.Keys, text);
+            field.Clear();
+            model.ChatReply = null;
+        }, model.Show);
+    }
+
+    // Draws the colors and the state of the keys. The field stays.
+    public void Update()
+    {
+        var tn = Tn.Current;
+        var reply = model.ChatReply;
+        // A new reply starts with an empty field that has the focus.
+        if (reply != shownReply)
+        {
+            shownReply = reply;
+            field.Clear();
+            if (reply is not null)
+            {
+                field.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () => field.Focus());
+            }
+        }
+        replyRow.Visibility = reply is null ? Visibility.Collapsed : Visibility.Visible;
+        replyTitle.Text = reply is null ? "" : $"Reply to {reply.Agent}";
+        replyTitle.Foreground = tn.Text;
+        replyProject.Text = reply is null || reply.Project.Length == 0 ? "" : "· " + reply.Project;
+        replyProject.Foreground = tn.Sub;
+        replyIcon.Foreground = tn.Accent;
+        plus.Visibility = reply is null ? Visibility.Visible : Visibility.Collapsed;
+        var ready = model.ConnectedPaired.Where(d => d.Accepts(PacketType.Share) && (model.Scope is null || d.Id == model.Scope)).ToArray();
+        hint.Text = reply is not null ? $"Tell {reply.Agent} what to do differently"
+            : ready.Length == 1 ? $"Type text or a link for {ready[0].Name}"
+            : "Type text or a link";
+        hint.Foreground = tn.Dim;
+        System.Windows.Automation.AutomationProperties.SetName(field, hint.Text);
+        field.ToolTip = reply is null ? null : hint.Text;
+        frame.Background = tn.Tile;
+        frame.BorderBrush = tn.Line;
+        fieldFrame.Background = tn.Bg;
+        fieldFrame.BorderBrush = field.IsKeyboardFocused || reply is not null ? tn.Accent : tn.LineHi;
+        field.Foreground = tn.Text;
+        field.CaretBrush = tn.Accent;
+        field.FontFamily = Faces.Body;
+        // The mic key shows while the text has a place to go.
+        voice.Enabled = reply is not null || ready.Length > 0;
+        plusTile.Background = tn.Line;
+        plusIcon.Foreground = tn.Text;
+        var canSend = CanSend();
+        sendTile.Background = canSend ? tn.Accent : tn.Tile;
+        sendTile.BorderBrush = canSend ? tn.Accent : tn.Line;
+        sendIcon.Foreground = canSend ? tn.OnAccent : tn.Dim;
+        send.IsEnabled = canSend;
+        var clipboard = model.Core.Plugin<ClipboardPlugin>() is not null;
+        clipRow.Visibility = clipboard && reply is null ? Visibility.Visible : Visibility.Collapsed;
+        clipBox.Background = tn.Bg;
+        clipBox.BorderBrush = tn.Line;
+        clipText.Foreground = clipEmpty ? tn.Sub : tn.Text;
+        var canClip = clipboard && !clipEmpty && model.ConnectedPaired.Any(d => d.Accepts(PacketType.Clipboard));
+        clipKey.Background = canClip ? tn.Line : tn.Tile;
+        clipKey.BorderBrush = tn.Line;
+        clipKeyText.Foreground = canClip ? tn.Text : tn.Dim;
+        clipSend.IsEnabled = canClip;
+    }
+
+    void OpenTools()
+    {
+        var tn = Tn.Current;
+        var tiles = new List<UIElement>();
+        foreach (var make in Tools)
+        {
+            if (make(model) is { } t)
+            {
+                tiles.Add(Parts.GridTool(t.Glyph, t.Title, "", () =>
+                {
+                    tools.IsOpen = false;
+                    t.Run();
+                }, small: true));
+            }
+        }
+        var go = new UIElement[]
+        {
+            Parts.GridTool(Icons.Control, "Control", "", () =>
+            {
+                tools.IsOpen = false;
+                model.Go(Destination.Control);
+            }, small: true),
+            Parts.GridTool(Icons.Laptop, "Computers", "", () =>
+            {
+                tools.IsOpen = false;
+                model.Go(Destination.Computers);
+            }, small: true),
+        };
+        tools.Child = new Border
+        {
+            Child = Ui.V(Metrics.Gap, tiles.Count > 0 ? Parts.GridRows(tiles, 3) : null, Parts.GridRows(go, 2)),
+            Background = tn.Bg,
+            BorderBrush = tn.LineHi,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(20),
+            Padding = new Thickness(10),
+            Width = 340,
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+        tools.IsOpen = true;
+    }
+}
+
+// The computer for an action: the computer in scope, or the only online
+// computer that takes it. With more computers, the user picks 1.
+public static class Targets
+{
+    public static string? Pick(AppModel model, string accepts)
+    {
+        var ready = model.ConnectedPaired.Where(d => d.Accepts(accepts) && (model.Scope is null || d.Id == model.Scope)).ToArray();
+        switch (ready.Length)
+        {
+            case 0:
+                model.Show(model.Scope is null ? "No computer is connected" : $"{Shared.ScopeName(model)} is not reachable");
+                return null;
+            case 1:
+                return ready[0].Id;
+            default:
+                return Choose(model, ready);
+        }
+    }
+
+    // Asks which computer takes the action.
+    static string? Choose(AppModel model, IReadOnlyList<DeviceSnapshot> devices)
+    {
+        string? chosen = null;
+        Window? w = null;
+        var rows = devices.Select(d => (UIElement)new PlainButton(Ui.Tile(Ui.H(10,
+                Ui.Icon(Texts.Symbol(d), 15, Tn.Current.Accent), Ui.Text(d.Name, 13, FontWeights.SemiBold).Fill()), padding: 10), () =>
+            {
+                chosen = d.Id;
+                w!.Close();
+            }).Named(d.Name)).ToList();
+        var body = Ui.V(Metrics.Gap, new UIElement[] { Ui.Text("Which computer?", 17, FontWeights.SemiBold) }.Concat(rows));
+        w = new Window
+        {
+            Title = "Which computer?",
+            Owner = Application.Current?.MainWindow,
+            Width = 340,
+            SizeToContent = SizeToContent.Height,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ShowInTaskbar = false,
+            Background = Tn.Current.TileHi,
+            Content = Ui.Box(body, 20, 18, 20, 18),
+        };
+        w.InputBindings.Add(new KeyBinding(new Relay(w.Close), Key.Escape, ModifierKeys.None));
+        w.ShowDialog();
+        return chosen;
+    }
+}

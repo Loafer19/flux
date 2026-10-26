@@ -34,6 +34,31 @@ public enum NewPane {
         return t.isEmpty ? "/" : String(t)
     }
 
+    /// An absolute folder from Get files in the form of herdr: `~` for
+    /// `home`, `~/x` for a folder in it, and the absolute path for another folder.
+    public static func homeRelative(_ path: String, home: String) -> String {
+        let p = normalFolder(path)
+        let h = normalFolder(home)
+        guard h.hasPrefix("/"), h != "/" else { return p }
+        if p == h { return "~" }
+        if p.hasPrefix(h + "/") { return "~" + p.dropFirst(h.count) }
+        return p
+    }
+
+    /// A folder in the form of herdr as an absolute folder for Get files, the
+    /// reverse of `homeRelative`: `home` for `~`, and `home/x` for `~/x`. An
+    /// absolute folder stays. Nil when the folder needs a home that is not
+    /// known, or is not a path.
+    public static func absoluteFolder(_ folder: String, home: String) -> String? {
+        let f = normalFolder(folder)
+        if f.hasPrefix("/") { return f }
+        let h = normalFolder(home)
+        guard h.hasPrefix("/"), h != "/" else { return nil }
+        if f == "~" { return h }
+        if f.hasPrefix("~/") { return h + f.dropFirst() }
+        return nil
+    }
+
     /// The last part of a folder, or "home" for the home folder.
     public static func folderName(_ path: String) -> String {
         let p = normalFolder(path)

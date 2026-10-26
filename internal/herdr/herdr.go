@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -58,6 +59,50 @@ func SocketPath() string {
 		dir = filepath.Join(home, ".config")
 	}
 	return filepath.Join(dir, "herdr", "herdr.sock")
+}
+
+// SessionsDir returns the folder of the named herdr sessions. Each
+// session has a folder there with its own API socket.
+func SessionsDir() string {
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "herdr", "sessions")
+}
+
+// SessionSocket returns the API socket of the named session in dir.
+func SessionSocket(dir, name string) string {
+	return filepath.Join(dir, name, "herdr.sock")
+}
+
+// Sessions returns the names of the named sessions in dir that have an
+// API socket, in name order. A session that stopped can keep its folder,
+// so a name does not mean that the session runs. Sessions skips the
+// session with the socket skip, which fluxd follows as the default
+// session already.
+func Sessions(dir, skip string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		sock := SessionSocket(dir, name)
+		if filepath.Clean(sock) == filepath.Clean(skip) {
+			continue
+		}
+		if fi, err := os.Stat(sock); err != nil || fi.Mode().Type() != os.ModeSocket {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 // Error is an error response from herdr.

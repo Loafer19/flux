@@ -16,7 +16,9 @@ public enum AgentStatus: String, CaseIterable, Sendable {
 }
 
 /// One coding agent in a herdr pane on a computer. `pane` is the herdr pane
-/// ID, for example w5:p1.
+/// ID, for example w5:p1. A pane of a named session has the session name
+/// before its ID, for example omarchy/w5:p1. `session` is the name of its
+/// herdr session.
 public struct HerdrAgent: Sendable, Hashable, Identifiable {
     public var pane: String
     public var agent: String
@@ -24,14 +26,17 @@ public struct HerdrAgent: Sendable, Hashable, Identifiable {
     public var title: String
     public var project: String
     public var workspace: String
+    public var session: String
 
-    public init(pane: String, agent: String, status: AgentStatus, title: String = "", project: String = "", workspace: String = "") {
+    public init(pane: String, agent: String, status: AgentStatus, title: String = "", project: String = "", workspace: String = "",
+                session: String = HerdrSession.defaultName) {
         self.pane = pane
         self.agent = agent
         self.status = status
         self.title = title
         self.project = project
         self.workspace = workspace
+        self.session = session
     }
 
     public var id: String { pane }
@@ -44,12 +49,14 @@ public struct HerdrTerminal: Sendable, Hashable, Identifiable {
     public var title: String
     public var project: String
     public var workspace: String
+    public var session: String
 
-    public init(pane: String, title: String = "", project: String = "", workspace: String = "") {
+    public init(pane: String, title: String = "", project: String = "", workspace: String = "", session: String = HerdrSession.defaultName) {
         self.pane = pane
         self.title = title
         self.project = project
         self.workspace = workspace
+        self.session = session
     }
 
     public var id: String { pane }
@@ -61,12 +68,38 @@ public struct HerdrWorkspace: Sendable, Hashable, Identifiable {
     public var id: String
     public var label: String
     public var cwd: String
+    public var session: String
 
-    public init(id: String, label: String, cwd: String = "") {
+    public init(id: String, label: String, cwd: String = "", session: String = HerdrSession.defaultName) {
         self.id = id
         self.label = label
         self.cwd = cwd
+        self.session = session
     }
+}
+
+/// A herdr session on a computer. The default session is the herdr of the
+/// computer, and a named session is one that the user started with
+/// `herdr session attach NAME`. An older fluxd follows the default session
+/// only.
+public struct HerdrSession: Sendable, Hashable, Identifiable {
+    /// The name of the default session on the wire.
+    public static let defaultName = "default"
+
+    public var name: String
+    public var isDefault: Bool
+    public var running: Bool
+
+    public init(name: String, isDefault: Bool = false, running: Bool = true) {
+        self.name = name
+        self.isDefault = isDefault
+        self.running = running
+    }
+
+    public var id: String { name }
+
+    /// The name of the session for the UI.
+    public var label: String { isDefault ? "Default" : name }
 }
 
 /// What a computer reports about herdr. `enabled` is false when the
@@ -76,6 +109,12 @@ public struct HerdrWorkspace: Sendable, Hashable, Identifiable {
 /// when the computer also opens terminals for this device and lists them
 /// in `panes`. `workspaces` and `kinds` are the places and the agent kinds
 /// for a new agent.
+///
+/// A newer fluxd also follows the named herdr sessions. Then `agents`,
+/// `panes`, and `workspaces` hold the items of all sessions, each with its
+/// session, and `sessions` lists the sessions with the default session
+/// first. `scoped(to:)` gives the items of 1 session for the agent list.
+/// Without sessions from fluxd, `sessions` has the default session only.
 public struct HerdrState: Sendable, Equatable {
     public var enabled: Bool
     public var running: Bool
@@ -86,6 +125,7 @@ public struct HerdrState: Sendable, Equatable {
     public var workspaces: [HerdrWorkspace]
     public var kinds: [String]
     public var review: Bool
+    public var sessions: [HerdrSession]
 
     public init(
         enabled: Bool,
@@ -96,7 +136,8 @@ public struct HerdrState: Sendable, Equatable {
         panes: [HerdrTerminal] = [],
         workspaces: [HerdrWorkspace] = [],
         kinds: [String] = [],
-        review: Bool = false
+        review: Bool = false,
+        sessions: [HerdrSession] = []
     ) {
         self.enabled = enabled
         self.running = running
@@ -107,6 +148,7 @@ public struct HerdrState: Sendable, Equatable {
         self.workspaces = workspaces
         self.kinds = kinds
         self.review = review
+        self.sessions = sessions.isEmpty ? [HerdrSession(name: HerdrSession.defaultName, isDefault: true, running: running)] : sessions
     }
 
     /// The agents with `blocked` first, then done, working, idle, and
@@ -122,6 +164,33 @@ public struct HerdrState: Sendable, Equatable {
     public func agent(_ pane: String) -> HerdrAgent? { agents.first { $0.pane == pane } }
 
     public func terminal(_ pane: String) -> HerdrTerminal? { panes.first { $0.pane == pane } }
+
+    /// The default session.
+    public var defaultSession: HerdrSession {
+        sessions.first { $0.isDefault } ?? sessions.first ?? HerdrSession(name: HerdrSession.defaultName, isDefault: true, running: running)
+    }
+
+    /// The session to show for the chosen session `name`: that session
+    /// while the computer has it, else the default session.
+    public func session(_ name: String?) -> HerdrSession {
+        name.flatMap { n in sessions.first { $0.name == n } } ?? defaultSession
+    }
+
+    /// The agents of the session `name` that need input.
+    public func blockedCount(in name: String) -> Int { agents.filter { $0.session == name && $0.status == .blocked }.count }
+
+    /// The agents, the terminals, and the workspaces of the session `name`,
+    /// or of the default session when the computer has no such session.
+    /// `running` tells whether that session runs.
+    public func scoped(to name: String?) -> HerdrState {
+        let s = session(name)
+        var out = self
+        out.running = s.running
+        out.agents = agents.filter { $0.session == s.name }
+        out.panes = panes.filter { $0.session == s.name }
+        out.workspaces = workspaces.filter { $0.session == s.name }
+        return out
+    }
 }
 
 /// The recent output of one pane. `lines` keep the terminal colors, and
@@ -301,12 +370,17 @@ public enum HerdrWire {
     /// Asks the computer to open a pane: an agent of kind `agent` when
     /// `what` is "agent", or a shell when it is "terminal". The pane opens
     /// in `cwd`, where empty is the home folder, as a new tab of
-    /// `workspace`, or in a new workspace when `workspace` is empty.
-    public static func create(what: String, agent: String, cwd: String, workspace: String) -> Packet {
-        Packet(PacketType.fluxHerdr, [
+    /// `workspace`, or in a new workspace when `workspace` is empty. The new
+    /// workspace opens in the named herdr session `session`, or in the
+    /// default session when `session` is empty. A workspace ID names its
+    /// session, so the packet has the session only for a new workspace.
+    public static func create(what: String, agent: String, cwd: String, workspace: String, session: String = "") -> Packet {
+        var body: [String: Any?] = [
             "kind": "create", "what": what, "agent": agent,
             "cwd": cwd.trimmingCharacters(in: .whitespacesAndNewlines), "workspace": workspace,
-        ])
+        ]
+        if workspace.isEmpty && !session.isEmpty && session != HerdrSession.defaultName { body["herdr_session"] = session }
+        return Packet(PacketType.fluxHerdr, body)
     }
 
     /// Asks the computer to close a pane. The agent or the shell in it ends.
@@ -337,7 +411,48 @@ public enum HerdrWire {
     /// Parses the body of a state packet. It returns nil for a body that is not a state.
     public static func state(_ body: [String: JSONValue]) -> HerdrState? {
         guard body["kind"]?.string == "state" else { return nil }
-        let agents: [HerdrAgent] = (body["agents"]?.array ?? []).compactMap { e in
+        let kinds = (body["kinds"]?.array ?? []).compactMap { e -> String? in
+            guard case .string(let k) = e, !k.isEmpty else { return nil }
+            return k
+        }
+        let enabled = body["enabled"]?.bool ?? true
+        let control = enabled && (body["control"]?.bool ?? false)
+        let terminals = control && (body["terminals"]?.bool ?? false)
+        let running = enabled && (body["running"]?.bool ?? false)
+        var agents = parseAgents(body["agents"], session: HerdrSession.defaultName)
+        var panes = parseTerminals(body["panes"], session: HerdrSession.defaultName)
+        var workspaces = parseWorkspaces(body["workspaces"], session: HerdrSession.defaultName)
+        var sessions: [HerdrSession] = []
+        // A newer fluxd lists each session with its items. The top-level
+        // lists then hold the default session again, for an older app.
+        var seen = Set<String>()
+        var named: [(HerdrSession, [String: JSONValue])] = []
+        for e in body["sessions"]?.array ?? [] {
+            guard let o = e.object, let name = o["name"]?.string, !name.isEmpty, seen.insert(name).inserted else { continue }
+            named.append((HerdrSession(name: name, isDefault: o["default"]?.bool ?? false, running: enabled && (o["running"]?.bool ?? false)), o))
+        }
+        if named.contains(where: { $0.0.isDefault }) {
+            sessions = named.map { $0.0 }
+            agents = named.flatMap { parseAgents($0.1["agents"], session: $0.0.name) }
+            panes = named.flatMap { parseTerminals($0.1["panes"], session: $0.0.name) }
+            workspaces = named.flatMap { parseWorkspaces($0.1["workspaces"], session: $0.0.name) }
+        }
+        return HerdrState(
+            enabled: enabled,
+            running: running || sessions.contains { $0.running },
+            agents: agents,
+            control: control,
+            terminals: terminals,
+            panes: terminals ? panes : [],
+            workspaces: control ? workspaces : [],
+            kinds: control ? kinds : [],
+            review: enabled && (body["review"]?.bool ?? false),
+            sessions: sessions.isEmpty ? [HerdrSession(name: HerdrSession.defaultName, isDefault: true, running: running)] : sessions
+        )
+    }
+
+    private static func parseAgents(_ list: JSONValue?, session: String) -> [HerdrAgent] {
+        (list?.array ?? []).compactMap { e -> HerdrAgent? in
             guard let o = e.object, let pane = o["pane"]?.string, !pane.isEmpty else { return nil }
             let name = o["agent"]?.string ?? ""
             return HerdrAgent(
@@ -346,37 +461,26 @@ public enum HerdrWire {
                 status: AgentStatus(wire: o["status"]?.string),
                 title: o["title"]?.string ?? "",
                 project: o["project"]?.string ?? "",
-                workspace: o["workspace"]?.string ?? ""
+                workspace: o["workspace"]?.string ?? "",
+                session: session
             )
         }
-        let panes: [HerdrTerminal] = (body["panes"]?.array ?? []).compactMap { e in
+    }
+
+    private static func parseTerminals(_ list: JSONValue?, session: String) -> [HerdrTerminal] {
+        (list?.array ?? []).compactMap { e -> HerdrTerminal? in
             guard let o = e.object, let pane = o["pane"]?.string, !pane.isEmpty else { return nil }
             return HerdrTerminal(pane: pane, title: o["title"]?.string ?? "", project: o["project"]?.string ?? "",
-                                 workspace: o["workspace"]?.string ?? "")
+                                 workspace: o["workspace"]?.string ?? "", session: session)
         }
-        let workspaces: [HerdrWorkspace] = (body["workspaces"]?.array ?? []).compactMap { e in
+    }
+
+    private static func parseWorkspaces(_ list: JSONValue?, session: String) -> [HerdrWorkspace] {
+        (list?.array ?? []).compactMap { e -> HerdrWorkspace? in
             guard let o = e.object, let id = o["id"]?.string, !id.isEmpty else { return nil }
             let label = o["label"]?.string ?? ""
-            return HerdrWorkspace(id: id, label: label.isEmpty ? id : label, cwd: o["cwd"]?.string ?? "")
+            return HerdrWorkspace(id: id, label: label.isEmpty ? id : label, cwd: o["cwd"]?.string ?? "", session: session)
         }
-        let kinds = (body["kinds"]?.array ?? []).compactMap { e -> String? in
-            guard case .string(let k) = e, !k.isEmpty else { return nil }
-            return k
-        }
-        let enabled = body["enabled"]?.bool ?? true
-        let control = enabled && (body["control"]?.bool ?? false)
-        let terminals = control && (body["terminals"]?.bool ?? false)
-        return HerdrState(
-            enabled: enabled,
-            running: enabled && (body["running"]?.bool ?? false),
-            agents: agents,
-            control: control,
-            terminals: terminals,
-            panes: terminals ? panes : [],
-            workspaces: control ? workspaces : [],
-            kinds: control ? kinds : [],
-            review: enabled && (body["review"]?.bool ?? false)
-        )
     }
 
     /// The longest output text that this device parses, in UTF-8 bytes. fluxd

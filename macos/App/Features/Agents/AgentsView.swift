@@ -4,7 +4,9 @@ import SwiftUI
 
 /// The content of an agents window: the herdr agents of a computer on the
 /// left, and the thread of the selected agent on the right. The agents that
-/// need input come first.
+/// need input come first. A computer with more than 1 herdr session shows
+/// the sessions as pills at the top, and the list has the agents of the
+/// picked session.
 struct AgentsView: View {
     @Bindable var model: AgentsWindowModel
 
@@ -16,13 +18,25 @@ struct AgentsView: View {
             if !online {
                 ContentUnavailableView("\(name) is offline", systemImage: "wifi.slash",
                                        description: Text("The agents show when \(name) is on the same network."))
-            } else if let herdr = model.herdr {
-                content(herdr, name: name)
+            } else if let herdr = model.shown {
+                VStack(spacing: 0) {
+                    if let all = model.herdr, all.sessions.count > 1, let shown = model.plugin.model.session(model.deviceId) {
+                        SessionPills(state: all, selected: shown) { session in
+                            model.plugin.model.selectSession(model.deviceId, session)
+                            model.selection = model.shown?.sorted.first?.pane
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        Divider()
+                    }
+                    content(herdr, name: name)
+                }
             } else {
                 ProgressView("Loading the agents of \(name)…")
             }
         }
         .frame(minWidth: 640, minHeight: 420)
+        .sheet(isPresented: $model.newAgent) { NewAgentSheet(model: model, name: name) }
         .task(id: online) {
             if online { model.plugin.request(model.deviceId) }
         }
@@ -36,7 +50,7 @@ struct AgentsView: View {
         } else if !herdr.running {
             unavailable("herdr is not running", "Start herdr on \(name). Its coding agents show here.")
         } else if herdr.agents.isEmpty {
-            unavailable("No agents yet", "Start a coding agent in a herdr pane on \(name). It shows here.")
+            unavailable("No agents yet", "Start a coding agent from here, or in a herdr pane on \(name).", start: true)
         } else {
             HSplitView {
                 AgentList(model: model, agents: herdr.sorted)
@@ -55,12 +69,16 @@ struct AgentsView: View {
         }
     }
 
-    private func unavailable(_ title: String, _ text: String) -> some View {
+    private func unavailable(_ title: String, _ text: String, start: Bool = false) -> some View {
         ContentUnavailableView {
             Label(title, systemImage: "brain")
         } description: {
             Text(text)
         } actions: {
+            if start {
+                Button("Start an agent") { model.newAgent = true }
+                    .buttonStyle(.borderedProminent)
+            }
             Button("Refresh") { model.plugin.request(model.deviceId) }
         }
     }
@@ -82,6 +100,10 @@ private struct AgentList: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button { model.newAgent = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(.borderless)
+                    .help("Start an agent")
+                    .accessibilityLabel("Start an agent")
                 Button { model.plugin.request(model.deviceId) } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
                     .help("Refresh the agent list")
@@ -196,6 +218,7 @@ private struct AgentDetail: View {
                 }
                 .frame(height: 2)
                 ThreadList(output: out, thread: thread, status: agent.status, sent: sent, review: canReview ? { review = true } : nil)
+                FirstTaskNote(model: model, agent: agent)
                 if control {
                     ReplyControls(model: model, agent: agent, output: out, thread: thread, ask: ask, name: name,
                                   keysOpen: $keysOpen, review: canReview ? { review = true } : nil) { sent = $0 }

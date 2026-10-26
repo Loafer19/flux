@@ -2,13 +2,16 @@ name: Build
 
 # Pull requests run no build, to save GitHub minutes. Pushes to master,
 # manual runs, and releases run it. A push that changes only the website
-# runs pages.yml and no build.
+# runs pages.yml and no build. A push that changes only the Windows app
+# runs windows.yml and no build.
 on:
   push:
     branches: [master]
     paths-ignore:
       - 'site/**'
       - '.github/workflows/pages.yml'
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
   workflow_dispatch:
   workflow_call:
     inputs:

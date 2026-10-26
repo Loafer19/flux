@@ -44,6 +44,10 @@ Flux for macOS requires macOS 14 or later.
 It connects a Mac in the place of a phone and offers the features that macOS allows.
 See [Flux for macOS](docs/macos.md) for the feature list.
 
+Flux for Windows requires Windows 10 version 2004 or later.
+It connects a Windows computer in the place of a phone, as the Mac app does. It is new and has a part of the Mac features.
+See [Flux for Windows](docs/windows.md) for the feature list.
+
 ## Clone and install
 
 On Omarchy or Arch Linux, install the build tools:
@@ -96,6 +100,7 @@ Type `y` to confirm.
 
 To connect an iPhone, install the app with Xcode and follow [Pair an iPhone](docs/ios.md#pair-an-iphone).
 To connect a Mac, build the app and follow [Pair a Mac](docs/macos.md#pair-a-mac).
+To connect a Windows computer, build the app and follow [Pair a Windows computer](docs/windows.md#pair-a-windows-computer).
 
 To connect a second Omarchy computer, follow [Connect two computers](docs/desktop-peer.md).
 
@@ -153,6 +158,7 @@ See [development](docs/development.md) for local checks and [releases](docs/rele
 - [Android build and setup](docs/android.md)
 - [iOS build and setup](docs/ios.md)
 - [macOS build and setup](docs/macos.md)
+- [Windows build and setup](docs/windows.md)
 - [CLI reference](docs/cli.md)
 - [Configuration and data paths](docs/configuration.md)
 - [Security and paired devices](docs/security.md)

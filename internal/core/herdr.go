@@ -192,6 +192,12 @@ type herdrView struct {
 	Workspaces []HerdrWorkspace `json:"workspaces"`
 	Kinds      []string         `json:"kinds"`
 
+	// Sessions are the default session and each named session that runs,
+	// each with its own agents, terminals, and workspaces. The fields
+	// above hold the default session only, for the phones that do not
+	// know sessions. The IDs in a named session are qualified.
+	Sessions []HerdrSession `json:"sessions"`
+
 	// CLI is the herdr CLI that fluxd runs for the live terminal. Only the
 	// local API shows it, so flux-cli doctor can name a problem.
 	CLI herdrCLI `json:"cli"`
@@ -298,8 +304,15 @@ func (d *Daemon) herdrViewLocked() herdrView {
 		Review:  d.cfg.Herdr,
 		Enabled: d.cfg.Herdr, Running: d.cfg.Herdr && d.herdrRunning,
 		Control: d.herdrControlLocked(), Terminals: d.herdrTerminalsLocked(),
-		Agents: d.herdrAgents, Panes: d.herdrTerms, Workspaces: d.herdrPlaces, Kinds: d.herdrKinds,
-		CLI: d.herdrCLI,
+		Agents:     ofHerdrSession(d.herdrAgents, "", agentPane),
+		Panes:      ofHerdrSession(d.herdrTerms, "", terminalPane),
+		Workspaces: ofHerdrSession(d.herdrPlaces, "", workspaceID),
+		Kinds:      d.herdrKinds, CLI: d.herdrCLI,
+	}
+	if v.Enabled {
+		v.Sessions = d.herdrSessionsLocked()
+	} else {
+		v.Sessions = []HerdrSession{}
 	}
 	if v.Running && d.herdrBridge {
 		v.Bridge = herdrBridgeCaps
@@ -335,22 +348,25 @@ func herdrStatePacket(v herdrView) *proto.Packet {
 		"kind": "state", "enabled": v.Enabled, "running": v.Running, "control": v.Control,
 		"terminals": v.Terminals, "bridge": v.Bridge, "agents": v.Agents,
 		"panes": v.Panes, "workspaces": v.Workspaces, "kinds": v.Kinds,
-		"review": v.Review,
+		"review": v.Review, "sessions": v.Sessions,
 	})
 }
 
-// herdrLoop follows the agents of the herdr session and sends each change
-// to the phones. It connects again after herdr stops or restarts.
-func (d *Daemon) herdrLoop(ctx context.Context) {
+// herdrFollow follows the agents of one herdr session and sends each
+// change to the phones. It connects again after herdr stops or restarts.
+// The default session has an empty name. A named session ends with ctx.
+func (d *Daemon) herdrFollow(ctx context.Context, session string) {
+	wake, remove := d.addHerdrWaker()
+	defer remove()
 	logged := ""
 	for ctx.Err() == nil {
 		if !d.herdrEnabled() {
-			d.setHerdr(false, herdrLive{})
-			d.herdrPause(ctx, 0)
+			d.setHerdrSession(ctx, session, false, herdrLive{})
+			d.herdrPause(ctx, wake, 0)
 			continue
 		}
-		err := d.herdrSession(ctx, &logged)
-		d.setHerdr(false, herdrLive{})
+		err := d.herdrSession(ctx, session, wake, &logged)
+		d.setHerdrSession(ctx, session, false, herdrLive{})
 		if ctx.Err() != nil {
 			return
 		}
@@ -360,10 +376,10 @@ func (d *Daemon) herdrLoop(ctx context.Context) {
 		// herdr is often not running. Log each problem once, not at each
 		// retry.
 		if msg := err.Error(); msg != logged {
-			d.logf("herdr: %v", err)
+			d.logf("%s: %v", herdrSessionLabel(session), err)
 			logged = msg
 		}
-		d.herdrPause(ctx, herdrRetry)
+		d.herdrPause(ctx, wake, herdrRetry)
 	}
 }
 
@@ -371,21 +387,26 @@ func (d *Daemon) herdrLoop(ctx context.Context) {
 // user turns the feature off. The status events of herdr need a pane ID,
 // so fluxd subscribes to each agent pane. It opens a new subscription
 // when the set of agent panes changes. A connection clears logged, so the
-// next failure goes to the log again.
-func (d *Daemon) herdrSession(ctx context.Context, logged *string) error {
-	pong, err := herdr.Ping(ctx, d.herdrPath)
+// next failure goes to the log again. Only the default session checks
+// the live terminal bridge and the agent kinds.
+func (d *Daemon) herdrSession(ctx context.Context, session string, wake <-chan struct{}, logged *string) error {
+	path := d.herdrSocket(session)
+	pong, err := herdr.Ping(ctx, path)
 	if err != nil {
 		return err
 	}
 	if pong.Protocol < herdr.MinProtocol {
 		return fmt.Errorf("herdr %s uses API protocol %d, and Flux needs %d or newer", pong.Version, pong.Protocol, herdr.MinProtocol)
 	}
-	d.logf("herdr %s: following its agents", pong.Version)
-	d.checkHerdrBridge(ctx, pong.Version, true)
+	d.logf("%s %s: following its agents", herdrSessionLabel(session), pong.Version)
+	main := session == ""
+	if main {
+		d.checkHerdrBridge(ctx, pong.Version, true)
+		// This herdr can have other agent kinds than the last one.
+		d.herdrKindsDue()
+	}
 	checked := time.Now()
 	*logged = ""
-	// This herdr can have other agent kinds than the last one.
-	d.herdrKindsDue()
 
 	var feed *herdrFeed
 	var panes []string
@@ -396,28 +417,32 @@ func (d *Daemon) herdrSession(ctx context.Context, logged *string) error {
 	}()
 	tick := time.NewTicker(herdrPoll)
 	defer tick.Stop()
+	forget := func(pane string) { d.forgetHerdrHistory(herdrQualify(session, pane)) }
 	for {
-		snap, err := herdr.GetSnapshot(ctx, d.herdrPath)
+		snap, err := herdr.GetSnapshot(ctx, path)
 		if err != nil {
 			return err
 		}
 		agents := herdrAgents(snap)
-		live := herdrLive{Agents: agents, Terminals: herdrTerminals(snap), Workspaces: herdrWorkspaces(snap), Kinds: d.herdrKindsNow(ctx)}
+		live := herdrLive{Agents: agents, Terminals: herdrTerminals(snap), Workspaces: herdrWorkspaces(snap)}
+		if main {
+			live.Kinds = d.herdrKindsNow(ctx)
+		}
 		if want := herdrPanes(agents); feed == nil || !slices.Equal(want, panes) {
 			if feed != nil {
 				feed.stream.Close()
 			}
-			s, err := herdr.Subscribe(ctx, d.herdrPath, herdrSubscriptions(want))
+			s, err := herdr.Subscribe(ctx, path, herdrSubscriptions(want))
 			if err != nil {
 				return err
 			}
-			feed, panes = follow(s, d.forgetHerdrHistory), want
+			feed, panes = follow(s, forget), want
 			// A change between the read and the subscription has no
 			// event, so read the session again.
 			continue
 		}
-		d.setHerdr(true, live)
-		if time.Since(checked) >= herdrBridgeRetry {
+		d.setHerdrSession(ctx, session, true, qualifyHerdrLive(session, live))
+		if main && time.Since(checked) >= herdrBridgeRetry {
 			checked = time.Now()
 			d.retryHerdrBridge(ctx)
 		}
@@ -425,7 +450,7 @@ func (d *Daemon) herdrSession(ctx context.Context, logged *string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-d.herdrWake:
+		case <-wake:
 			if !d.herdrEnabled() {
 				return errHerdrOff
 			}
@@ -654,7 +679,7 @@ func (d *Daemon) herdrEnabled() bool {
 
 // herdrPause waits for the delay, a wake signal, or the end of ctx. A zero
 // delay waits with no limit.
-func (d *Daemon) herdrPause(ctx context.Context, delay time.Duration) {
+func (d *Daemon) herdrPause(ctx context.Context, wake <-chan struct{}, delay time.Duration) {
 	var after <-chan time.Time
 	if delay > 0 {
 		t := time.NewTimer(delay)
@@ -663,32 +688,69 @@ func (d *Daemon) herdrPause(ctx context.Context, delay time.Duration) {
 	}
 	select {
 	case <-ctx.Done():
-	case <-d.herdrWake:
+	case <-wake:
 	case <-after:
 	}
 }
 
 // wakeHerdr makes the herdr loop check the setting and read the session
-// now. A loop that waits to connect again tries at once.
+// now. A loop that waits to connect again tries at once. The loop also
+// looks for new named sessions.
 func (d *Daemon) wakeHerdr() {
 	select {
 	case d.herdrWake <- struct{}{}:
 	default:
 	}
+	d.herdrWakeMu.Lock()
+	defer d.herdrWakeMu.Unlock()
+	for ch := range d.herdrWakers {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
-// setHerdr records the herdr state and sends it to the phones when it
-// changed. It forgets the history of the agents that are gone, and of a
-// pane that has an agent of another kind now. A new status makes the
-// history of the agent old.
+// setHerdr records the state of the default herdr session.
 func (d *Daemon) setHerdr(running bool, live herdrLive) {
+	d.setHerdrSession(nil, "", running, live)
+}
+
+// setHerdrSession records the herdr state of one session and sends it to
+// the phones when it changed. The IDs of live are qualified. It forgets
+// the history of the agents of the session that are gone, and of a pane
+// that has an agent of another kind now. A new status makes the history
+// of the agent old. A follower that ended, with ctx at its end, records
+// nothing, so it cannot bring back a session that fluxd dropped. Only the
+// default session sets the agent kinds.
+func (d *Daemon) setHerdrSession(ctx context.Context, session string, running bool, live herdrLive) {
 	d.mu.Lock()
-	if d.herdrRunning == running && slices.Equal(d.herdrAgents, live.Agents) && slices.Equal(d.herdrTerms, live.Terminals) &&
-		slices.Equal(d.herdrPlaces, live.Workspaces) && slices.Equal(d.herdrKinds, live.Kinds) {
+	if ctx != nil && ctx.Err() != nil {
+		d.mu.Unlock()
+		return
+	}
+	main := session == ""
+	wasRunning := d.herdrRunning
+	if !main {
+		wasRunning = d.herdrNamed[session]
+	}
+	if !main && ctx != nil {
+		if d.herdrNamed == nil {
+			d.herdrNamed = map[string]bool{}
+		}
+		d.herdrNamed[session] = running
+	}
+	if wasRunning == running && slices.Equal(ofHerdrSession(d.herdrAgents, session, agentPane), live.Agents) &&
+		slices.Equal(ofHerdrSession(d.herdrTerms, session, terminalPane), live.Terminals) &&
+		slices.Equal(ofHerdrSession(d.herdrPlaces, session, workspaceID), live.Workspaces) &&
+		(!main || slices.Equal(d.herdrKinds, live.Kinds)) {
 		d.mu.Unlock()
 		return
 	}
 	for pane, h := range d.herdrHistory {
+		if herdrSessionOf(pane) != session {
+			continue
+		}
 		i := slices.IndexFunc(live.Agents, func(a HerdrAgent) bool { return a.Pane == pane })
 		switch {
 		case i < 0 || live.Agents[i].Agent != h.agent:
@@ -698,11 +760,16 @@ func (d *Daemon) setHerdr(running bool, live herdrLive) {
 			d.herdrHistory[pane] = h
 		}
 	}
-	d.herdrRunning, d.herdrAgents, d.herdrTerms, d.herdrPlaces, d.herdrKinds = running, live.Agents, live.Terminals, live.Workspaces, live.Kinds
-	if !running {
-		d.herdrBridge = false
+	d.herdrAgents = mergeHerdrSession(d.herdrAgents, live.Agents, session, agentPane)
+	d.herdrTerms = mergeHerdrSession(d.herdrTerms, live.Terminals, session, terminalPane)
+	d.herdrPlaces = mergeHerdrSession(d.herdrPlaces, live.Workspaces, session, workspaceID)
+	if main {
+		d.herdrRunning, d.herdrKinds = running, live.Kinds
+		if !running {
+			d.herdrBridge = false
+		}
 	}
-	for _, t := range d.pruneHerdrStreamsLocked(running) {
+	for _, t := range d.pruneHerdrStreamsLocked(session, running) {
 		go d.stopHerdrTerminal(t, t.stop)
 	}
 	d.mu.Unlock()
@@ -797,6 +864,10 @@ func (d *Daemon) handleHerdr(dev *Device, l *lan.Link, p *proto.Packet) {
 		// the same number, so the phone matches a late answer.
 		Request json.RawMessage `json:"request"`
 		Path    string          `json:"path"`
+		// HerdrSession is the herdr session of a create without a
+		// workspace. An empty name and "default" are the default session.
+		// It is not Session, which names a terminal stream.
+		HerdrSession string `json:"herdr_session"`
 	}
 	if p.Decode(&body) != nil {
 		return
@@ -884,7 +955,7 @@ func (d *Daemon) handleHerdr(dev *Device, l *lan.Link, p *proto.Packet) {
 		go func() {
 			failed := map[string]any{"kind": "created", "what": body.What, "error": "fluxd could not open the pane"}
 			defer d.herdrRecover("create", d.herdrFailed(dev, l, req, failed))
-			reply := d.herdrCreate(dev, body.What, body.Agent, body.Cwd, body.Workspace)
+			reply := d.herdrCreate(dev, body.What, body.Agent, body.Cwd, body.Workspace, herdrSessionName(body.HerdrSession))
 			// The phone opens the new pane at once, so it must know the
 			// pane before the answer.
 			d.mu.Lock()
@@ -1176,7 +1247,8 @@ func (d *Daemon) herdrTerminalLocked(pane string) bool {
 // readTerminal reads the recent output of a terminal. A shell keeps its
 // scrollback in herdr, so one read gets the history with its colors.
 func (d *Daemon) readTerminal(ctx context.Context, pane string, lines int, ansi bool) (string, bool, error) {
-	r, err := herdr.ReadPane(ctx, d.herdrPath, pane, lines, ansi)
+	sock, id := d.herdrAt(pane)
+	r, err := herdr.ReadPane(ctx, sock, id, lines, ansi)
 	if err != nil {
 		return "", false, err
 	}
@@ -1207,8 +1279,9 @@ func (d *Daemon) readAgentOutput(ctx context.Context, pane string, lines int, an
 	kind := d.herdrKindLocked(pane)
 	d.mu.Unlock()
 	source := rowSource(kind)
+	sock, id := d.herdrAt(pane)
 	if !ansi && !held {
-		r, err := herdr.ReadAgentFrom(ctx, d.herdrPath, pane, source, lines, false)
+		r, err := herdr.ReadAgentFrom(ctx, sock, id, source, lines, false)
 		if err != nil {
 			return "", false, err
 		}
@@ -1218,7 +1291,7 @@ func (d *Daemon) readAgentOutput(ctx context.Context, pane string, lines int, an
 		}
 		return strings.Join(rows, "\n"), r.Truncated, nil
 	}
-	r, err := herdr.ReadAgentFrom(ctx, d.herdrPath, pane, source, lines, true)
+	r, err := herdr.ReadAgentFrom(ctx, sock, id, source, lines, true)
 	if err != nil {
 		return "", false, err
 	}
@@ -1277,7 +1350,8 @@ func (d *Daemon) readAgentHistory(ctx context.Context, pane string, lines int) (
 	d.mu.Lock()
 	kind := d.herdrKindLocked(pane)
 	d.mu.Unlock()
-	h, err := herdr.ReadAgentFrom(ctx, d.herdrPath, pane, rowSource(kind), lines, false)
+	sock, id := d.herdrAt(pane)
+	h, err := herdr.ReadAgentFrom(ctx, sock, id, rowSource(kind), lines, false)
 	switch {
 	case err == nil:
 		next := agentHistory{lines: strings.Split(cleanPlain(h.Text), "\n"), truncated: h.Truncated, asked: lines, at: time.Now(), agent: kind}

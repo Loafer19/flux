@@ -1005,7 +1005,7 @@ private fun ChatDock(
 ) {
     val clip = rememberPhoneClip()
     Column(
-        Modifier.fillMaxWidth().dockFrame(shape).padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().thumbMenuDock(menu).dockFrame(shape).padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (reply != null) {

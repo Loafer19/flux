@@ -240,10 +240,40 @@ jobs:
           path: release/
           if-no-files-found: error
 
+  # The Windows app as 1 self-contained file with the version of the tag.
+  windows:
+    needs: version
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.version.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test FluxKit
+        run: |
+          dotnet restore windows/FluxKit.Tests --locked-mode
+          dotnet test windows/FluxKit.Tests -c Release --no-restore
+      - name: Build the Windows app
+        env:
+          VERSION: ${{ needs.version.outputs.name }}
+        run: |
+          dotnet publish windows/Flux -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true "-p:Version=$env:VERSION" -o publish
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item publish/Flux.exe "release/flux-windows-$env:VERSION.exe"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-release
+          path: release/
+          if-no-files-found: error
+
   # Collects the release files, writes SHA256SUMS and the release notes, and
   # finds out whether the tag is the highest stable version.
   files:
-    needs: [version, build, apk-sign, ipa]
+    needs: [version, build, apk-sign, ipa, windows]
     runs-on: ubuntu-latest
     outputs:
       sums: ${{ steps.files.outputs.sums }}
@@ -275,6 +305,10 @@ jobs:
         with:
           name: ios-release
           path: artifacts/ios
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-release
+          path: artifacts/windows
       - name: Prepare release files
         id: files
         env:
@@ -285,8 +319,9 @@ jobs:
           cp artifacts/android/* release/
           cp artifacts/macos/flux-macos.zip "release/flux-macos-$VERSION.zip"
           cp "artifacts/ios/flux-ios-$VERSION.ipa" release/
+          cp "artifacts/windows/flux-windows-$VERSION.exe" release/
           tar -czf "release/omarchy-flux-$VERSION-aur.tar.gz" -C artifacts/aur PKGBUILD .SRCINFO omarchy-flux.install
-          (cd release && sha256sum -- *.pkg.tar.zst *.apk *.zip *.ipa *-aur.tar.gz android-certificate.txt > SHA256SUMS)
+          (cd release && sha256sum -- *.pkg.tar.zst *.apk *.zip *.ipa *.exe *-aur.tar.gz android-certificate.txt > SHA256SUMS)
           echo "sums=$(base64 -w0 release/SHA256SUMS)" >> "$GITHUB_OUTPUT"
       # A patch tag on an earlier line, such as v0.6.1 after v0.7.0, does
       # not become the latest release, because fluxd and flux-cli update

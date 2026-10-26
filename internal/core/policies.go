@@ -177,6 +177,20 @@ func (d *Daemon) herdrViewForLocked(device string) herdrView {
 	if !v.Terminals {
 		v.Panes = []HerdrTerminal{}
 	}
+	sessions := []HerdrSession{}
+	for _, s := range v.Sessions {
+		if !v.Enabled {
+			break
+		}
+		if !v.Control {
+			s.Workspaces = []HerdrWorkspace{}
+		}
+		if !v.Terminals {
+			s.Panes = []HerdrTerminal{}
+		}
+		sessions = append(sessions, s)
+	}
+	v.Sessions = sessions
 	// A device sees only the bridge actions that it can use. Each one but
 	// observe writes to the terminal and needs herdr_control.
 	switch {

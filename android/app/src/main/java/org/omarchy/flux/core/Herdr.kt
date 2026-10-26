@@ -558,11 +558,12 @@ object HerdrSync {
      * Asks the computer to open a pane: an agent of [kind] when [what] is
      * "agent", or a shell when it is "terminal". The pane opens in [cwd]
      * and in a new tab of [workspace], or in a new workspace when
-     * [workspace] is empty.
+     * [workspace] is empty. A new workspace opens in the herdr session
+     * [session], see [herdrCreateBody].
      */
-    fun create(core: FluxCore, id: String, what: String, kind: String, cwd: String, workspace: String) {
+    fun create(core: FluxCore, id: String, what: String, kind: String, cwd: String, workspace: String, session: String? = null) {
         action(core, id, HerdrAction("create", 0, what = what), CREATE_TIMEOUT_MS) { seq ->
-            bodyOf("kind" to "create", "what" to what, "agent" to kind, "cwd" to cwd.trim(), "workspace" to workspace, "request" to seq)
+            herdrCreateBody(what, kind, cwd, workspace, session, seq)
         }
     }
 

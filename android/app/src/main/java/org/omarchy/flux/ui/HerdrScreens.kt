@@ -2,7 +2,9 @@ package org.omarchy.flux.ui
 
 import android.content.Context
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
@@ -26,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +58,7 @@ import org.omarchy.flux.core.DeviceUi
 import org.omarchy.flux.core.FluxCore
 import org.omarchy.flux.core.FolderChoice
 import org.omarchy.flux.core.HerdrReply
+import org.omarchy.flux.core.HerdrState
 import org.omarchy.flux.core.HerdrSync
 import org.omarchy.flux.core.HerdrWorkspace
 import org.omarchy.flux.core.SHELL_CHOICE
@@ -91,6 +96,77 @@ private object NewPanePrefs {
     }
 }
 
+/**
+ * The herdr session that the user picked on each computer. A session that
+ * the computer no longer has stays picked, and the default session shows
+ * while it is gone.
+ */
+internal object HerdrSessionPrefs {
+    private const val PREFS = "flux-herdr"
+
+    /** Changes with each pick, so the screens that show a session read it again. */
+    private val picks = mutableIntStateOf(0)
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** The picked session of [device], or null when the user picked none. */
+    fun picked(context: Context, device: String): String? {
+        picks.intValue
+        return prefs(context).getString("session.$device", null)
+    }
+
+    fun pick(context: Context, device: String, session: String) {
+        if (prefs(context).getString("session.$device", null) == session) return
+        prefs(context).edit { putString("session.$device", session) }
+        picks.intValue++
+    }
+
+    /** The herdr state of [d] in its picked session, or null before the first agent list. */
+    fun herdrOf(context: Context, d: DeviceUi): HerdrState? = d.herdr?.scoped(picked(context, d.id))
+}
+
+/**
+ * The herdr sessions of [d] as pills, when it has more than the default
+ * session. The picked session has the accent, and a tap picks another. A
+ * session with agents that need input shows their number in red. [label]
+ * names the computer before the pills, when the list shows more than 1.
+ */
+@Composable
+internal fun SessionStrip(d: DeviceUi, modifier: Modifier = Modifier, label: String? = null) {
+    val context = LocalContext.current
+    val herdr = d.herdr ?: return
+    if (!herdr.manySessions) return
+    val picked = herdr.sessionOrDefault(HerdrSessionPrefs.picked(context, d.id))
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (label != null) T(label, size = 12, color = Tn.sub, maxLines = 1)
+        for (s in herdr.sessionList) {
+            val on = s.name == picked.name
+            val blocked = herdr.blockedIn(s.name)
+            Pill(
+                s.label, on,
+                onClick = { HerdrSessionPrefs.pick(context, d.id, s.name) },
+                meta = if (blocked > 0) "$blocked" else "",
+                metaColor = Tn.red,
+                clickLabel = "Show the session ${s.label}",
+                state = listOfNotNull(
+                    if (on) "Shown" else null,
+                    if (blocked > 0) "$blocked ${if (blocked == 1) "agent needs" else "agents need"} input" else null,
+                ).joinToString(", ").ifEmpty { null },
+            ) {
+                when {
+                    blocked > 0 -> Dot(Tn.red, 8.dp)
+                    s.running -> Dot(Tn.green, 8.dp)
+                    else -> RingMark()
+                }
+            }
+        }
+    }
+}
+
 // ───────────────────────── New agent or terminal ─────────────────────────
 
 /**
@@ -104,7 +180,9 @@ private object NewPanePrefs {
 @Composable
 fun TiledNewPaneScreen(d: DeviceUi, onBack: () -> Unit, onOpened: (what: String, pane: String) -> Unit) {
     val context = LocalContext.current
-    val herdr = d.herdr
+    // The new pane opens in the picked session, among its workspaces.
+    val herdr = HerdrSessionPrefs.herdrOf(context, d)
+    val session = d.herdr?.takeIf { it.manySessions }?.sessionOrDefault(HerdrSessionPrefs.picked(context, d.id))
     val kinds = herdr?.kinds.orEmpty()
     val shell = herdr?.terminals == true
     var run by rememberSaveable(d.id) { mutableStateOf(NewPanePrefs.run(context, d.id)) }
@@ -126,71 +204,74 @@ fun TiledNewPaneScreen(d: DeviceUi, onBack: () -> Unit, onOpened: (what: String,
     }
     val busy = action?.sending == true
 
-    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = TiledGutter)) {
-        TiledTopBar("New agent or terminal", onBack, context = d.name)
-        when {
-            !d.online -> NotReachable(d, "The agents that you can start")
-            herdr == null || !herdr.running -> EmptyState(
-                Ic.agent, "herdr is not running", "Start herdr on ${d.name}. Then start agents from here.", Modifier.padding(top = 48.dp),
-            )
-            !herdr.control -> EmptyState(
-                Ic.agent,
-                "Control is off",
-                "To start agents from this phone, set herdr_control = true on ${d.name}. Then run systemctl --user reload fluxd.",
-                Modifier.padding(top = 48.dp),
-            )
-            kinds.isEmpty() && !shell -> EmptyState(
-                Ic.agent,
-                "No coding agent on ${d.name}",
-                "Install a coding agent that herdr supports, such as Claude Code or Codex, on ${d.name}. It shows here within a minute.",
-                Modifier.padding(top = 48.dp),
-            )
-            else -> {
-                val choice = run
-                val folders = remember(herdr) { folderChoices(herdr) }
-                // A typed path is the folder at once. Enter or a tap on its row keeps it after the search.
-                val target = if (looksLikePath(query)) normalFolder(query) else folder
-                val match = workspaceFor(herdr, target)
-                val workspace = if (match != null && !newWorkspace) match.id else ""
-                fun start() {
-                    val what = if (choice == SHELL_CHOICE) "terminal" else "agent"
-                    val kind = choice ?: return
-                    lockError = null
-                    val last = d.herdrAction?.seq ?: 0L
-                    ReplyLock.run(context, {
-                        after = last
-                        NewPanePrefs.save(context, d.id, kind, target)
-                        HerdrSync.create(FluxCore, d.id, what, kind, target, workspace)
-                    }, title = if (what == "agent") "Start an agent" else "Open a terminal", purpose = "start agents and terminals") {
-                        lockError = it
-                    }
-                }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(TileGap)) {
-                    TileLabel("Run", Modifier.padding(start = 4.dp).semantics { heading() })
-                    val options = kinds + if (shell) listOf(SHELL_CHOICE) else emptyList()
-                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(TileGap)) {
-                        for (row in options.chunked(2)) {
-                            TileRow(68.dp) {
-                                for (k in row) {
-                                    val running = if (k == SHELL_CHOICE) 0 else herdr.agents.count { it.agent == k }
-                                    RunTile(k, running, selected = k == choice, enabled = !busy, modifier = Modifier.weight(1f).fillMaxHeight()) { run = k }
-                                }
-                                if (row.size == 1) Spacer(Modifier.weight(1f))
-                            }
+    // A wide window shows the screen in the center, as wide as the lists of the other screens.
+    Box(Modifier.fillMaxSize().imePadding(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = ContentMaxWidth).fillMaxSize().padding(horizontal = TiledGutter)) {
+            TiledTopBar("New agent or terminal", onBack, context = if (session != null) "${d.name} · ${session.label}" else d.name)
+            when {
+                !d.online -> NotReachable(d, "The agents that you can start")
+                herdr == null || !herdr.running -> EmptyState(
+                    Ic.agent, "herdr is not running", "Start herdr on ${d.name}. Then start agents from here.", Modifier.padding(top = 48.dp),
+                )
+                !herdr.control -> EmptyState(
+                    Ic.agent,
+                    "Control is off",
+                    "To start agents from this phone, set herdr_control = true on ${d.name}. Then run systemctl --user reload fluxd.",
+                    Modifier.padding(top = 48.dp),
+                )
+                kinds.isEmpty() && !shell -> EmptyState(
+                    Ic.agent,
+                    "No coding agent on ${d.name}",
+                    "Install a coding agent that herdr supports, such as Claude Code or Codex, on ${d.name}. It shows here within a minute.",
+                    Modifier.padding(top = 48.dp),
+                )
+                else -> {
+                    val choice = run
+                    val folders = remember(herdr) { folderChoices(herdr) }
+                    // A typed path is the folder at once. Enter or a tap on its row keeps it after the search.
+                    val target = if (looksLikePath(query)) normalFolder(query) else folder
+                    val match = workspaceFor(herdr, target)
+                    val workspace = if (match != null && !newWorkspace) match.id else ""
+                    fun start() {
+                        val what = if (choice == SHELL_CHOICE) "terminal" else "agent"
+                        val kind = choice ?: return
+                        lockError = null
+                        val last = d.herdrAction?.seq ?: 0L
+                        ReplyLock.run(context, {
+                            after = last
+                            NewPanePrefs.save(context, d.id, kind, target)
+                            HerdrSync.create(FluxCore, d.id, what, kind, target, workspace, session?.name)
+                        }, title = if (what == "agent") "Start an agent" else "Open a terminal", purpose = "start agents and terminals") {
+                            lockError = it
                         }
                     }
-                    if (kinds.isEmpty()) {
-                        T("No coding agent is installed on ${d.name}.", Modifier.padding(horizontal = 4.dp), size = 12, color = Tn.sub)
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(TileGap)) {
+                        TileLabel("Run", Modifier.padding(start = 4.dp).semantics { heading() })
+                        val options = kinds + if (shell) listOf(SHELL_CHOICE) else emptyList()
+                        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(TileGap)) {
+                            for (row in options.chunked(2)) {
+                                TileRow(68.dp) {
+                                    for (k in row) {
+                                        val running = if (k == SHELL_CHOICE) 0 else herdr.agents.count { it.agent == k }
+                                        RunTile(k, running, selected = k == choice, enabled = !busy, modifier = Modifier.weight(1f).fillMaxHeight()) { run = k }
+                                    }
+                                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        if (kinds.isEmpty()) {
+                            T("No coding agent is installed on ${d.name}.", Modifier.padding(horizontal = 4.dp), size = 12, color = Tn.sub)
+                        }
+                        TileLabel("Folder", Modifier.padding(start = 4.dp, top = 12.dp).semantics { heading() })
+                        FolderPicker(folders, target, query, enabled = !busy, onQuery = { query = it }) {
+                            folder = normalFolder(it)
+                            query = ""
+                            newWorkspace = false
+                        }
+                        Spacer(Modifier.height(8.dp))
                     }
-                    TileLabel("Folder", Modifier.padding(start = 4.dp, top = 12.dp).semantics { heading() })
-                    FolderPicker(folders, target, query, enabled = !busy, onQuery = { query = it }) {
-                        folder = normalFolder(it)
-                        query = ""
-                        newWorkspace = false
-                    }
-                    Spacer(Modifier.height(8.dp))
+                    StartBar(choice, target, match, newWorkspace, busy, lockError ?: action?.error, onNewWorkspace = { newWorkspace = it }, onStart = ::start)
                 }
-                StartBar(choice, target, match, newWorkspace, busy, lockError ?: action?.error, onNewWorkspace = { newWorkspace = it }, onStart = ::start)
             }
         }
     }

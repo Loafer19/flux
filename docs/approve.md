@@ -1,9 +1,10 @@
 # Approve with fingerprint: security design
 
 Flux can approve `sudo`, polkit, and the `hyprlock` lock screen on a
-paired device: an Android phone, an iPhone, or a Mac. The device signs
-each request with a private key that never leaves its secure hardware,
-and only after a fingerprint, Face ID, or Touch ID. A small helper on the
+paired device: an Android phone, an iPhone, a Mac, or a Windows computer.
+The device signs each request with a private key that never leaves its
+secure hardware, and only after a fingerprint, Face ID, Touch ID, or
+Windows Hello. A small helper on the
 computer checks the signature with a public key that only root can
 change. If anything fails, PAM asks for the password as usual.
 
@@ -14,8 +15,8 @@ screen. The `hyprlock` service applies only when `hyprlock` is the lock
 screen.
 
 In this document, "the phone" means the device that signs: Flux for
-Android, Flux for iOS, or Flux for macOS. A section that names 1 app
-applies only to that app.
+Android, Flux for iOS, Flux for macOS, or Flux for Windows. A section that
+names 1 app applies only to that app.
 
 This document is the design. The code must follow it. Read it before you
 change one of these parts:
@@ -26,6 +27,8 @@ change one of these parts:
 - The approve code of the iPhone and the Mac:
   `macos/Sources/FluxKit/Plugins/Approve/`, `macos/App/Features/Approve/`,
   and `ios/App/Features/Approve/`.
+- The approve code of Windows: `windows/FluxKit/Plugins/Approve/`, and the
+  approve files in `windows/Flux/Platform/` and `windows/Flux/Features/`.
 
 ## Parts
 
@@ -36,6 +39,7 @@ change one of these parts:
 | `fluxd` | The user | Carries the messages between the helper and the phone |
 | Flux for Android | The phone user | Shows the request, asks for the fingerprint, and signs with a key in the Android Keystore |
 | Flux for iOS and Flux for macOS | The user of the iPhone or the Mac | Show the request, ask for Face ID or Touch ID, and sign with a key in the Secure Enclave. The code is in `FluxKit`. |
+| Flux for Windows | The Windows user | Shows the request, and signs with a Windows Hello key. Windows Hello asks for the fingerprint, the face, or the Windows Hello PIN for each signature. |
 | `flux-cli approve enroll` | root, through `sudo` | Gets the public key from the phone and writes the key file |
 
 ## Threat model
@@ -90,9 +94,11 @@ not change what a valid signature is.
 
 ## Keys on the device
 
-Each app makes 1 key for each paired computer. The key is EC P-256, for
-signing with SHA-256 only. A signature is not possible without a new
-biometric check, even for code that runs in the Flux app.
+Each app makes 1 key for each paired computer. The key is EC P-256 on
+Android, iOS, and macOS, and RSA 2048 on Windows, for signing with
+SHA-256 only. A signature is not possible without a new biometric check,
+even for code that runs in the Flux app. Windows is the 1 exception:
+Windows Hello also accepts its PIN, see the section Windows.
 
 ### Android
 
@@ -171,11 +177,53 @@ biometric check, even for code that runs in the Flux app.
   on the lock screen. On the Mac, **Approve** in the notification asks for
   Touch ID at once.
 
+### Windows
+
+- Flux for Windows keeps the key in Windows Hello. It makes the key with
+  `KeyCredentialManager.RequestCreateAsync` under the name
+  `flux-approve-<computer device ID>`. Windows Hello makes an RSA 2048
+  key, in the TPM when the computer has one. Flux reads the public key as
+  a SubjectPublicKeyInfo in DER.
+- Each signature calls `KeyCredential.RequestSignAsync`. Windows Hello
+  then asks for the fingerprint, the face, or the Windows Hello PIN. So 1
+  check does not sign 2 requests. The result is an RSASSA-PKCS1-v1_5
+  signature over the SHA-256 of the message.
+- Windows Hello always accepts its PIN, and Windows has no setting that
+  lets an app take only biometrics. So on Windows, the PIN can sign. The
+  PIN works only on that computer, and the TPM limits the guesses. It is
+  not the password of the Windows account. The user chose this exception
+  on 2026-10-15, so that Windows has the approval of the other apps.
+- Another program of the Windows user can open the key by its name, but
+  each signature still needs the check of Windows Hello.
+- A computer without Windows Hello refuses each request. Flux never makes
+  a key outside Windows Hello.
+- Windows Hello keeps a key when the enrolled fingers or faces change. So
+  Windows has no rule like `evaluatedPolicyDomainState`. When Windows
+  Hello reports that the key is gone or not valid, Flux deletes its record
+  and the user enrolls again.
+- Flux stores the key name, the public key, the host, the user, and the
+  time of the enrollment in
+  `%LOCALAPPDATA%\Flux\approve\<computer device ID>.json`. The folder
+  belongs to the Windows user.
+- An enrollment keeps the current key until the new key goes out to the
+  computer, as on the Mac. Flux makes the new key under a second name,
+  and records it in `<computer device ID>.pending`. When the send works,
+  the new key takes the place of the old key, and Flux deletes the old
+  key. When the send fails, Flux deletes the new key. At the start, Flux
+  deletes each new key that no enrollment finished.
+- An unpair on Windows deletes the key of that computer. **Remove Key**
+  on the page of the computer also deletes it. The key file on the
+  computer stays until `sudo flux-cli approve remove`.
+- **Approve** in the notification asks Windows Hello at once.
+
 ## Messages
 
 The phone signs the exact bytes below with `SHA256withECDSA`. The result
 is an ASN.1 DER signature. The helper checks it with `ecdsa.VerifyASN1`
-over the SHA-256 hash of the same bytes.
+over the SHA-256 hash of the same bytes. Flux for Windows signs the same
+bytes with RSASSA-PKCS1-v1_5 and SHA-256, the scheme of Windows Hello.
+The helper checks that signature with `rsa.VerifyPKCS1v15`. The helper
+accepts only EC P-256 keys and RSA 2048 keys with the exponent 65537.
 
 An approval message has 8 lines. Each line ends with 1 newline character:
 
@@ -210,9 +258,10 @@ check them, and a request that breaks a rule fails:
 - `host`, `user`, and `service` are not empty.
 - `nonce` is exactly 64 lowercase hex digits.
 
-The Go, Kotlin, and Swift code build the same bytes. The tests
-`internal/approve/message_test.go`, `ApproveMessageTest.kt`, and
-`ApproveMessageTests.swift` check them with the same vectors.
+The Go, Kotlin, Swift, and C# code build the same bytes. The tests
+`internal/approve/message_test.go`, `ApproveMessageTest.kt`,
+`ApproveMessageTests.swift`, and `ApproveMessageTests.cs` check them with
+the same vectors.
 
 The first line names the version and the purpose. So a signature for an
 enrollment is never a valid approval, and the reverse.
@@ -367,6 +416,7 @@ Every failure gives a non-zero exit, and PAM asks for the password.
 | Code that runs as the user | Stop the approval, so that PAM asks for the password. Send requests to the phone. Start `sudo` and wait for the user to approve it. Enroll its own key during `sudo flux-cli approve enroll`, because it can type the key code into the terminal, see the open risks. | Make a valid signature. Change the key file without an enrollment or a `sudo` that the user starts. Point the helper to another key. Use an old signature again. |
 | A person with the locked phone | See a request on the lock screen, and deny it | Approve a request without the fingerprint |
 | A person with the unlocked phone | Deny requests. Remove Flux. | Approve a request without the fingerprint |
+| A person at the unlocked Windows computer who knows its Windows Hello PIN | Approve requests | Approve a request without the PIN or a fingerprint or face that Windows Hello knows |
 
 The helper runs as root for `sudo`. It reads only the key file, the socket,
 `/etc/passwd`, and its PAM variables. It limits each line from `fluxd` to
@@ -413,5 +463,9 @@ person at the keyboard. The password protects against the same person.
   terminal. The command cannot tell these keys from the keys of the user.
   The typed code stops only a changed `fluxd` that cannot send keys. Run
   `sudo flux-cli approve enroll` only in a session that you trust.
+- **The Windows Hello PIN.** On Windows, the Windows Hello PIN can sign
+  an approval. A person who knows the PIN and sits at the Windows
+  computer can approve a request. Use a PIN that other people do not
+  know, or approve only from an Android phone, an iPhone, or a Mac.
 - **Only local users.** The helper finds the user in `/etc/passwd`. Users
   from a network directory do not work.

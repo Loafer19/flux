@@ -137,8 +137,9 @@ fun ControlScreen(
                             onTerminal = { d, pane -> onOpen(Route(d.id, "$TERMINAL_PAGE$pane")) },
                         )
                         if (shows { it.herdr?.control == true }) {
-                            val can = canRun { it.herdr?.let { h -> h.running && h.control } == true }
-                            NewAgentButton(can) { open({ it.herdr?.let { h -> h.running && h.control } == true }, "Start an agent on", NEW_PANE_PAGE) }
+                            // A new agent opens in the picked herdr session of the computer.
+                            val startable = { d: DeviceUi -> HerdrSessionPrefs.herdrOf(context, d)?.let { h -> h.running && h.control } == true }
+                            NewAgentButton(canRun(startable)) { open(startable, "Start an agent on", NEW_PANE_PAGE) }
                         }
                     }
                     ListHeader("Tools")
@@ -223,8 +224,11 @@ private fun AgentList(
     onOpen: (DeviceUi, String) -> Unit,
     onTerminal: (DeviceUi, String) -> Unit,
 ) {
-    val agents = herdr.flatMap { d -> d.herdr?.agents.orEmpty().map { d to it } }.sortedBy { ControlOrder.indexOf(it.second.status) }
-    val terminals = herdr.flatMap { d -> d.herdr?.panes.orEmpty().map { d to it } }
+    // Each computer shows the picked herdr session.
+    val context = LocalContext.current
+    val states = herdr.associate { it.id to HerdrSessionPrefs.herdrOf(context, it) }
+    val agents = herdr.flatMap { d -> states[d.id]?.agents.orEmpty().map { d to it } }.sortedBy { ControlOrder.indexOf(it.second.status) }
+    val terminals = herdr.flatMap { d -> states[d.id]?.panes.orEmpty().map { d to it } }
     val blocked = agents.count { it.second.status == AgentStatus.Blocked }
     val summary = if (agents.isEmpty()) {
         ""
@@ -235,8 +239,9 @@ private fun AgentList(
         ).joinToString(" · ")
     }
     ListHeader("Agents", summary)
+    for (d in herdr) SessionStrip(d, label = if (herdr.size > 1) d.name else null)
     val single = herdr.singleOrNull()
-    val h = single?.herdr
+    val h = single?.let { states[it.id] }
     when {
         herdr.isEmpty() -> {
             val d = devices.firstOrNull { it.paired && it.id == scope }

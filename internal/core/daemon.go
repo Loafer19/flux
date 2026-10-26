@@ -163,6 +163,17 @@ type Daemon struct {
 	herdrHistory map[string]agentHistory
 	herdrWake    chan struct{}
 
+	// herdrSessionsDir is the folder of the named herdr sessions, or ""
+	// to follow only the default session. herdrNamed reports for each
+	// named session that fluxd follows whether it runs. The agents,
+	// terminals, and workspaces above hold the items of all sessions,
+	// with qualified IDs, see herdr_sessions.go. herdrWakers are the wake
+	// channels of the session followers, and herdrWakeMu guards them.
+	herdrSessionsDir string
+	herdrNamed       map[string]bool
+	herdrWakers      map[chan struct{}]bool
+	herdrWakeMu      sync.Mutex
+
 	// herdrStreams is the terminal session of each phone by session ID.
 	// herdrStreamWait counts the control streams that attach to a pane,
 	// so a read during the attach serves the cache already. herdrBridge
@@ -311,14 +322,15 @@ func New(ctx context.Context, logger *log.Logger, opts Options) (*Daemon, error)
 		ctx:     ctx,
 		logger:  logger,
 
-		herdrPath:   herdr.SocketPath(),
-		herdrWake:   make(chan struct{}, 1),
-		dndWake:     make(chan struct{}, 1),
-		releaseWake: make(chan struct{}, 1),
-		relayWake:   make(chan struct{}, 1),
-		relayWaitCh: make(chan struct{}),
-		edgeKick:    make(chan struct{}, 1),
-		automationQ: make(chan automationEvent, 128),
+		herdrPath:        herdr.SocketPath(),
+		herdrSessionsDir: herdr.SessionsDir(),
+		herdrWake:        make(chan struct{}, 1),
+		dndWake:          make(chan struct{}, 1),
+		releaseWake:      make(chan struct{}, 1),
+		relayWake:        make(chan struct{}, 1),
+		relayWaitCh:      make(chan struct{}),
+		edgeKick:         make(chan struct{}, 1),
+		automationQ:      make(chan automationEvent, 128),
 	}
 	d.ready = make(chan struct{})
 	if exe, err := os.Executable(); err == nil {

@@ -6,8 +6,8 @@ A paired device can also connect through [Tailscale](tailscale.md) away from tha
 ## Start here
 
 1. [Clone and install Flux](install.md).
-2. [Install the Android app](android.md), [install the iPhone app](ios.md#install-on-an-iphone), or [build the Mac app](macos.md#build-and-run).
-3. [Pair your phone](features.md#pair-a-phone), [pair your iPhone](ios.md#pair-an-iphone), [pair your Mac](macos.md#pair-a-mac), or [connect two computers](desktop-peer.md).
+2. [Install the Android app](android.md), [install the iPhone app](ios.md#install-on-an-iphone), [build the Mac app](macos.md#build-and-run), or [build the Windows app](windows.md#build-and-run).
+3. [Pair your phone](features.md#pair-a-phone), [pair your iPhone](ios.md#pair-an-iphone), [pair your Mac](macos.md#pair-a-mac), [pair your Windows computer](windows.md#pair-a-windows-computer), or [connect two computers](desktop-peer.md).
 4. [Use the CLI](cli.md) or open the window with `flux-cli open`.
 
 ## Use Flux
@@ -19,6 +19,7 @@ A paired device can also connect through [Tailscale](tailscale.md) away from tha
 | [Android setup and Play Protect](android-setup.md) | Play Protect blocks, installs with `adb`, restricted settings, the service, the network, and permissions |
 | [iOS](ios.md) | iPhone app build, installation with Xcode, pairing, features, limits, permissions, and local tests |
 | [macOS](macos.md) | Mac app build, pairing, features, permissions, and local tests |
+| [Windows](windows.md) | Windows app build, pairing, features, data, and tests against `fluxd` |
 | [CLI](cli.md) | Commands, device selection, JSON state, and notifications from scripts |
 | [Everyday use](features.md) | Pair, share, clipboard images, SMS, media, calls, Do Not Disturb, automatic photo transfers, and dictation in text fields |
 | [Workflow controls](workflows.md) | Offline outbox, resumable transfers, folder archives, saved snippets, device access, notification rules, automation, agent review, and remote audio |

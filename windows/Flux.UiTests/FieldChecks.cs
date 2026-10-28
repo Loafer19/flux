@@ -9,7 +9,7 @@ using FluxKit;
 using static Harness;
 
 // The keys of the text fields: the mic key, the clear key, and the expand
-// key of the field of Chat, the agent reply, the type field of the touchpad
+// key of the field of the chat of a computer, the agent reply, the type field of the touchpad
 // and the remote desktop, and the search of All shortcuts. The checks put
 // sample text in the fields, use the editors, and give sample words to the
 // path of a dictation. No check starts the speech recognizer.
@@ -27,19 +27,19 @@ public static class FieldChecks
         Rules(h);
     }
 
-    // The field of Chat: the mic key, the clear key, the editor with Send,
-    // the insert rule, the listening panel, and a reply to an agent.
+    // The field of the chat of a computer: the mic key, the clear key, the
+    // editor with Send, the insert rule, and the listening panel.
     static void Chat(Harness h)
     {
         var model = h.Model;
-        model.Go(Destination.Chat);
+        model.OpenChat(new ChatKey.Computer(h.Paired.Id));
         Pump();
-        if (h.Window.CurrentPage is not ChatPage page)
+        if (h.Window.CurrentPage is not ChatsPage { Computer: { } chat })
         {
-            h.Check(false, "Chat shows");
+            h.Check(false, "the chat of the computer shows");
             return;
         }
-        var dock = page.Composer;
+        var dock = chat.Composer;
         var field = dock.Field;
         field.Text = "";
         Pump();
@@ -47,7 +47,7 @@ public static class FieldChecks
         h.Check(Named(dock.Voice.Mic) == "Dictate", "the mic key of Chat reads Dictate");
         h.Check(Key(dock.Root, "Clear") is { IsVisible: false }, "the clear key of Chat hides while the field is empty");
         h.Check(Key(dock.Root, FieldKeys.ExpandHelp) is { IsVisible: true }, "the field of Chat has the expand key");
-        h.Check(Shows(dock.Root, "Type text or a link for omarchy-xps"), "the field of Chat names the computer in its hint");
+        h.Check(Shows(dock.Root, "Message omarchy-xps"), "the field of Chat names the computer in its hint");
 
         field.Text = "a note";
         Pump();
@@ -114,25 +114,6 @@ public static class FieldChecks
             "a dictation that Windows denies shows the privacy setting");
         Set(d, nameof(Dictation.Error), null);
         Pump();
-
-        // A reply to an agent writes in the same field, and its editor names the agent.
-        model.ChatReply = new ChatReply(h.Paired.Id, "w1:p1", "codex", "billing", "omarchy-xps",
-            new AgentChoice("3", "No, and tell Codex what to do differently"), ValueList<TermLine>.Empty);
-        Pump();
-        h.Check(Shows(dock.Root, "Tell codex what to do differently"), "the field of a reply names the agent");
-        h.Check(dock.Voice.Mic.IsVisible && Key(dock.Root, FieldKeys.ExpandHelp) is { IsVisible: true }, "the field of a reply has the mic key and the expand key");
-        var reply = dock.Editor();
-        reply.Show();
-        Pump();
-        h.Check(reply.Title == "Reply to codex", "the editor of a reply names the agent");
-        reply.Box.Text = "Keep the old column";
-        Pump();
-        h.Check(field.Text == "Keep the old column", "the editor of a reply changes the field at once");
-        // Send of a reply asks for Windows Hello, so the check closes the editor.
-        reply.Close();
-        model.ChatReply = null;
-        Pump();
-        h.Check(field.Text.Length == 0, "the field empties when the reply closes");
     }
 
     // The reply field of the agents window: the mic key, the clear key, and

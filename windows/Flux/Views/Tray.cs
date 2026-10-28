@@ -192,7 +192,7 @@ public sealed class TrayPanel : Window
         public PanelView(TrayPanel panel)
         {
             this.panel = panel;
-            cards = new EventCards(panel.model, inPanel: true);
+            cards = new EventCards(panel.model);
             foreach (var m in panel.model.InboxModels())
             {
                 Watch(m);
@@ -263,8 +263,9 @@ public sealed class TrayPanel : Window
         }
 
         // A next item: the state, the source, and the title. A click opens
-        // the chat of the main window. An item out of scope makes the scope
-        // all computers.
+        // the chat of the item in the main window: the chat of an agent, or
+        // the chat of the computer of an approval. A pair request opens its
+        // pairing page.
         UIElement Row(InboxItem item)
         {
             var tn = Tn.Current;
@@ -281,11 +282,19 @@ public sealed class TrayPanel : Window
             var name = string.Join(", ", new[] { item.Title }.Concat(item.SourceParts).Append(item.Computer).Where(p => p.Length > 0));
             var button = new PlainButton(tile, () => Run(() =>
             {
-                if (FluxKit.Inbox.InScope([item], model.Scope).Count == 0)
+                switch (item.Content)
                 {
-                    model.SetScope(null);
+                    case InboxContent.Agent a:
+                        model.OpenChat(new ChatKey.Agent(a.DeviceId, a.Value.Pane));
+                        break;
+                    case InboxContent.Approval r:
+                        model.OpenChat(new ChatKey.Computer(r.Request.ComputerId));
+                        break;
+                    case InboxContent.Pair p:
+                        model.Go(Destination.Computers);
+                        model.Push(new Route.Pairing(p.DeviceId));
+                        break;
                 }
-                model.Go(Destination.Chat);
                 panel.showMain();
             })).Named(name).Help("Open the chat in Flux");
             System.Windows.Automation.AutomationProperties.SetItemStatus(button, item.StateWord);

@@ -338,13 +338,16 @@ public sealed record SentAnswer(string Text, string Meta, ThreadBlock? After, bo
 // question of a blocked agent with its choices, the step of a working agent
 // with Interrupt, or the end of a turn, and the composer. HerdrPlugin.Watch
 // reads the output when the status changes, and every 5 seconds while the
-// agent works. AgentDetail of the Mac app has the same parts.
+// agent works. In the chat of an agent in the main window, the header is the
+// top bar of a chat. AgentDetail of the Mac app has the same parts.
 public sealed class AgentDetail : View
 {
     // How close to the end the thread must be, in px, to follow new blocks.
     const double FollowSlack = 48;
 
     readonly AgentsWindowModel model;
+    // True in the chat of the agent in the main window.
+    readonly bool chat;
     readonly ScrollViewer scroll = new()
     {
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -380,9 +383,10 @@ public sealed class AgentDetail : View
     AgentAsk? ask;
     ChangesWindow? changes;
 
-    public AgentDetail(AgentsWindowModel model, string pane)
+    public AgentDetail(AgentsWindowModel model, string pane, bool chat = false)
     {
         this.model = model;
+        this.chat = chat;
         Pane = pane;
         controls = new ReplyControls(model, pane, this);
         taskNote = new FirstTaskNote(model, pane, controls.Fill);
@@ -529,7 +533,7 @@ public sealed class AgentDetail : View
         }
         var control = model.Herdr?.Control == true;
         root.Background = tn.Bg;
-        headerHost.Child = Header(agent, output);
+        headerHost.Child = chat ? ChatBar(agent, output) : Header(agent, output);
         // The line moves while the agent works. It stays while the status
         // and the theme stay, so that its motion does not start again.
         if (!(lineHost.Tag is (AgentStatus shownStatus, ThemeColors shownTheme) && shownStatus == agent.Status && shownTheme == tn))
@@ -575,6 +579,35 @@ public sealed class AgentDetail : View
             copy,
             refresh);
         return Ui.Box(row, 16, 12, 16, 12);
+    }
+
+    // The top bar of the chat of the agent: the picture with the state dot,
+    // the task, the agent, the project, and the computer in mono, then
+    // Changes, Keys, Copy, and Refresh.
+    UIElement ChatBar(HerdrAgent agent, HerdrOutput? output)
+    {
+        var tn = Tn.Current;
+        var title = agent.Title.Length > 0 ? agent.Title : agent.Project.Length > 0 ? agent.Project : agent.Pane;
+        var context = Texts.ContextLine(agent.Agent, agent.Project.Length > 0 ? agent.Project : agent.Workspace, model.Name);
+        var text = output?.Text ?? "";
+        var loading = output is { Loading: true, Lines.Count: > 0 };
+        var dot = agent.Status switch
+        {
+            AgentStatus.Blocked => tn.Red,
+            AgentStatus.Done => tn.Green,
+            AgentStatus.Working => null,
+            _ => tn.Dim,
+        };
+        var picture = ChatParts.Picture(AgentGlyphs.Agent, tn.Accent, tn.AccentTile, null, tn.Bg, dot, agent.Status == AgentStatus.Working)
+            .Named(agent.Status.Label());
+        var changesKey = CanReview
+            ? new FluxButton("±", ButtonKind.Text, ShowChanges).Named("Changes").Help("Show the changes of the repository (Ctrl+D)")
+            : null;
+        var copy = new FluxButton("", ButtonKind.Text, () => Clipboard.SetText(text), Icons.Copy, enabled: text.Length > 0)
+            .Named("Copy the output").Help("Copy the output");
+        UIElement refresh = loading ? Parts.Spinner(14).Margin(8, 0, 8, 0)
+            : new FluxButton("", ButtonKind.Text, Refresh, Icons.Refresh).Named("Refresh").Help("Read the output again (Ctrl+R)");
+        return ChatParts.Bar(picture, title, context, changesKey, model.Herdr?.Control == true ? KeysToggle() : null, copy, refresh);
     }
 
     // The Keys toggle of the header, with the accent while the keys show.

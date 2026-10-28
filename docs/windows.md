@@ -48,11 +48,11 @@ docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:10.0 dotnet 
 ## Pair a Windows computer
 
 1. On the Omarchy computer, run `flux-cli setup` once.
-2. Start Flux on Windows. Before the first pairing, Chat shows the pairing guide with the computers that Flux found.
+2. Start Flux on Windows. Before the first pairing, Chats shows the pairing guide with the computers that Flux found.
 3. Select the computer, then select **Pair…**. The dialog shows a key of 16 characters.
 4. Select **Send request**. Accept the request on the computer when it shows the same key.
 
-A request from the computer shows in Chat and as a notification with the key. Accept it only when both screens show the same key.
+A request from the computer shows in the list of Chats and as a notification with the key. Accept it only when both screens show the same key.
 Flux looks for computers for 10 seconds at the start and after **Search again** in Computers. A paired computer connects by itself.
 
 Windows asks once whether Flux may use the network. Allow private networks, or the computer cannot connect to Windows.
@@ -61,16 +61,16 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 
 | Feature | What Windows does |
 | --- | --- |
-| Files | Sends files to the computer from the **+** menu of Chat, a drop on Chat, the tray, or **Send to > Flux** in File Explorer. Settings > Features > Files adds Flux to the **Send to** menu. Receives files from `flux-cli send` in Downloads, with resumable transfers |
-| Text and links | Sends the text of the Chat field. A single web address opens in the browser of the computer, and other text goes on its clipboard. A link from the computer waits in a notification with **Open** |
-| Clipboard | Syncs copied text both ways. **Send** in the dock of Chat sends the clipboard at once |
+| Files | Sends files to the computer from **File** in the tray of its chat, a drop on its chat, the tray menu, or **Send to > Flux** in File Explorer. The tray of a chat also sends the newest screenshots, see [Screenshots](#screenshots). Settings > Features > Files adds Flux to the **Send to** menu. Receives files from `flux-cli send` in Downloads, with resumable transfers |
+| Text and links | Sends the text of the field of a chat. A single web address opens in the browser of the computer, and other text goes on its clipboard. A link from the computer waits in a notification with **Open** |
+| Clipboard | Syncs copied text both ways. **Send** in the clipboard row of a chat sends the clipboard at once |
 | Theme | Draws the Omarchy theme of the computer in scope. Settings has Computer, System, Light, and Dark |
 | Battery | Sends the battery of a laptop. Shows the battery of a computer in the scope menu and in Computers |
-| Notifications | Shows the notifications of `flux-cli notify` as Windows notifications |
+| Notifications | Shows the notifications of `flux-cli notify` as Windows notifications. A click on a notification opens the chat of its computer |
 | Commands | Runs the commands of the computer from Control |
 | Media | Plays, pauses, skips, seeks, and sets the volume of the players of the computer, from Control |
 | Ping | Sends a ping from the tray. A ping from the computer shows in the window |
-| herdr agents | Shows the agents of the computer in Chat, Control, and the tray panel. An agent that waits shows its choices in Chat, and a choice answers it. The agents window shows the thread of each agent, the changes, and the keys. **Start Agent** starts a coding agent in a folder of the computer |
+| herdr agents | Shows each agent as a chat in the list of Chats, and the agents in Control and the tray panel. The chat of an agent shows its thread, the question with its choices, the changes, and the keys. The agents window shows the same thread for each agent of a computer. A click on an agent notification opens the chat of the agent. **Start Agent** starts a coding agent in a folder of the computer |
 | Touchpad | Moves the pointer, clicks, scrolls, and types on the computer. A click on the pad holds the pointer, and `Ctrl+Alt` gives it back |
 | Remote desktop | Shows the screen of the computer in a window, with its sound, and takes the pointer and the keys. The Windows key goes to Hyprland while the video has the focus. The video pauses while the window is minimized and while Windows is locked |
 | Omarchy panel | Shows the workspaces, the windows, and the key bindings of Hyprland next to the remote desktop, and runs them |
@@ -80,25 +80,35 @@ Windows asks once whether Flux may use the network. Allow private networks, or t
 | Webcam | Sends a camera of this computer to the computer, where apps see **Flux Camera**. The page shows a preview and sets the shape, the resolution, the mirror, the zoom, the exposure, and the colors. **Also send the microphone** sends the microphone with the camera |
 | Screen mirror | Shows a display of this computer in a window on the computer |
 | Stream requests | `flux-cli webcam start` and `flux-cli mic start` ask Windows for a stream. A prompt shows the request while Flux is in front, else a notification. Only a click on start starts the stream |
-| Camera modes | Text, QR, Photo, Document, and Signature, as on the Mac. Open them from **Photo**, **Scan**, **Text**, and **QR** in the **+** menu of Chat, or from **Camera…** in the tray menu of a computer. See [Camera modes](#camera-modes) |
+| Camera modes | Text, QR, Photo, Document, and Signature, as on the Mac. Open them from **Camera**, **Scan**, **Text**, **QR**, and **Signature** in the tray of a chat, or from **Camera…** in the tray menu of a computer. See [Camera modes](#camera-modes) |
 | Screenshots | **Send new screenshots** sends each new screenshot of the Screenshots folder of Windows to the connected computers. See [Screenshots](#screenshots) |
-| Dictation | Each text field has a mic key: the agent replies, the touchpad and the remote desktop, the field of Chat, the scanned text, and the search of **All shortcuts**. Search fields get the words in place of the search. The touchpad and the remote desktop type the words on the computer. Other fields get them at the cursor or at the end of the text. All fields use the same language. Flux uses the online speech recognition of Windows. See [Dictation](#dictation) |
-| Clear and expand | The agent replies, the field of Chat, and the search of **All shortcuts** have a clear key while they have text. The scanned text has **Clear**. The agent replies and the field of Chat also have an expand key that opens a larger editor with **Send**. The type field of the touchpad and the remote desktop has a clear key and the draft editor with **Type**, as on the Mac. See [Type on the Mac](remote-input.md#type-on-the-mac). In an editor, `Ctrl+Enter` selects **Send** or **Type**, and `Esc` closes it |
+| Dictation | Each text field has a mic key: the agent replies, the touchpad and the remote desktop, the field of a chat, the search of Chats, the scanned text, and the search of **All shortcuts**. Search fields get the words in place of the search. The touchpad and the remote desktop type the words on the computer. Other fields get them at the cursor or at the end of the text. All fields use the same language. Flux uses the online speech recognition of Windows. See [Dictation](#dictation) |
+| Clear and expand | The agent replies, the field of a chat, the search of Chats, and the search of **All shortcuts** have a clear key while they have text. The scanned text has **Clear**. The agent replies and the field of a chat also have an expand key that opens a larger editor with **Send**. The type field of the touchpad and the remote desktop has a clear key and the draft editor with **Type**, as on the Mac. See [Type on the Mac](remote-input.md#type-on-the-mac). In an editor, `Ctrl+Enter` selects **Send** or **Type**, and `Esc` closes it |
 
 The touchpad, the remote desktop, the answers to agents, and **Start Agent** ask for Windows Hello first: a face, a fingerprint, or the Windows Hello PIN. A check stays valid for 5 minutes, and it ends when Windows locks, sleeps, or turns off the display. Without Windows Hello, these features do not open. Set up a PIN in Settings > Accounts > Sign-in options.
 
 Windows has no public interface that turns Do Not Disturb on or off, so the Windows app does not sync Do Not Disturb.
 
-## Chat and navigation
+## Chats and navigation
 
-The window has a sidebar with Chat, Control, and Computers, as the Mac app has.
-`Ctrl+1` to `Ctrl+3` open them. `Esc` and `Alt+Left` go back from a page. `Ctrl+,` opens the settings.
+The sidebar holds the list of chats, and the open chat fills the rest of the window.
+Under the list, **Control** and **Computers** open their pages, and this computer shows at the bottom.
+`Ctrl+1` opens Chats, and `Ctrl+2` and `Ctrl+3` open Control and Computers. `Ctrl+F` goes to the search of Chats. `Esc` and `Alt+Left` go back from a page. `Ctrl+,` opens the settings.
 
-- **Chat** shows 1 thread of the computers in scope, the newest entry at the bottom. The computers write on the left: pair requests, received files, and the last clip. What Windows sent shows on the right.
+The list has 1 chat for each agent and each paired computer, in 3 groups:
+
+- **Needs you**: the approval with **Deny** and **Approve**, the pair requests, and the agents that wait for input. The newest comes first.
+- **Agents**: the agents that work, then the agents that are done, then the idle agents. An agent that works shows how long it works, and an agent that waits shows how long it waits.
+- **Computers**: the paired computers, the online computers first. Each row shows the newest entry of its chat, such as "You: Dinner at 7". A computer that is not reachable shows "Offline" and the time that it went offline while Flux ran.
+
+The header of the list counts what needs you and the computers online. The **+** key next to the Flux mark starts an agent. The search keeps the chats that hold its text: an agent by its task, its agent, or its project, and a computer by its name or by an entry of its chat. `Esc` empties the search.
+
+- **The chat of a computer** shows what Windows sent on the right, and on the left the files and the last clip of the computer, its open approval, and the answers. The newest entry is at the bottom. Agents do not show in it, because each agent has its own chat. Under the thread, the clipboard row sends the clipboard of Windows, and the field sends text or a link. The **+** key opens the tray: the 4 newest screenshots, **All screenshots**, and the tools Camera, File, Scan, Text, QR, Signature, Get files, and Agent. Agent shows when the computer lets this computer start agents. A click selects a screenshot, and the send key sends the selected screenshots with the text. `Esc` closes the tray. The menu of the top bar opens Control for the computer, the agents window, and **Start Agent…**.
+- **The chat of an agent** shows its task, its agent, its project, and its computer in the top bar, with **±** for the changes, **Keys**, Copy, and Refresh. The thread and the dock are the same as in the agents window. `Ctrl+R` reads the output again, and `Ctrl+D` shows the changes.
 - **Control** shows the tools of the computers in scope, and a player dock while a computer plays media.
 - **Computers** shows this computer, the paired computers, and the computers to pair. A click on a paired computer sets the scope.
 
-The scope menu in the header picks 1 computer or all computers. The scope filters Chat and Control, and the Computer theme follows it.
+A chat puts its computer in scope. The scope menu in the header of Control and Computers picks 1 computer or all computers. The scope filters Control, and the Computer theme follows it.
 
 The tray icon is the Flux mark. It is dim while no paired computer is connected, and a red dot shows when an item needs you. A click opens a panel with the items and a menu for each online computer. The right button opens Open Flux, Settings, and Quit Flux.
 Flux keeps running in the tray after the window closes. Settings > Start > **Open at login** starts Flux in the tray when you log in.
@@ -125,7 +135,7 @@ Windows approves `sudo`, polkit, and the `hyprlock` lock screen of a paired comp
 
 Flux makes 1 key for each computer in Windows Hello, an RSA 2048 key in the TPM when the computer has one. The private key never leaves Windows Hello.
 Each request opens a prompt in front of the other windows, with the countdown, **Deny**, and **Approve**. **Approve** asks Windows Hello for each signature. `Esc` denies, and `Enter` does not approve.
-The request also shows in Chat, in the tray panel, and as a notification. **Approve** in the notification asks Windows Hello at once, and a click on the notification shows the prompt.
+The request also shows in the list of Chats, in the chat of the computer, in the tray panel, and as a notification. **Approve** in the notification asks Windows Hello at once, and a click on the notification shows the prompt.
 
 Windows Hello always takes its PIN, so the PIN can approve too. Anyone who knows the PIN can approve at this computer. Use a PIN that other people do not know.
 A computer without Windows Hello refuses each request, and PAM asks for the password.
@@ -200,6 +210,8 @@ Settings > Features > **Send new screenshots** sends each new screenshot to the 
 - A screenshot waits until a computer connects. 1 scan sends at most 50 screenshots. The rest go with the next scan, for example after the next screenshot or the next connect.
 - The computer saves each screenshot in `<photo_dir>/screenshots`.
 
+The tray of a chat shows the 4 newest screenshots of the same folder, also while the setting is off. A click selects a screenshot, and the send key sends the selected screenshots to the computer of the chat. **All screenshots** opens the folder to pick other images.
+
 The Mac app also sends new photos from the Photos library. Windows has no such photo library, so the Windows app sends only screenshots.
 
 ## Streams
@@ -273,7 +285,7 @@ To point the app at a headless `fluxd`, set these variables:
 | `windows/Flux` | The WPF app. `Features/Features.cs` lists the plugins and their views |
 | `windows/Flux/Kit` | The theme brushes, the stack panel, the buttons, and the parts of the design system |
 | `windows/Flux/Shell` | The main window, the sidebar, the header, and the scope menu |
-| `windows/Flux/Chat` | Chat: the thread, the cards, the dock, the notices, and the pairing guide |
+| `windows/Flux/Chat` | Chats: the list of chats, the chat of a computer with its cards, its dock, and its tray, the cards of the tray panel, the notices, and the pairing guide |
 | `windows/Flux/Destinations` | Control, Computers, and the pairing pages |
 | `windows/Flux/Platform` | DPAPI, toasts, the clipboard, the battery, Windows Hello, the microphone, the cameras, the screen capture, the H.264 encoder and decoder, the images and the text recognition of the camera modes, the screen region, the Screenshots folder, and other Windows parts |
 | `windows/Flux.UiTests` | Builds each page with sample computers on Windows |

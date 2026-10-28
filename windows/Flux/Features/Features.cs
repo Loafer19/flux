@@ -47,12 +47,15 @@ public static class Features
         FeatureSettings.Makers.Add(CameraFeature.CaptureSettings);
 
         ChatDock.SendText = (m, id, text) => m.Core.Plugin<SharePlugin>()?.SendText(text, id) == true;
-        ChatDock.Tools.Add(m => m.Core.Plugin<SharePlugin>() is null ? null : ("Send files", Icons.Upload, () => ShareViews.PickAndSend(m)));
-        ChatDock.Tools.Add(ControlViews.GetFilesTool);
-        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Photo, "Photo"));
+        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Photo, "Camera"));
+        ChatDock.Tools.Add((m, d) => m.Core.Plugin<SharePlugin>() is null || !d.Accepts(PacketType.Share) ? null
+            : ("File", Icons.Upload, () => ShareViews.PickAndSend(m, d.Id)));
         ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Document, "Scan"));
         ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Text, "Text"));
         ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Qr, "QR"));
+        ChatDock.Tools.Add(CameraFeature.DockTool(CameraMode.Signature, "Signature"));
+        ChatDock.Tools.Add(ControlViews.GetFilesTool);
+        ChatDock.Tools.Add(AgentsFeature.DockTool);
 
         TrayActions.Makers.Add((m, d) => m.Core.Plugin<SharePlugin>() is { } s && d.Accepts(PacketType.Share)
             ? ("Send file…", () =>
@@ -120,7 +123,7 @@ public static class Features
     // The page of a destination root.
     public static Page Root(AppModel model, Destination d) => d switch
     {
-        Destination.Chat => new ChatPage(model),
+        Destination.Chat => new ChatsPage(model),
         Destination.Control => new ControlPage(model),
         _ => new ComputersPage(model),
     };
@@ -156,9 +159,12 @@ public static class Features
             {
                 if (model.PairedDevice(id) is not null)
                 {
-                    model.SetScope(id);
+                    model.OpenChat(new ChatKey.Computer(id));
                 }
-                model.Go(Destination.Chat);
+                else
+                {
+                    model.Go(Destination.Chat);
+                }
                 model.ShowMain?.Invoke();
             };
         }

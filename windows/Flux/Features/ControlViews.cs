@@ -167,16 +167,10 @@ public static class ControlViews
 
     // Chat
 
-    // Get files in the + menu of the chat: the home folder of the computer,
-    // read-only.
-    public static (string Title, string Glyph, Action Run)? GetFilesTool(AppModel m)
-    {
-        if (m.Core.Plugin<BrowsePlugin>() is null || !(m.Paired.Count == 0 || Has(m, d => d.Accepts(PacketType.SftpRequest))))
-        {
-            return null;
-        }
-        return ("Get files", Icons.Folder, () => Run(m, d => d.Accepts(PacketType.SftpRequest), "Get files from", d => BrowseWindows.Show(m, d.Id)));
-    }
+    // Get files in the tray of the chat of a computer: the home folder of
+    // the computer, read-only.
+    public static (string Title, string Glyph, Action Run)? GetFilesTool(AppModel m, DeviceSnapshot d) =>
+        m.Core.Plugin<BrowsePlugin>() is null || !d.Accepts(PacketType.SftpRequest) ? null : ("Get files", Icons.Folder, () => BrowseWindows.Show(m, d.Id));
 
     // Tray
 

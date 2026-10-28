@@ -3,8 +3,8 @@ using FluxKit;
 
 namespace Flux;
 
-// The camera modes and the screenshots in the app: the tools of the chat
-// dock, the tray action, the setting Send new screenshots, and the end of
+// The camera modes and the screenshots in the app: the tools of the tray of
+// a chat, the tray action, the setting Send new screenshots, and the end of
 // the camera windows. ChatDock.swift, CameraSection.swift, and
 // ShareSettings.swift of the Mac app have the same parts.
 public static class CameraFeature
@@ -15,14 +15,10 @@ public static class CameraFeature
     // The computers that take what the camera makes.
     static bool Takes(DeviceSnapshot d) => d.Accepts(PacketType.Share);
 
-    // Opens the camera window for the computer that the user picks.
-    public static void Open(AppModel m, CameraMode mode) =>
-        ControlViews.Run(m, Takes, "Open the camera for", d => CameraWindows.Show(m, d, mode));
-
-    // A camera mode in the + menu of the chat. The camera window holds the
-    // other modes in its mode bar.
-    public static Func<AppModel, (string Title, string Glyph, Action Run)?> DockTool(CameraMode mode, string title) =>
-        m => m.Core.Plugin<SharePlugin>() is null ? null : (title, mode.Glyph(), () => Open(m, mode));
+    // A camera mode in the tray of the chat of a computer. The camera window
+    // holds the other modes in its mode bar.
+    public static Func<AppModel, DeviceSnapshot, (string Title, string Glyph, Action Run)?> DockTool(CameraMode mode, string title) =>
+        (m, d) => m.Core.Plugin<SharePlugin>() is null || !Takes(d) ? null : (title, mode.Glyph(), () => CameraWindows.Show(m, d, mode));
 
     // Camera… in the menu of a computer in the tray. It opens the mode that
     // opened last.

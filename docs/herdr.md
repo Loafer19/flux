@@ -57,7 +57,7 @@ Each app also shows the Git changes of the agent.
 See [Agent diff review](workflows.md#agent-diff-review).
 
 1. Start herdr on the computer.
-2. Open Flux for Android. Each agent has a chat in **Chats**. An agent that waits for input is on top, under **Needs you**.
+2. Open Flux for Android or Flux for iOS. Each agent has a chat in **Chats**. An agent that waits for input is on top, under **Needs you**.
 3. Select an agent to open its chat.
 4. To see the agents and the terminals of 1 computer, open **Control** and select **Agents and terminals**.
 

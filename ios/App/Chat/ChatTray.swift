@@ -61,7 +61,18 @@ struct ChatTray: View {
                     .accessibilityHint("Opens the photo picker")
             }
             .padding(.horizontal, 4)
-            if !readable {
+            if model.demo {
+                // The demo for App Review and screenshots does not read the photo library of the device.
+                HStack(spacing: 6) {
+                    ForEach(0..<recentCount, id: \.self) { _ in
+                        Stripes()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 80)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(tn.line, lineWidth: 1))
+                    }
+                }
+            } else if !readable {
                 accessRow
             } else if recent.isEmpty {
                 Text("No photos on this iPhone yet.")
@@ -88,7 +99,9 @@ struct ChatTray: View {
         .padding(.top, 2)
         // The tray reads the newest photos each time it opens and after a new access.
         .task(id: readable) {
-            recent = readable ? RecentPhotos.newest(recentCount) : []
+            recent = readable && !model.demo ? RecentPhotos.newest(recentCount) : []
+            // A picked photo that the tray no longer shows cannot be taken out, so it leaves the selection.
+            picked.removeAll { id in !recent.contains { $0.localIdentifier == id } }
         }
         // The user can change the access in the Settings app.
         .onChange(of: scenePhase) { _, phase in

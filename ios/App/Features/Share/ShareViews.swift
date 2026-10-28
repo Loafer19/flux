@@ -145,18 +145,27 @@ enum Outbox {
         return dir
     }
 
-    /// Writes the original of the library photo with the local ID `id` into
-    /// a new folder of the outbox. A photo that only iCloud has downloads
-    /// first. A failure removes the folder.
+    /// Writes the library photo with the local ID `id` into a new folder of
+    /// the outbox. An edited photo goes with its edits, as the tray shows
+    /// it, so that a crop does not send the part that the user cut. It
+    /// keeps the name of the original. A photo that only iCloud has
+    /// downloads first. A failure removes the folder.
     static func export(asset id: String) async throws -> URL {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else {
             throw CocoaError(.fileNoSuchFile)
         }
         let resources = PHAssetResource.assetResources(for: asset)
-        guard let resource = resources.first(where: { $0.type == .photo }) ?? resources.first else {
+        let original = resources.first(where: { $0.type == .photo })
+        guard let resource = resources.first(where: { $0.type == .fullSizePhoto }) ?? original ?? resources.first else {
             throw CocoaError(.fileNoSuchFile)
         }
-        let target = try newFolder().appendingPathComponent(ShareWire.safeName(resource.originalFilename))
+        // The render of an edit is often named FullSizeRender.jpg. The name of the original goes with its extension.
+        var name = resource.originalFilename
+        if resource.type == .fullSizePhoto, let base = original?.originalFilename {
+            let ext = (resource.originalFilename as NSString).pathExtension
+            name = ((base as NSString).deletingPathExtension as NSString).appendingPathExtension(ext.isEmpty ? "jpg" : ext) ?? base
+        }
+        let target = try newFolder().appendingPathComponent(ShareWire.safeName(name))
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
         do {

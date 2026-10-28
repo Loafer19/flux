@@ -164,11 +164,11 @@ enum DemoMode {
         ]
     }
 
-    /// The time that the sample desktop went offline: 09:12 today. The
-    /// laptop is online, so it has none.
+    /// The time that the sample desktop went offline: the last 09:12, today
+    /// or yesterday. The laptop is online, so it has none.
     static func lastSeen(_ id: String, now: Date = Date()) -> Date? {
-        guard id == computers[1].id else { return nil }
-        return Calendar.current.date(bySettingHour: 9, minute: 12, second: 0, of: now)
+        guard id == computers[1].id, let today = Calendar.current.date(bySettingHour: 9, minute: 12, second: 0, of: now) else { return nil }
+        return today > now ? Calendar.current.date(byAdding: .day, value: -1, to: today) : today
     }
 
     /// The sample files of the chat: a photo that went out 28 minutes ago,

@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -272,7 +273,7 @@ internal fun rememberThumbnail(uri: String, px: Int): ImageBitmap? {
     val picture by produceState(thumbnails.get(key), key) {
         if (value != null || uri.isEmpty()) return@produceState
         value = withContext(Dispatchers.IO) {
-            runCatching { context.contentResolver.loadThumbnail(Uri.parse(uri), Size(px, px), null).asImageBitmap() }.getOrNull()
+            runCatching { context.contentResolver.loadThumbnail(uri.toUri(), Size(px, px), null).asImageBitmap() }.getOrNull()
         }?.also { thumbnails.put(key, it) }
     }
     return picture

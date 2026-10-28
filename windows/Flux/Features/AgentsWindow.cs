@@ -48,15 +48,21 @@ public static class AgentsWindows
     // The open windows by device ID. Tests read it.
     internal static IReadOnlyDictionary<string, AgentsWindow> Open => Windows;
 
+    // True while the agents window of the computer deviceId is open.
+    public static bool IsOpen(string deviceId) => Windows.ContainsKey(deviceId);
+
     // Shows the agents window of a computer, and opens it when it is not
     // open. pane selects that agent. startAgent opens the dialog that starts
-    // an agent.
+    // an agent. herdr keeps 1 output of each computer, so an agent chat of
+    // the same computer in the main window gives its place to the chat of
+    // the computer.
     public static void Show(AppModel app, string deviceId, string? pane = null, bool startAgent = false)
     {
         if (app.Core.Plugin<HerdrPlugin>() is not { } plugin)
         {
             return;
         }
+        app.YieldAgentChat(deviceId);
         // The list shows the session of the agent.
         if (pane is not null)
         {

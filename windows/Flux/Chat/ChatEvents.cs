@@ -35,15 +35,32 @@ public sealed partial class AppModel
             : Paired.OrderByDescending(d => d.Online).Select(d => (ChatKey)new ChatKey.Computer(d.Id)).FirstOrDefault();
 
     // Opens a chat in the detail column of Chats. The computer of the chat
-    // takes the scope, so that the theme and Control follow it.
+    // takes the scope, so that the theme and Control follow it. herdr keeps
+    // 1 output of each computer, so while the agents window of the computer
+    // is open, its agents show there.
     public void OpenChat(ChatKey key)
     {
+        if (key is ChatKey.Agent agent && AgentsWindows.IsOpen(agent.DeviceId))
+        {
+            AgentsWindows.Show(this, agent.DeviceId, agent.Pane);
+            return;
+        }
         Chat = key;
         if (PairedDevice(key.DeviceId) is not null)
         {
             Scope = key.DeviceId;
         }
         Go(Destination.Chat);
+    }
+
+    // Shows the chat of the computer in the place of an agent chat of the
+    // same computer, when its agents window opens. See OpenChat.
+    internal void YieldAgentChat(string deviceId)
+    {
+        if (chat is ChatKey.Agent a && a.DeviceId == deviceId)
+        {
+            Chat = new ChatKey.Computer(deviceId);
+        }
     }
 
     // The time that the paired computer went offline while Flux ran, or null.

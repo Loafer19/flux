@@ -188,8 +188,8 @@ object DebugDemo {
                     lines = termLines(agentOutput ?: demoOutput),
                 ),
             ),
-            // The sample desk computer was last seen at 09:12 today.
-            device(OFFLINE, "omarchy-desk", "desktop", "192.168.2.40", paired = true, online = false).copy(lastSeen = todayAt(9, 12)),
+            // The sample desk computer was last seen at the last 09:12, today or yesterday.
+            device(OFFLINE, "omarchy-desk", "desktop", "192.168.2.40", paired = true, online = false).copy(lastSeen = lastAt(9, 12)),
             device(NEW, "framework-13", "laptop", "192.168.2.77", paired = false, online = true),
         )
     }
@@ -231,13 +231,17 @@ object DebugDemo {
         return BrowseSearch(0, query.trim(), path, loading = false, results = results)
     }
 
-    /** The time [hour]:[minute] today in milliseconds since the epoch. */
-    private fun todayAt(hour: Int, minute: Int): Long = java.util.Calendar.getInstance().apply {
-        set(java.util.Calendar.HOUR_OF_DAY, hour)
-        set(java.util.Calendar.MINUTE, minute)
-        set(java.util.Calendar.SECOND, 0)
-        set(java.util.Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    /** The last time [hour]:[minute], today or yesterday, in milliseconds since the epoch. */
+    private fun lastAt(hour: Int, minute: Int): Long {
+        val c = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, hour)
+            set(java.util.Calendar.MINUTE, minute)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        if (c.timeInMillis > System.currentTimeMillis()) c.add(java.util.Calendar.DAY_OF_YEAR, -1)
+        return c.timeInMillis
+    }
 
     private fun device(id: String, name: String, type: String, ip: String, paired: Boolean, online: Boolean) = DeviceUi(
         id = id, name = name, type = type, ip = ip, paired = paired, online = online,

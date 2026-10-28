@@ -181,8 +181,11 @@ fun FluxShell(
         }
     }
 
-    // In a split window, a chat takes the place of the chat at the side.
-    fun open(r: Route) = go(if (split && isChatPage(r) && (current.stack.isEmpty() || sideChat(current.dest))) current.select(Tab.Chat).push(r) else current.push(r))
+    // In a split window, a chat from Chats takes the place of the chat at the side.
+    // A chat from another destination opens above that destination, so Back goes there.
+    fun open(r: Route) = go(
+        if (split && isChatPage(r) && current.tab == Tab.Chat && (current.stack.isEmpty() || sideChat(current.dest))) Nav(Tab.Chat, listOf(r)) else current.push(r),
+    )
     val toComputers = { go(Nav(Tab.Computers)) }
     val toSync = { open(Route(null, SYNC_PAGE)) }
     val toAbout = { open(Route(null, ABOUT_PAGE)) }

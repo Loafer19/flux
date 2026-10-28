@@ -114,19 +114,23 @@ Press `o` to open **Chat** with the newest clipboard entry in the field, when th
 The phone shows the link in a notification. A tap on the notification opens the link in the browser.
 Other text goes to the clipboard of the phone.
 
-To show a web page on the desktop, type the link in the field at the bottom of **Chat** in Flux for Android, then tap the send key.
+To show a web page on the desktop, open the chat of the computer in **Chats** in Flux for Android, type the link in the field at the bottom, then tap the send key.
 The desktop opens a link that starts with `http://` or `https://` in its browser. Other text goes to the clipboard of the desktop.
 The field of the desktop window adds `https://` to a host name without a scheme, for example `omarchy.org/flux`.
 
-**Chat** shows what the phone sent in this session as a thread: links, text, clips, and files.
-The desktop writes in the same thread: received files with their progress, the last clip, herdr agents, sudo approvals, and pair requests.
-An agent that waits shows its choices in the thread, and an approval shows **Approve** and **Deny**.
-Flux keeps the thread in memory only, with at most 400 characters of each text.
-The dock under the thread shows the phone clipboard with **Send**, and a field for text or a link with a mic key and **Send**.
-On Android, the **+** key at the left of the field opens a menu over the chat: **Send files**, **Get files**, **Photo**, **Scan**, **Text**, and **QR**, and under them **Control** and **Computers**.
-Chat has no navigation bar, so this menu and a swipe to the side lead to the other screens. 3 dots under the status bar show the screen on Chat, Control, and Computers, and they follow a swipe, and the phone ticks at each new screen. The first time Chat opens, it moves a little to the side and back to show the swipe.
-Tap **+**, then tap an item. Or hold **+**, slide the thumb to an item, and release it there. A release on no item keeps the menu open.
-A tap on the field hides the **+** key, so the field takes its width and grows to 6 lines. The expand key in the field opens the large editor.
+**Chats** is the home of the app. It holds 1 chat for each herdr agent and 1 chat for each paired computer.
+What needs you is on top, under **Needs you**: a sudo approval with **Deny** and **Approve**, a pair request, and each agent that waits for input.
+The other agents and the computers follow. The search field keeps only the chats that hold its text, for example the name of a received file.
+The **+** key at the top starts an agent or a terminal on a computer that allows it.
+
+The chat of a computer shows what the phone sent in this session: links, text, clips, photos, and files.
+The computer writes in the same chat: received files with their progress, the last clip, and sudo approvals.
+Flux keeps the chat in memory only, with at most 400 characters of each text.
+The dock under the chat shows the phone clipboard with **Send**, and a field for text or a link with a mic key and a send key.
+The **+** key at the left of the field opens the tray: the 4 newest photos of the phone, **All photos**, and the tools **Camera**, **File**, **Scan**, **Text**, **QR**, **Signature**, and **Get files**. **Agent** shows when the computer lets the phone start agents.
+To send photos, tap them in the tray, then tap the send key. The key shows the number of photos.
+A tap on the field closes the tray and hides the **+** key, so the field takes its width and grows to 6 lines. The expand key in the field opens the large editor.
+The chat of an agent shows its output as a thread, and its question and choices in the dock. See [herdr agents](herdr.md#see-your-agents).
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).
 The tunnel carries SSH traffic without an inbound SSH firewall rule.
 
@@ -451,7 +455,7 @@ See [camera and streams](camera.md) for direct capture and live media.
 
 ## herdr agents
 
-When [herdr](https://herdr.dev) runs on the computer, an agent that waits for input shows its choices in **Chat**. To see all agents and terminals, open **Control**.
+When [herdr](https://herdr.dev) runs on the computer, each agent has a chat in **Chats**. An agent that waits for input is on top, under **Needs you**. Open its chat to answer. To see the agents and terminals of 1 computer, open **Control**.
 The phone shows the status and the colored output of each coding agent, and posts a notification when an agent needs input or finishes.
 
 To answer agents from the phone, set:

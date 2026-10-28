@@ -211,7 +211,7 @@ components:
 
 **Creative North Star: "The Thread of What Needs You"**
 
-Flux for Android looks like the user's own Omarchy desktop. Tiles sit on the page with Hyprland gaps. **Chat** shows what happens between the phone and the computers as 1 thread, with the newest entry at the bottom. A card that needs the user takes the full width and a red border, and it holds its whole action. Flux for iOS and Flux for macOS show the same chat.
+Flux for Android looks like the user's own Omarchy desktop. Tiles sit on the page with Hyprland gaps. **Chats** holds 1 chat for each agent and each computer, with what needs the user on top. The chat of a computer shows what happens between the phone and that computer as 1 thread, with the newest entry at the bottom. A card that needs the user takes the full width and a red border, and it holds its whole action. Flux for iOS, Flux for macOS, and Flux for Windows show the same chats.
 
 The app has no palette of its own. The colors come from the live Omarchy theme of the computer in scope, through a contrast guard. Tokyo Night is the fallback when no computer sent a theme. The token values in this file are the Tokyo Night reference set. The roles are the system, and the values change with the theme.
 
@@ -328,20 +328,20 @@ All text grows with the Android font size. Layouts hold at 200%. A key label shr
 
 ## Layout
 
-Each app shows **Chat** as its first destination.
+Each app shows **Chats** as its first destination.
 
 - **Gaps and gutter:** Tiles keep an 8 dp gap. The screen gutter is 10 dp. The shell top bar starts 5 dp further in, to align the Flux mark.
-- **Phone in portrait:** **Chat** is 1 thread with the newest entry at the bottom, and the dock under it. Cards of a computer sit on the left at 88% of the width. A card that needs the user takes the full width. What the phone sent sits on the right.
-- **Wide window, 600 dp and more:** A navigation rail replaces the navigation bar. The dock of each screen becomes a tile at the bottom of a column on the right, at thumb height. The thumb menu opens above the dock and takes its width. **Live** keeps the dock in that column, and the terminal takes the full height. The arrow of **Waiting for you** points to the dock at the side.
-- **Short window:** The dock of **Chat** takes at most 70% of the height, and it scrolls inside that part.
-- **Content width:** Screens other than **Chat** scroll in `CappedScrollColumn`. The content is at most 840 dp wide and stays in the center.
-- **Destinations:** Chat, Control, and Computers. Control opens with 1 master tool, then groups of tool rows under section labels. In Control, the agent rows come right after the master tool, because the user needs them most often.
-- **Order:** **Chat** puts its entries in time order, see `chatItems` in `core/ChatFeed.kt`. An agent takes the start time of its status, so an agent with a new status moves to the end.
+- **Phone in portrait:** **Chats** is a list. The chat of a computer is 1 thread with the newest entry at the bottom, and the dock under it. Cards of a computer sit on the left at 88% of the width. A card that needs the user takes the full width. What the phone sent sits on the right.
+- **Wide window, 600 dp and more:** A navigation rail replaces the navigation bar. The dock of each screen becomes a tile at the bottom of a column on the right, at thumb height. The tray of a chat opens in the dock tile. **Live** keeps the dock in that column, and the terminal takes the full height. The arrow of **Waiting for you** points to the dock at the side.
+- **Short window:** The dock of a chat takes at most 70% of the height, and it scrolls inside that part.
+- **Content width:** Screens other than the chats scroll in `CappedScrollColumn`. The content is at most 840 dp wide and stays in the center.
+- **Destinations:** Chats, Control, and Computers. Control opens with 1 master tool, then groups of tool rows under section labels. In Control, the agent rows come right after the master tool, because the user needs them most often.
+- **Order:** **Chats** puts what needs the user first, the newest first, then the agents that work, are done, and are idle, then the computers, online first. See `chatList` in `core/ChatList.kt`. The chat of a computer puts its entries in time order, see `chatItems` in `core/ChatFeed.kt`.
 - **Targets:** Every control takes taps on at least 48 by 48 dp.
 
 ## Elevation & Depth
 
-The system is flat. Tiles have no shadows. Depth comes from 4 tonal surface steps, `bg`, `off-tile`, `tile`, and `tile-hi`, and from 1 dp borders in `line`. In a dark theme, the tiles are lighter steps of the page. In a light theme, they are darker steps. The only emphasis beyond tone is the 2 dp red border of a **Chat** card that needs the user, and the 2 dp active border gradient of the pairing guide.
+The system is flat. Tiles have no shadows. Depth comes from 4 tonal surface steps, `bg`, `off-tile`, `tile`, and `tile-hi`, and from 1 dp borders in `line`. In a dark theme, the tiles are lighter steps of the page. In a light theme, they are darker steps. The only emphasis beyond tone is the 2 dp red border of a card that needs the user, and the 2 dp active border gradient of the pairing guide.
 
 ### Named Rules
 
@@ -390,29 +390,42 @@ A pressed tile changes its border to the accent. A selected choice changes its b
 
 ### Navigation
 
-- **Bar:** A 66 dp bar on `bg` in a compact window, with 3 destinations: Chat, Control, and Computers. Each has a 22 dp icon in a 56 by 30 dp pill, and a 12 sp label. The pill of the open destination takes `line`, and its label is 600 in `text`. The Chat pill shows a red badge with the number of items that need the user, up to "9+". Each destination ends with a dock, so the bar has no fade. Chat hides the bar, so its thread and its dock take the height. A swipe to the side moves between the 3 destinations, and the bar shows again as a swipe leaves Chat. 3 dots in a strip under the status bar show the destination, in the same place on all 3: 6 dp dots in `dim`, and an 18 dp pill in `accent` for the one on screen. They follow the swipe. A swipe into a new destination ticks the phone. The first time, Chat slides 72 dp to the side and back.
+- **Bar:** A 66 dp bar on `bg` in a compact window, with 3 destinations: Chats, Control, and Computers. Each has a 22 dp icon in a 56 by 30 dp pill, and a 12 sp label. The pill of the open destination takes `line`, and its label is 600 in `text`. The Chats pill shows a red badge with the number of items that need the user, up to "9+". The bar shows on each destination. A swipe to the side also moves between the 3 destinations. The chat of a computer or an agent is a feature screen above Chats, so it has no bar.
 - **Rail:** The Material 3 navigation rail in a window of 600 dp and more, with the same destinations.
-- **Top bar:** A destination shows the Flux mark, its title, and a mono context line. **Chat** ends the row with a 36 dp scope chip. A feature screen shows a 40 dp back button, the title, and an optional mono context line. When the actions leave the title too little width, they move to a second row. The agent screen has its own top bar, see Agent screen.
+- **Top bar:** A destination shows the Flux mark, its title, and a mono context line. **Chats** ends the row with the 48 dp **+** key. A feature screen shows a 40 dp back button, the title, and an optional mono context line. When the actions leave the title too little width, they move to a second row. A chat has its own top bar, see Chat.
 - **Motion:** Destinations fade through in 240 ms. A feature screen moves on the horizontal axis in 220 ms. Predictive back follows the gesture.
+
+### Chats
+
+The signature component: 1 chat for each agent and each computer, as in a messaging app.
+
+- **Header:** The Flux mark, Chats in 16 sp 600, the count of what needs the user and the computers online in mono 11 sp, and the 48 dp **+** key that starts an agent or a terminal.
+- **Search:** A 44 dp pill on `tile` with a `line` border, a 20 dp search icon in `sub`, and the placeholder "Search agents, computers, files". It keeps only the chats that hold its text. A computer also stays when an entry of its chat holds it.
+- **Groups:** Needs you, Agents, and Computers, each with a 14 sp 500 heading and a mono 11 sp line at the end: the count in red, or the computer of the agents.
+- **Row:** A 44 dp picture with 12 dp corners, the title in 15 sp 600 on 1 line, the line under it in 12 or 13 sp, and the time in mono 11 sp `sub` at the end. The picture is `tile` with a `line` border and a 22 dp icon. A 12 dp dot at its bottom right, with a 2 dp ring of the ground, shows the state: green for online or done, red for needs input, and `dim` for idle. An agent that works shows a turning ring in the place of the dot.
+- **Agent row:** The task as the title, then the window title: the state word in the state color and " · agent · project" in mono `sub`. An agent that waits takes `tile`, a 1 dp red border, and an `accent-tile` picture, and shows how long it waits, such as "3m". An agent that works shows how long it works, such as "2:14".
+- **Computer row:** The name, and the newest entry of its chat, such as "You: Dinner at 7". A computer that is not reachable shows at 55% with "Offline · last seen 09:12".
+- **Approval and pair request:** A card on `tile` with 12 dp corners and a 2 dp red border, with Deny and Approve, 44 dp high. Approve opens the approval screen.
 
 ### Chat
 
-The signature component: 1 thread of the computers and the device.
+The chat of 1 computer: 1 thread of the computer and the device.
 
-- **Header:** The Flux mark, Chat in 16 sp 600, the computer in scope and the count of what needs the user in mono 11 sp, and the scope chip.
-- **Progress:** A 2 dp `line` rule under the header. A file that comes in or goes out fills it in the accent.
+- **Top bar:** A 48 dp back icon, a 36 dp picture with 10 dp corners and an 11 dp state dot, the name in 16 sp 600, the link and battery in mono 11 sp, and the menu: Control, Agents and terminals, and New agent or terminal.
+- **Progress:** A 2 dp `line` rule under the top bar. A file that comes in or goes out fills it in the accent.
 - **Card of a computer:** `tile` with 14 dp corners and a 4 dp corner at the bottom left. The top row holds the state mark and word, the source in mono, and the time. A 14 sp 600 title, a mono 12 sp body in `sub`, and a 13 sp accent text action follow.
-- **Card that needs the user:** An agent that waits, an approval, and a pair request take the full width and a 2 dp red border. An agent shows its command and its numbered choices, each 44 dp high. An approval shows Deny and Approve, 48 dp high. Approve opens the approval screen.
-- **What the phone sent:** A bubble on `accent-tile` with a `line-hi` border, 16 dp corners, and a 4 dp corner at the bottom right, at most 82% of the width. A file is a 236 dp card.
-- **Dock:** The phone clipboard in a 44 dp row with a Send key of an icon and a 13 sp label, and the composer: a 48 dp round **+** key in `line`, the field, the 48 dp mic key, and the 48 dp send key. **+** opens the thumb menu: a card on `bg` with a `line-hi` border and 20 dp corners, 10 dp above the key, over a scrim. It holds the 6 tools as 72 dp tiles, 3 in a row, and under them Control and Computers as 56 dp tiles, 2 in a row, nearest the thumb. A tap opens the menu. A hold opens it at once: the tile under the thumb takes `accent-tile`, an accent border, and 105% scale, with a tick of the phone, and the release opens it. While the field has the focus, **+** hides and the field grows to 6 lines with an accent border. While the phone listens, the panel of the dictation takes the full width. A choice such as "No, and tell Codex what to do differently" turns the dock into a reply: a row with Cancel, and the composer with an accent border and no **+**.
+- **Card that needs the user:** An approval takes the full width and a 2 dp red border. It shows Deny and Approve, 48 dp high. Approve opens the approval screen.
+- **What the phone sent:** A bubble on `accent-tile` with a `line-hi` border, 16 dp corners, and a 4 dp corner at the bottom right, at most 82% of the width. Text is in 14 sp. A link or a clip is in mono 12.5 sp. A photo is a 220 by 132 dp picture with the same corners. Another file is a 236 dp card.
+- **Dock:** The phone clipboard in a 40 dp row on `bg` with 10 dp corners: an 18 dp cyan clipboard icon, the source in 10 sp cyan, the clip in mono 12 sp, and Send as a 13 sp accent text action. Then the composer: a 48 dp round **+** key in `line`, the field, the 48 dp mic key, and the 48 dp send key. The send key shows the number of selected photos in an 18 dp `text` circle.
+- **Tray:** **+** opens the tray under the composer, and turns into an accent key with a cross. The tray holds Recent photos with All photos, the 4 newest photos as 80 dp cells with 10 dp corners, and the tools as 64 dp cells on `bg` with a `line` border, 4 in a row. A selected photo takes a 2 dp accent border and its number in a 20 dp accent circle. The tray and the keyboard take the same place, so 1 closes the other. Back closes the tray.
+- **Field:** While the field has the focus, **+** hides and the field grows to 6 lines with an accent border. While the phone listens, the panel of the dictation takes the full width.
 
 ### Agent screen
 
 The agent screen shows 1 herdr agent as a thread. `agentThread` in `core/AgentThread.kt` reads the output of Claude Code, Codex, and opencode. Lines that it does not know stay terminal lines.
 
-- **Top bar:** A 48 dp back icon, the task in 16 sp 600, and the agent, the pane, and the computer in mono 11 sp. Live is a 36 dp pill. The menu holds Refresh, Changes, Show keys, and Close the agent.
-- **Strip:** 36 dp pills for the agents of the computer, each with a status mark, the project, and the agent in mono. The pill on screen takes `accent-tile` and an accent border.
-- **Progress:** A 2 dp `line` rule under the strip. While the agent works, a bar of 40% of the width slides over it in the accent.
+- **Top bar:** The top bar of a chat: a 48 dp back icon, a 36 dp picture on `accent-tile` with the state dot, the task in 16 sp 600, and the agent, the project, and the computer in mono 11 sp. Live is a 36 dp pill. The Changes key is a 48 dp icon. The menu holds Refresh, Show keys, and Close the agent.
+- **Progress:** A 2 dp `line` rule under the top bar. While the agent works, a bar of 40% of the width slides over it in the accent.
 - **Thread:** Messages, tool calls on `off-tile` with a 12 dp corner, a changes card on `tile`, and prompts as bubbles on `accent-tile`. A tap on a tool call shows its result.
 - **Dock:** `tile` with 20 dp top corners and a `line` rule at the top. It lies 14 dp over the end of the thread. It shows the question with 48 dp choices, the step of a working agent with Interrupt, or the end of a turn. The composer is a 48 dp pill on `bg` with a `line-hi` border, a round mic key on `line`, and a round accent send key.
 - **Changes sheet:** `tile` with 20 dp top corners. Each file is a card on `bg` with its diff lines in mono 11 sp: hunks in cyan, added lines in green, and removed lines in red.

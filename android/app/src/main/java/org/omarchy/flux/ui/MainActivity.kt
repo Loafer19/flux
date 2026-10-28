@@ -25,12 +25,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -368,7 +368,7 @@ fun FluxRoot(activity: MainActivity) {
     val notify by activity.notifyAsk.collectAsStateWithLifecycle()
     val wide = rememberWideWindow()
 
-    // A new pairing opens the chat of the new computer, with a short success state on top.
+    // A new pairing opens the chat of the new computer, with a short success state in it.
     // The state of the computer can come after the event, so the effect waits for it.
     val newPairing by FluxCore.newPairing.collectAsStateWithLifecycle()
     var welcome by rememberSaveable { mutableStateOf<String?>(null) }
@@ -378,7 +378,7 @@ fun FluxRoot(activity: MainActivity) {
         FluxCore.takeNewPairing(id)
         welcome = id
         scope = id
-        nav = Nav()
+        nav = Nav.chat(id)
     }
     // After the first pairing, the success state tells why Flux needs notifications.
     // Android asks 1 second later, so that the user reads the reason before the dialog covers the screen.

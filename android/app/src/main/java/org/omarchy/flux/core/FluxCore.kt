@@ -385,6 +385,7 @@ object FluxCore {
             // no longer arrive, so a reconnect could never open a stream.
             if (!terminalSurvivesLinkChange(link, null)) d.herdrTerminal = null
             d.link = null
+            d.lastSeen = System.currentTimeMillis()
             d.dropPairing()
             if (!d.paired) devices.remove(d.id)
         }

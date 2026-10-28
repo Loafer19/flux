@@ -57,15 +57,14 @@ Each app also shows the Git changes of the agent.
 See [Agent diff review](workflows.md#agent-diff-review).
 
 1. Start herdr on the computer.
-2. Open Flux for Android. An agent that waits for input shows in **Chat**, with its question and its choices.
-3. To see all agents, open **Control** and select **Agents and terminals**.
-4. Select an agent to read its recent output.
+2. Open Flux for Android. Each agent has a chat in **Chats**. An agent that waits for input is on top, under **Needs you**.
+3. Select an agent to open its chat.
+4. To see the agents and the terminals of 1 computer, open **Control** and select **Agents and terminals**.
 
 The agent screen of Flux for Android and Flux for iOS has these parts:
 
-- The top bar shows the task, the agent, the pane, and the computer. Its menu has **Refresh**, **Changes**, **Show keys**, and **Close the agent**.
-- A row of pills shows the agents of the computer. Select a pill to open that agent.
-- A thin bar moves under the pills while the agent works.
+- The top bar shows the agent with a dot for its status, the task, and the agent, the project, and the computer. The **Changes** key opens the changes. The menu has **Refresh**, **Show keys**, and **Close the agent**.
+- A thin bar moves under the top bar while the agent works.
 - The thread shows the messages of the agent, its tool calls, the files that it changed, and your prompts. Select a tool call to show its result. Flux reads the transcripts of Claude Code, Codex, and opencode. Lines that it cannot read show as terminal lines.
 - The dock at the bottom shows the question and the choices of a blocked agent, the step of a working agent with **Interrupt**, or the end of a finished turn. The text field and the mic key are under it.
 

@@ -64,7 +64,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,45 +90,24 @@ import org.omarchy.flux.core.ApproveRequest
 import org.omarchy.flux.core.DeviceUi
 import org.omarchy.flux.core.FluxCore
 import org.omarchy.flux.core.UiState
-import org.omarchy.flux.core.inScope
 import org.omarchy.flux.core.inboxReach
 import org.omarchy.flux.core.needsYou
 import org.omarchy.flux.mic.MicScreen
 import org.omarchy.flux.stream.LiveStreams
 import org.omarchy.flux.webcam.WebcamScreen
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import kotlinx.coroutines.flow.drop
-import org.omarchy.flux.core.Settings
-import kotlinx.coroutines.delay
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.animation.core.spring
-import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.foundation.pager.PagerState
-import kotlin.math.abs
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.graphics.lerp as lerpColor
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.getValue
 
 /**
  * The app structure: the destinations with the navigation bar at the
- * bottom, and the feature screens above a
- * destination. A wide window shows a navigation rail at the side. A swipe
- * moves between the destinations, and a tap on the bar moves to one. Chat
- * hides the bar, so its thread and its dock take the height. A feature
- * screen moves in and out on the horizontal axis with the bars of the
- * destination. System Back follows the predictive back gesture. The Remove
- * animations setting turns the motion off.
+ * bottom, and the feature screens above a destination, such as the chat of
+ * 1 computer or 1 agent. A wide window shows a navigation rail at the side.
+ * A swipe moves between the destinations, and a tap on the bar moves to
+ * one. A feature screen moves in and out on the horizontal axis with the
+ * bars of the destination. System Back follows the predictive back
+ * gesture. The Remove animations setting turns the motion off.
  */
 @OptIn(ExperimentalTransitionApi::class)
 @Composable
@@ -153,30 +131,28 @@ fun FluxShell(
     val current by rememberUpdatedState(nav)
     val go by rememberUpdatedState(onNav)
 
-    // The agents, the approval, and the pair requests of the chat.
-    // The badge counts the items of all computers, so that the scope hides nothing that needs the user.
+    // The agents, the approval, and the pair requests of all computers. The badge counts what needs the user.
     val all = rememberChatEvents(state)
-    val items = remember(all, scope) { all.inScope(scope) }
     val needs = all.needsYou()
-    val reach = remember(scope, state.devices) { inboxReach(scope, state.devices) }
     val live by LiveStreams.live.collectAsStateWithLifecycle()
-    val streams = remember(live, state.devices) {
-        live.map { s -> StreamNotice(s, state.devices.firstOrNull { it.id == s.deviceId }?.name ?: "the computer") }
+    // The notices of the list of chats are about all computers. The chat of 1 computer has the notices of that computer.
+    fun notices(computer: String?): InboxNotices {
+        val reach = inboxReach(computer, state.devices)
+        return InboxNotices(
+            reach = reach,
+            onWifi = state.onWifi,
+            scopeName = state.devices.firstOrNull { it.paired && it.id == computer }?.name,
+            elsewhere = 0,
+            notify = if (computer == null) notify else NotifyAsk.None,
+            // The success state of a new pairing shows in the chat of that computer.
+            paired = state.devices.firstOrNull { it.paired && it.id == welcome && (computer == null || it.id == computer) }?.name,
+            // A sample computer of the demo never connects, so it does not wait. The debug page @connecting is the exception.
+            connecting = state.connecting && reach.offline.any { !isDemo(it.id) || org.omarchy.flux.core.DebugInbox.connecting },
+            streams = live.filter { computer == null || it.deviceId == computer }
+                .map { s -> StreamNotice(s, state.devices.firstOrNull { it.id == s.deviceId }?.name ?: "the computer") },
+        )
     }
-    val notices = InboxNotices(
-        reach = reach,
-        onWifi = state.onWifi,
-        scopeName = state.devices.firstOrNull { it.paired && it.id == scope }?.name,
-        elsewhere = needs - items.needsYou(),
-        notify = notify,
-        // The success state of a new pairing shows only in the scope of that computer.
-        paired = state.devices.firstOrNull { it.paired && it.id == welcome && it.id == scope }?.name,
-        // A sample computer of the demo never connects, so it does not wait. The debug page @connecting is the exception.
-        connecting = state.connecting && reach.offline.any { !isDemo(it.id) || org.omarchy.flux.core.DebugInbox.connecting },
-        streams = streams,
-    )
     val picker = rememberTargetPicker()
-    val tools = rememberSendTools(state.devices, scope, picker)
 
     val dest = nav.dest
     val seek = remember { SeekableTransitionState(dest) }
@@ -213,9 +189,13 @@ fun FluxShell(
         }
     }
     val actions = ChatActions(
-        open = ::open, approve = approve, showPair = onShowPair, pair = onPair, tools = tools,
+        open = ::open, approve = approve, showPair = onShowPair, pair = onPair,
         showAll = { onScope(null) }, allowNotifications = onNotify, hideNotifications = onNotifyHide,
         go = { t -> go(current.select(t)) },
+        control = { id ->
+            onScope(id)
+            go(Nav(Tab.Control))
+        },
     )
     val select = { t: Tab -> go(current.select(t)) }
 
@@ -229,7 +209,9 @@ fun FluxShell(
             val settled = transition.settledVisible()
             if (detail != null) {
                 Box(Modifier.fillMaxSize().systemBarsPadding()) {
-                    DetailScreen(detail.route, state, current = { current }, go = { go(it) })
+                    DetailScreen(detail.route, state, current = { current }, go = { go(it) }) { d, pop ->
+                        ComputerChatScreen(state, d, all, settled, notices(d.id), actions, onBack = pop, tray = detail.route.page == CHAT_TRAY_PAGE)
+                    }
                 }
             } else {
                 // The destinations lie side by side, so a swipe moves between them. Each draws its own header.
@@ -246,50 +228,19 @@ fun FluxShell(
                         if (current.stack.isEmpty() && current.tab != t) go(current.select(t))
                     }
                 }
-                // The phone ticks when a swipe passes the middle into another destination.
-                val haptic = LocalHapticFeedback.current
-                LaunchedEffect(pager) {
-                    snapshotFlow { pager.currentPage }.drop(1).collect { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
-                }
-                // Once, Chat moves a little to the side and back, to show that a swipe leads to the other destinations.
-                // The hint waits until the window has the focus, because the splash screen covers the app before that.
-                val density = LocalDensity.current
-                val focused = LocalWindowInfo.current.isWindowFocused
-                LaunchedEffect(focused) {
-                    val settings = Settings(context)
-                    if (!focused || reduce || settings.swipeHinted || current.tab != Tab.Chat) return@LaunchedEffect
-                    delay(SWIPE_HINT_DELAY_MS)
-                    val d = with(density) { SwipeHint.toPx() }
-                    pager.animateScrollBy(d, tween(420, easing = FastOutSlowInEasing))
-                    pager.animateScrollBy(-d, spring(dampingRatio = 0.55f, stiffness = 260f))
-                    settings.swipeHinted = true
-                }
                 // The bars are part of the destination, so that the back gesture shows the destination as it is after Back.
-                // The bar follows the destination nearest the middle, so it shows while a swipe leaves Chat.
+                // The bar follows the destination nearest the middle.
                 val shown = Tab.entries[pager.currentPage]
-                ShellFrame(wide, shown, needs, select, bar = shown != Tab.Chat) {
-                    CompositionLocalProvider(LocalShellPager provides pager) {
-                        Column(Modifier.fillMaxSize()) {
-                            // The dots of the destinations, under the status bar, in the same place on each destination.
-                            Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))) {
-                                SwipeDots(Modifier.fillMaxWidth().padding(top = 2.dp))
-                            }
-                            // The headers of the destinations start under the dots.
-                            HorizontalPager(
-                                pager,
-                                Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars),
-                                key = { Tab.entries[it] },
-                            ) { page ->
-                                val tab = Tab.entries[page]
-                                // Only the destination where the pager stops reads its data.
-                                val active = settled && pager.settledPage == page
-                                Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
-                                    when (tab) {
-                                        Tab.Chat -> ChatScreen(state, all, active, notices, actions, scope, onScope, picker)
-                                        Tab.Control -> ControlScreen(state, scope, onScope, picker, onOpen = ::open, onPair = toComputers)
-                                        Tab.Computers -> ComputersScreen(state, scope, onScope, onPair, onUnpair, onSync = toSync, onAbout = toAbout)
-                                    }
-                                }
+                ShellFrame(wide, shown, needs, select) {
+                    HorizontalPager(pager, Modifier.fillMaxSize(), key = { Tab.entries[it] }) { page ->
+                        val tab = Tab.entries[page]
+                        // Only the destination where the pager stops reads its data.
+                        val active = settled && pager.settledPage == page
+                        Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
+                            when (tab) {
+                                Tab.Chat -> ChatsScreen(state, active, notices(null), actions, picker)
+                                Tab.Control -> ControlScreen(state, scope, onScope, picker, onOpen = ::open, onPair = toComputers)
+                                Tab.Computers -> ComputersScreen(state, scope, onScope, onPair, onUnpair, onSync = toSync, onAbout = toAbout)
                             }
                         }
                     }
@@ -306,9 +257,9 @@ private fun Transition<EnterExitState>.settledVisible(): Boolean =
 
 /**
  * The frame of a destination: the content, and the navigation bar at the
- * bottom while [bar] is true. A wide window shows a navigation rail at the
- * side in the place of the navigation bar. The content draws its own
- * header under the status bar.
+ * bottom. A wide window shows a navigation rail at the side in the place
+ * of the navigation bar. The content draws its own header under the
+ * status bar.
  */
 @Composable
 private fun ShellFrame(
@@ -316,7 +267,6 @@ private fun ShellFrame(
     tab: Tab,
     needs: Int,
     onSelect: (Tab) -> Unit,
-    bar: Boolean,
     content: @Composable () -> Unit,
 ) {
     if (wide) {
@@ -330,17 +280,11 @@ private fun ShellFrame(
     } else {
         Column(Modifier.fillMaxSize()) {
             // The keyboard covers the navigation bar, so a field of the content moves up only by the rest of the keyboard.
-            // Without the bar, the content keeps clear of the gesture area itself.
             val inset = WindowInsets.navigationBars.add(WindowInsets(bottom = NavBarHeight))
-            Box(Modifier.weight(1f).fillMaxWidth().then(if (bar) Modifier.consumeWindowInsets(inset) else Modifier.navigationBarsPadding())) {
+            Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(inset)) {
                 content()
             }
-            // Each destination ends with a dock, which meets the bar with no fade.
-            AnimatedVisibility(
-                bar,
-                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
-            ) { ShellNavBar(tab, needs, onSelect) }
+            ShellNavBar(tab, needs, onSelect)
         }
     }
 }
@@ -432,47 +376,10 @@ private fun TabIcon(t: Tab, needs: Int) {
 /** The height of the navigation bar of a compact window, without the gesture area. */
 private val NavBarHeight = 66.dp
 
-/** How far the hint moves Chat to the side, and when it starts. */
-private val SwipeHint = 72.dp
-private const val SWIPE_HINT_DELAY_MS = 900L
-
-/** The pager of the destinations, for the dots that show where a swipe leads, see [SwipeDots]. */
-internal val LocalShellPager = staticCompositionLocalOf<PagerState?> { null }
-
-/**
- * The dots of the destinations: the dot of the one on screen is a wide
- * pill in the accent, and the dots follow a swipe. They show that a swipe
- * to the side leads to the other destinations. A tap on a dot moves there.
- */
-@Composable
-internal fun SwipeDots(modifier: Modifier = Modifier) {
-    val pager = LocalShellPager.current ?: return
-    val coroutines = rememberCoroutineScope()
-    val pos = pager.currentPage + pager.currentPageOffsetFraction
-    val here = Tab.entries[pager.currentPage]
-    Row(
-        modifier.semantics(mergeDescendants = true) {
-            contentDescription = "${here.label}, screen ${pager.currentPage + 1} of ${pager.pageCount}. Swipe to the side for the other screens."
-        },
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        for (i in 0 until pager.pageCount) {
-            val near = (1f - abs(pos - i)).coerceIn(0f, 1f)
-            Box(
-                Modifier.size(28.dp, 16.dp).clickable(interactionSource = null, indication = null) { coroutines.launch { pager.animateScrollToPage(i) } },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(Modifier.size(lerp(6.dp, 18.dp, near), 6.dp).clip(CircleShape).background(lerpColor(Tn.dim, Tn.blue, near)))
-            }
-        }
-    }
-}
-
 /**
  * The navigation bar of a compact window: 3 destinations, each with an
  * icon in a pill and a label. The pill of the open destination has a fill.
- * The chat shows the number of items that need the user on its pill.
+ * Chats shows the number of items that need the user on its pill.
  */
 @Composable
 private fun ShellNavBar(tab: Tab, needs: Int, onSelect: (Tab) -> Unit) {
@@ -538,10 +445,11 @@ private fun ShellNavRail(tab: Tab, needs: Int, onSelect: (Tab) -> Unit) {
 /**
  * A feature screen above a destination. [current] gives the navigation
  * now. Back on a screen pops only that screen, so a screen that leaves
- * late does not pop the screen above it.
+ * late does not pop the screen above it. [chat] draws the chat of 1
+ * computer with the function that pops it.
  */
 @Composable
-private fun DetailScreen(route: Route, state: UiState, current: () -> Nav, go: (Nav) -> Unit) {
+private fun DetailScreen(route: Route, state: UiState, current: () -> Nav, go: (Nav) -> Unit, chat: @Composable (DeviceUi, () -> Unit) -> Unit) {
     val pop = {
         val nav = current()
         if (nav.stack.lastOrNull() == route) nav.back()?.let(go)
@@ -558,6 +466,7 @@ private fun DetailScreen(route: Route, state: UiState, current: () -> Nav, go: (
     val device = state.devices.firstOrNull { it.id == id } ?: return
     val page = route.page
     when {
+        page == CHAT_PAGE || page == CHAT_TRAY_PAGE -> key(device.id) { chat(device, pop) }
         page == "media" -> TiledMediaScreen(device, pop)
         page == MIC_PAGE -> MicScreen(device, pop)
         page == "commands" -> TiledCommandsScreen(device, pop)
@@ -567,13 +476,7 @@ private fun DetailScreen(route: Route, state: UiState, current: () -> Nav, go: (
             onOpenTerminal = { pane -> push(Route(id, "$TERMINAL_PAGE$pane")) },
             onNew = { push(Route(id, NEW_PANE_PAGE)) },
         )
-        // Another agent of the strip replaces this page, so Back goes where this page came from.
-        page.startsWith(AGENT_PAGE) -> key(page) {
-            TiledAgentScreen(device, page.removePrefix(AGENT_PAGE), pop) { pane ->
-                val nav = current()
-                if (nav.stack.lastOrNull() == route) go(nav.replaceTop(Route(id, "$AGENT_PAGE$pane")))
-            }
-        }
+        page.startsWith(AGENT_PAGE) -> key(page) { TiledAgentScreen(device, page.removePrefix(AGENT_PAGE), pop) }
         page.startsWith(TERMINAL_PAGE) -> key(page) { TiledTerminalScreen(device, page.removePrefix(TERMINAL_PAGE), pop) }
         // The new pane replaces this page, so Back skips it.
         page == NEW_PANE_PAGE -> TiledNewPaneScreen(device, pop) { what, pane ->

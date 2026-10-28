@@ -36,6 +36,9 @@ class Device(private val core: FluxCore, var identity: Identity) {
     var certificate: X509Certificate? = null
     var lastIp: String = ""
 
+    /** The time that the last link ended, in milliseconds since the epoch, or 0. */
+    var lastSeen: Long = 0
+
     /** The pair state. The link reads long lines only while the device is paired. */
     var pairState = PairState.None
         set(value) {
@@ -144,6 +147,7 @@ class Device(private val core: FluxCore, var identity: Identity) {
         remoteDesktop = remoteDesktop,
         shortcutsSupported = Types.FLUX_SHORTCUTS in identity.incoming,
         shortcuts = shortcuts,
+        lastSeen = lastSeen,
     )
 
     // ---------------------------------------------------------------- pairing

@@ -188,7 +188,8 @@ object DebugDemo {
                     lines = termLines(agentOutput ?: demoOutput),
                 ),
             ),
-            device(OFFLINE, "omarchy-desk", "desktop", "192.168.2.40", paired = true, online = false),
+            // The sample desk computer was last seen at 09:12 today.
+            device(OFFLINE, "omarchy-desk", "desktop", "192.168.2.40", paired = true, online = false).copy(lastSeen = todayAt(9, 12)),
             device(NEW, "framework-13", "laptop", "192.168.2.77", paired = false, online = true),
         )
     }
@@ -229,6 +230,14 @@ object DebugDemo {
             .sortedBy { it.path.count { c -> c == '/' } }
         return BrowseSearch(0, query.trim(), path, loading = false, results = results)
     }
+
+    /** The time [hour]:[minute] today in milliseconds since the epoch. */
+    private fun todayAt(hour: Int, minute: Int): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, hour)
+        set(java.util.Calendar.MINUTE, minute)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
 
     private fun device(id: String, name: String, type: String, ip: String, paired: Boolean, online: Boolean) = DeviceUi(
         id = id, name = name, type = type, ip = ip, paired = paired, online = online,

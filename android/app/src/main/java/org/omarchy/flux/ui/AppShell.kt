@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -154,11 +156,14 @@ fun FluxShell(
     }
     val picker = rememberTargetPicker()
 
+    // A tablet in landscape shows the chat of a computer or an agent at the side of the list of chats.
+    val split = wide && !rememberShortWindow()
     val dest = nav.dest
     val seek = remember { SeekableTransitionState(dest) }
     val screens = rememberTransition(seek, label = "screens")
     // 2 parts of 1 transition: the feature screen on top, or null for a destination, and the destination under it.
-    val layers = screens.createChildTransition(label = "layers") { it as? Dest.Detail }
+    // In a split window, the chat above Chats is part of the destination.
+    val layers = screens.createChildTransition(label = "layers") { d -> (d as? Dest.Detail)?.takeUnless { split && sideChat(it) } }
     LaunchedEffect(dest, reduce) {
         if (reduce) seek.snapTo(dest) else seek.animateTo(dest)
     }
@@ -176,7 +181,8 @@ fun FluxShell(
         }
     }
 
-    fun open(r: Route) = go(current.push(r))
+    // In a split window, a chat takes the place of the chat at the side.
+    fun open(r: Route) = go(if (split && isChatPage(r) && (current.stack.isEmpty() || sideChat(current.dest))) current.select(Tab.Chat).push(r) else current.push(r))
     val toComputers = { go(Nav(Tab.Computers)) }
     val toSync = { open(Route(null, SYNC_PAGE)) }
     val toAbout = { open(Route(null, ABOUT_PAGE)) }
@@ -225,7 +231,8 @@ fun FluxShell(
                 LaunchedEffect(pager) {
                     snapshotFlow { pager.settledPage }.collect { page ->
                         val t = Tab.entries[page]
-                        if (current.stack.isEmpty() && current.tab != t) go(current.select(t))
+                        val root = current.stack.isEmpty() || (split && sideChat(current.dest))
+                        if (root && current.tab != t) go(current.select(t))
                     }
                 }
                 // The bars are part of the destination, so that the back gesture shows the destination as it is after Back.
@@ -238,7 +245,22 @@ fun FluxShell(
                         val active = settled && pager.settledPage == page
                         Box(Modifier.fillMaxSize().semantics { paneTitle = tab.label }) {
                             when (tab) {
-                                Tab.Chat -> ChatsScreen(state, active, notices(null), actions, picker)
+                                Tab.Chat -> if (split) {
+                                    val side = (current.dest as? Dest.Detail)?.takeIf(::sideChat)?.route
+                                    ChatsSplit(side, list = { ChatsScreen(state, active, notices(null), actions, picker, selected = side) }) { r ->
+                                        val d = state.devices.firstOrNull { it.id == r.deviceId } ?: return@ChatsSplit
+                                        val close = { go(Nav(Tab.Chat)) }
+                                        key(r) {
+                                            if (r.page.startsWith(AGENT_PAGE)) {
+                                                TiledAgentScreen(d, r.page.removePrefix(AGENT_PAGE), close)
+                                            } else {
+                                                ComputerChatScreen(state, d, all, active, notices(d.id), actions, onBack = close, tray = r.page == CHAT_TRAY_PAGE)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    ChatsScreen(state, active, notices(null), actions, picker)
+                                }
                                 Tab.Control -> ControlScreen(state, scope, onScope, picker, onOpen = ::open, onPair = toComputers)
                                 Tab.Computers -> ComputersScreen(state, scope, onScope, onPair, onUnpair, onSync = toSync, onAbout = toAbout)
                             }
@@ -248,6 +270,36 @@ fun FluxShell(
             }
         }
         TargetPickerDialog(picker)
+    }
+}
+
+/** True for the chat of a computer or an agent. */
+private fun isChatPage(r: Route): Boolean =
+    r.deviceId != null && (r.page == CHAT_PAGE || r.page == CHAT_TRAY_PAGE || r.page.startsWith(AGENT_PAGE))
+
+/** True when [d] is a chat right above Chats, which a split window shows at the side of the list. */
+private fun sideChat(d: Dest): Boolean = d is Dest.Detail && d.depth == 1 && d.tab == Tab.Chat && isChatPage(d.route)
+
+/** The width of the list of chats in a split window. */
+private val ChatsListWidth = 380.dp
+
+/**
+ * Chats in a split window: the [list] at the start, a `line` rule, and the
+ * chat of [side] in the rest of the width, or a line that tells what to
+ * select. [chat] draws the chat of a route.
+ */
+@Composable
+private fun ChatsSplit(side: Route?, list: @Composable () -> Unit, chat: @Composable (Route) -> Unit) {
+    Row(Modifier.fillMaxSize()) {
+        Box(Modifier.width(ChatsListWidth).fillMaxHeight()) { list() }
+        Box(Modifier.width(1.dp).fillMaxHeight().background(Tn.line))
+        Box(Modifier.weight(1f).fillMaxHeight().statusBarsPadding()) {
+            if (side != null) {
+                chat(side)
+            } else {
+                EmptyState(Ic.chat, "Select a chat", "The chat of a computer or an agent shows here.", Modifier.align(Alignment.Center))
+            }
+        }
     }
 }
 

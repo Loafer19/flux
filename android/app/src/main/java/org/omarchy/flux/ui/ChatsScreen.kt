@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -86,10 +87,11 @@ private val listClock = SeenClock()
  * opens its chat with the clipboard, the photos, and the tools. The search
  * field keeps only the chats that hold its text. The + key starts an agent
  * or a terminal. [active] is false while the screen moves, so that it reads
- * nothing new then.
+ * nothing new then. [selected] is the chat at the side of the list in a
+ * split window, and its row has the accent.
  */
 @Composable
-fun ChatsScreen(state: UiState, active: Boolean, notices: InboxNotices, actions: ChatActions, picker: TargetPicker) {
+fun ChatsScreen(state: UiState, active: Boolean, notices: InboxNotices, actions: ChatActions, picker: TargetPicker, selected: Route? = null) {
     val devices = state.devices
     // The computers send their changes. A new visit asks again for the agents.
     LaunchedEffect(active) {
@@ -153,17 +155,17 @@ fun ChatsScreen(state: UiState, active: Boolean, notices: InboxNotices, actions:
             }
             if (list.needs.isNotEmpty()) {
                 item(key = "h-needs") { SectionHead("Needs you", "${list.needs.size}", Tn.red, first = true) }
-                items(list.needs, key = { it.key }) { r -> NeedsRow(r, context, many, actions) }
+                items(list.needs, key = { it.key }) { r -> NeedsRow(r, context, many, actions, selected) }
             }
             if (list.agents.isNotEmpty()) {
                 // With 1 computer, the heading names it. With more, each row names its computer.
                 val on = list.agents.map { it.computer }.distinct().singleOrNull()
                 item(key = "h-agents") { SectionHead("Agents", if (on != null) "on $on" else null, Tn.sub, first = list.needs.isEmpty()) }
-                items(list.agents, key = { it.key }) { r -> AgentChatRow(r, many, context, actions) }
+                items(list.agents, key = { it.key }) { r -> AgentChatRow(r, many, context, actions, selected) }
             }
             if (list.computers.isNotEmpty()) {
                 item(key = "h-computers") { SectionHead("Computers", null, Tn.sub, first = list.needs.isEmpty() && list.agents.isEmpty()) }
-                items(list.computers, key = { it.key }) { r -> ComputerChatRow(r, context, actions) }
+                items(list.computers, key = { it.key }) { r -> ComputerChatRow(r, context, actions, selected) }
             }
             if (list.isEmpty && query.isNotBlank()) {
                 item(key = "none") {
@@ -227,11 +229,11 @@ private fun SectionHead(title: String, trailing: String?, color: Color, first: B
 
 /** A row of the Needs you group: an approval or a pair request as a card, or an agent that waits for input. */
 @Composable
-private fun NeedsRow(r: ChatRow, context: Context, many: Boolean, actions: ChatActions) {
+private fun NeedsRow(r: ChatRow, context: Context, many: Boolean, actions: ChatActions, selected: Route?) {
     when (r) {
         is ApprovalRow -> ApprovalCard(r.request, r.at, actions, list = true)
         is PairRow -> PairCard(r.deviceId, r.computer, r.at, actions, list = true)
-        is AgentRow -> AgentChatRow(r, many, context, actions)
+        is AgentRow -> AgentChatRow(r, many, context, actions, selected)
         is ComputerRow -> Unit
     }
 }
@@ -240,7 +242,8 @@ private fun NeedsRow(r: ChatRow, context: Context, many: Boolean, actions: ChatA
  * The frame of a chat row: the [avatar], the [title] in 15 sp 600, the
  * [line] under it, and the [time] in mono at the end. A row that needs the
  * user ([ask]) takes `tile` and a red border. [dim] shows a computer that
- * is not reachable at 55%. TalkBack reads the row as 1 item.
+ * is not reachable at 55%. A [selected] row takes `accent-tile`. TalkBack
+ * reads the row as 1 item.
  */
 @Composable
 private fun ChatRowFrame(
@@ -252,12 +255,15 @@ private fun ChatRowFrame(
     onClick: () -> Unit,
     ask: Boolean = false,
     dim: Boolean = false,
+    selected: Boolean = false,
     timeTicker: (@Composable () -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth().alpha(if (dim) DimAlpha else 1f).clip(shape)
-            .then(if (ask) Modifier.background(Tn.tile).border(1.dp, Tn.red, shape) else Modifier)
+            .then(if (selected) Modifier.background(Tn.accentTile) else if (ask) Modifier.background(Tn.tile) else Modifier)
+            .then(if (ask) Modifier.border(1.dp, Tn.red, shape) else Modifier)
+            .semantics { this.selected = selected }
             .clickable(onClickLabel = "Open the chat", role = Role.Button, onClick = onClick)
             .clearAndSetSemantics { contentDescription = description }
             .padding(start = 10.dp, end = 8.dp, top = if (ask) 10.dp else 8.dp, bottom = if (ask) 10.dp else 8.dp),
@@ -293,7 +299,7 @@ private fun agentSource(r: AgentRow, many: Boolean): String =
  * and another agent shows the time of its status.
  */
 @Composable
-private fun AgentChatRow(r: AgentRow, many: Boolean, context: Context, actions: ChatActions) {
+private fun AgentChatRow(r: AgentRow, many: Boolean, context: Context, actions: ChatActions, selected: Route?) {
     val a = r.agent
     val s = a.status
     val blocked = s == AgentStatus.Blocked
@@ -341,6 +347,7 @@ private fun AgentChatRow(r: AgentRow, many: Boolean, context: Context, actions: 
         },
         description = listOf(title, word, source).filter { it.isNotEmpty() }.joinToString(", "),
         ask = blocked,
+        selected = selected == Route(r.deviceId, "$AGENT_PAGE${a.pane}"),
         onClick = { actions.open(Route(r.deviceId, "$AGENT_PAGE${a.pane}")) },
     )
 }
@@ -376,7 +383,7 @@ private fun shortTime(context: Context, at: Long): String {
  * Flux last saw it. Without entries, the line shows the link and battery.
  */
 @Composable
-private fun ComputerChatRow(r: ComputerRow, context: Context, actions: ChatActions) {
+private fun ComputerChatRow(r: ComputerRow, context: Context, actions: ChatActions, selected: Route?) {
     val d = r.device
     val line = when {
         !d.online -> if (d.lastSeen > 0) "Offline · last seen ${shortTime(context, d.lastSeen)}" else "Offline"
@@ -390,6 +397,7 @@ private fun ComputerChatRow(r: ComputerRow, context: Context, actions: ChatActio
         time = if (!d.online && r.last == null) shortTime(context, d.lastSeen) else shortTime(context, r.at),
         description = listOf(d.name, linkText(d), line).distinct().joinToString(", "),
         dim = !d.online,
+        selected = selected?.deviceId == d.id && (selected.page == CHAT_PAGE || selected.page == CHAT_TRAY_PAGE),
         onClick = { actions.open(Route(d.id, CHAT_PAGE)) },
     )
 }

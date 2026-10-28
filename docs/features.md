@@ -131,6 +131,7 @@ The **+** key at the left of the field opens the tray: the 4 newest photos of th
 To send photos, tap them in the tray, then tap the send key. The key shows the number of photos.
 A tap on the field closes the tray and hides the **+** key, so the field takes its width and grows to 6 lines. The expand key in the field opens the large editor.
 The chat of an agent shows its output as a thread, and its question and choices in the dock. See [herdr agents](herdr.md#see-your-agents).
+On an Android tablet in landscape, **Chats** shows the list at the side of the selected chat.
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).
 The tunnel carries SSH traffic without an inbound SSH firewall rule.
 

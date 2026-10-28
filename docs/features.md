@@ -133,7 +133,7 @@ A tap on the field closes the tray and hides the **+** key, so the field takes i
 The chat of an agent shows its output as a thread, and its question and choices in the dock. See [herdr agents](herdr.md#see-your-agents).
 On an Android tablet in landscape, **Chats** shows the list at the side of the selected chat.
 Flux for macOS shows the list of chats in the sidebar of its window and the open chat next to it. See [Flux for macOS](macos.md#chats-and-navigation).
-Flux for Windows does the same. See [Flux for Windows](windows.md).
+Flux for Windows does the same. See [Flux for Windows](windows.md#chats-and-navigation).
 The phone can read folders of the desktop when `share_home` is enabled. See [Browse PC](#browse-pc).
 The tunnel carries SSH traffic without an inbound SSH firewall rule.
 

@@ -83,9 +83,15 @@ final class AgentsWindows: NSObject, NSWindowDelegate {
     }
     private var open: [String: Entry] = [:]
 
+    /// True while the agents window of the computer `deviceId` is open.
+    func isOpen(_ deviceId: String) -> Bool { open[deviceId] != nil }
+
     /// Shows the agents window of a computer, and opens it when it is not
-    /// open. `pane` selects that agent.
+    /// open. `pane` selects that agent. herdr keeps 1 output of each
+    /// computer, so an agent chat of the same computer in the main window
+    /// gives its place to the chat of the computer.
     func show(_ deviceId: String, pane: String? = nil, app: AppModel) {
+        if case .agent(deviceId, _) = app.chat { app.chat = .computer(deviceId) }
         // The list shows the session of the agent.
         if let pane { app.core.plugin(HerdrPlugin.self)?.model.reveal(deviceId, pane: pane) }
         if let entry = open[deviceId] {

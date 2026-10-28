@@ -209,6 +209,7 @@ struct ChatDock: View {
     /// has the accent border.
     private func composer(on: Bool, share: SharePlugin?) -> some View {
         let count = shots.count
+        let sendShots = count == 1 ? "Send 1 screenshot" : "Send \(count) screenshots"
         let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let canSend = on && (hasText || count > 0)
         let send = {
@@ -268,8 +269,8 @@ struct ChatDock: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
-                .help(count > 0 ? "Send \(count == 1 ? "1 screenshot" : "\(count) screenshots")" : "Send the text or the link")
-                .accessibilityLabel(count > 0 ? "Send \(count == 1 ? "1 screenshot" : "\(count) screenshots")" : "Send")
+                .help(count > 0 ? sendShots : "Send the text or the link")
+                .accessibilityLabel(count > 0 ? sendShots : "Send")
             }
         }
     }

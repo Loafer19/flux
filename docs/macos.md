@@ -249,6 +249,7 @@ A new pairing sets the scope to the new computer and opens its chat.
 Each start of Flux begins with **All computers**.
 When more than 1 computer can take a tool, Flux asks which one.
 A click on an agent in **Control** opens its chat. **Agents Window** opens the agents of a computer in their own window.
+While the agents window of a computer is open, an agent of that computer opens in that window, because the computer sends the output of 1 agent at a time.
 The cards of the features open on a page of their own from **Control**.
 The agents, browse, camera, remote desktop, and touchpad windows stay separate windows.
 

@@ -121,6 +121,11 @@ final class AppModel {
 
     /// Opens a chat in the detail column.
     func open(_ chat: ChatOpen) {
+        // herdr keeps 1 output of each computer. While the agents window of the computer is open, its agents show there.
+        if case .agent(let id, let pane) = chat, AgentsWindows.shared.isOpen(id) {
+            AgentsWindows.shared.show(id, pane: pane, app: self)
+            return
+        }
         destination = .chats
         self.chat = chat
         chatPath = []

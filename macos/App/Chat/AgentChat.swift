@@ -32,7 +32,8 @@ struct AgentChat: View {
             .task(id: online) {
                 if online { agents.plugin.request(deviceId) }
             }
-            .onDisappear { agents.dictation.cancel() }
+            // A dictation that waits for the permissions also stops. The model selects no pane, so no output closes.
+            .onDisappear { agents.close() }
         } else {
             ContentUnavailableView("No agents on this Mac", systemImage: "brain")
                 .navigationTitle("Chats")
@@ -56,9 +57,20 @@ struct StartAgentSheet: View {
                     agents.selection = nil
                     model.open(.agent(deviceId, pane: pane))
                 }
+                // The sheet can close in the same update that selects the new agent. Then only this opens its chat.
+                .onDisappear {
+                    guard let pane = agents.selection else { return }
+                    agents.selection = nil
+                    model.open(.agent(deviceId, pane: pane))
+                }
         } else {
-            ContentUnavailableView("No agents on this Mac", systemImage: "brain")
-                .frame(width: 400, height: 240)
+            VStack(spacing: 16) {
+                ContentUnavailableView("No agents on this Mac", systemImage: "brain")
+                Button("Close") { model.startAgent = nil }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+            .frame(width: 400, height: 240)
         }
     }
 }

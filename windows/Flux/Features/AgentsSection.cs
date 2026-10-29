@@ -7,23 +7,77 @@ using FluxKit;
 namespace Flux;
 
 // The herdr agents in the app: the agents of Control, the notification
-// settings, the menu item of the tray, and the start hook. AgentsSection.swift
-// and ControlView.swift of the Mac app have the same parts.
+// settings, the menu item of the tray, Start Agent in the chats, and the
+// start hook. AgentsSection.swift and ControlView.swift of the Mac app have
+// the same parts.
 public static class AgentsFeature
 {
     static readonly ConditionalWeakTable<AppModel, AgentList> Lists = new();
 
-    // A click on an agent notification opens the agents window of that
-    // agent. The Inbox keeps its times and its prompts while the app runs.
+    // The dialog that starts an agent from the chats, while it shows.
+    static NewAgentDialog? starting;
+
+    // A click on an agent notification opens the chat of that agent. The
+    // Inbox keeps its times and its prompts while the app runs.
     public static void DidLaunch(AppModel model)
     {
         if (model.Core.Plugin<HerdrPlugin>() is { } herdr)
         {
-            herdr.Model.Open = (id, pane) => AgentsWindows.Show(model, id, pane);
+            herdr.Model.Open = (id, pane) =>
+            {
+                model.OpenChat(new ChatKey.Agent(id, pane));
+                model.ShowMain?.Invoke();
+            };
         }
         model.WatchEvents();
         ReplyLock.Watch();
     }
+
+    // True when the computer lets this computer start an agent: herdr runs
+    // there with herdr_control = true.
+    public static bool CanStart(AppModel model, DeviceSnapshot d) =>
+        d.Accepts(PacketType.Herdr) && model.Core.Plugin<HerdrPlugin>()?.Model.States.GetValueOrDefault(d.Id) is { Running: true, Control: true };
+
+    // Opens the dialog that starts an agent on the computer, over the main
+    // window. The new agent opens in its chat when the computer reports it.
+    public static void Start(AppModel model, string deviceId)
+    {
+        if (model.Core.Plugin<HerdrPlugin>() is not { } plugin)
+        {
+            return;
+        }
+        if (starting is { IsLoaded: true } open)
+        {
+            open.Activate();
+            return;
+        }
+        var m = new AgentsWindowModel(model, deviceId, plugin, null);
+        m.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AgentsWindowModel.Selection) && m.Selection is { } pane)
+            {
+                model.OpenChat(new ChatKey.Agent(deviceId, pane));
+            }
+        };
+        starting = new NewAgentDialog(m) { Owner = Application.Current?.MainWindow };
+        starting.Closed += (_, _) => starting = null;
+        starting.Show();
+    }
+
+    // The + key of the chats: starts an agent on the only online computer
+    // that allows it, or on the computer that the user picks.
+    public static void StartAnywhere(AppModel model)
+    {
+        var ready = model.ConnectedPaired.Where(d => CanStart(model, d)).ToArray();
+        if (Targets.Among(model, ready, "No computer lets this computer start an agent. Set herdr_control = true on a computer.") is { } id)
+        {
+            Start(model, id);
+        }
+    }
+
+    // Agent in the tray of the chat of a computer that allows it.
+    public static (string Title, string Glyph, Action Run)? DockTool(AppModel model, DeviceSnapshot d) =>
+        CanStart(model, d) ? ("Agent", AgentGlyphs.Agent, () => Start(model, d.Id)) : null;
 
     // The agents and the terminals of the computers in scope, with the
     // agents that need the user first, for Control.

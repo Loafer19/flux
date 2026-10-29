@@ -167,12 +167,19 @@ public sealed partial class AppModel : Model
         {
             Scope = null;
         }
+        // A computer that goes offline keeps the time, for "last seen" in Chats.
+        var now = DateTimeOffset.Now;
+        foreach (var d in old.Devices.Where(d => d.Paired && d.Online && !s.Devices.Any(n => n.Id == d.Id && n.Online)))
+        {
+            lastSeen[d.Id] = now;
+        }
         // A new pairing shows the chat of the new computer.
         var before = old.Devices.ToDictionary(d => d.Id, d => d.Paired);
         if (s.Devices.FirstOrDefault(d => d.Paired && before.TryGetValue(d.Id, out var was) && !was) is { } paired)
         {
             PairingSheet = null;
             Scope = paired.Id;
+            Chat = new ChatKey.Computer(paired.Id);
             paths[Destination.Chat].Clear();
             paths[Destination.Computers].Clear();
             Destination = Destination.Chat;

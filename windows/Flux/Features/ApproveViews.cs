@@ -31,8 +31,8 @@ public static class ApproveCards
     // A request that waits for Windows Hello, with Deny and Approve. Approve
     // opens the approval prompt, which asks for Windows Hello. The card never
     // approves by itself. In the tray panel, the prompt takes the focus, and
-    // the panel hides.
-    public static UIElement ApprovalCard(AppModel model, InboxItem item, ApproveRequest r, DateTimeOffset at)
+    // the panel hides. list draws the card for the list of chats.
+    public static UIElement ApprovalCard(AppModel model, InboxItem item, ApproveRequest r, DateTimeOffset at, bool list = false)
     {
         var tn = Tn.Current;
         var plugin = model.Core.Plugin<ApprovePlugin>();
@@ -59,7 +59,7 @@ public static class ApproveCards
         row.Children.Add(deny);
         row.Children.Add(approve);
         return Cards.InCard(Cards.Head(item.StateWord, tn.Red, r.Service, Texts.ClockTime(at), AgentParts.PulseDot(tn.Red, 8)),
-            item.Title, ApproveTexts.RequestLine(r), ask: true, extra: row);
+            item.Title, ApproveTexts.RequestLine(r), ask: true, extra: row, list: list);
     }
 
     // The answer of this computer to a request: Approved, Enrolled, or Denied.

@@ -6,10 +6,10 @@ using Flux;
 using FluxKit;
 using static Harness;
 
-// The herdr agents: the cards in Chat, the count in the sidebar and in the
-// tray panel, the reply row after a tell choice, the agents window with a
-// thread and the changes, Start Agent, the agents in Control, and the
-// settings. A blocked agent with choices, a working agent, and a done agent
+// The herdr agents: the rows in the list of chats, the count in the sidebar
+// and in the tray panel, the cards of the tray panel, the chat of an agent
+// after a tell choice, the agents window with a thread and the changes,
+// Start Agent, the agents in Control, and the settings. A blocked agent with choices, a working agent, and a done agent
 // run on the paired sample computer.
 public static class AgentsChecks
 {
@@ -69,37 +69,31 @@ public static class AgentsChecks
         herdr.Model.States = herdr.Model.States.SetItem(paired.Id, state);
         herdr.Model.Since = herdr.Model.Since.SetItem(paired.Id, ImmutableDictionary<string, DateTimeOffset>.Empty
             .Add(working.Pane, DateTimeOffset.Now.AddSeconds(-75)));
-        model.Go(Destination.Chat);
+        model.OpenChat(new ChatKey.Computer(paired.Id));
         Pump();
 
-        // Chat and the sidebar.
-        h.Check(Shows(window, "Migrate the invoices") && Shows(window, "Needs input"), "the chat shows the blocked agent");
-        h.Check(Shows(window, "Add a token bucket") && Shows(window, "Working"), "the chat shows the working agent");
-        h.Check(Shows(window, "Fix the flaky test") && Shows(window, "Waits for the next prompt"), "the chat shows the done agent");
-        h.Check(Shows(window, "1:1"), "the working agent shows its time");
-        h.Check(Shows(window, "2 need you"), "the context line counts the agent and the pair request");
-        h.Check(Named(window, "2 need you") is not null, "the sidebar badge counts 2 items");
-        h.Check(Buttons(window).Any(b => AutomationProperties.GetName(b) == "Chat" && AutomationProperties.GetItemStatus(b) == "2 items need you"),
-            "the Chat row tells the count to a screen reader");
+        // The list of chats in the sidebar.
+        var chats = window.Chats;
+        h.Check(Shows(chats, "Migrate the invoices") && Shows(chats, "Needs input"), "the list shows the blocked agent");
+        h.Check(Shows(chats, "Add a token bucket") && Shows(chats, "Working"), "the list shows the working agent");
+        h.Check(Shows(chats, "Fix the flaky test") && Shows(chats, "Done"), "the list shows the done agent");
+        h.Check(Shows(chats, "1:1"), "the working agent shows its time");
+        h.Check(Shows(chats, "on omarchy-xps"), "the heading of the agents names their computer");
+        h.Check(Shows(chats, "2 need you"), "the context line counts the agent and the pair request");
+        h.Check(Named(chats, "Needs you, 2") is not null, "the heading Needs you counts 2 items");
+        h.Check(Buttons(chats).Any(b => AutomationProperties.GetName(b) == "Chats" && AutomationProperties.GetItemStatus(b) == "2 items need you"),
+            "Chats tells the count to a screen reader");
+        h.Check(!Shows(window.CurrentPage!, "Migrate the invoices"), "the chat of the computer shows no agent cards");
         h.Check(model.Seen.ContainsKey($"agent|{paired.Id}|w1:p1|AgentInput"), "the app model keeps the time of the blocked agent");
 
-        // The card reads the question, and a fresh output gives the choices.
-        var key = HerdrModel.PromptKey(paired.Id, blocked.Pane);
-        h.Check(herdr.Model.Prompts.ContainsKey(key), "the card of the blocked agent reads its output");
-        herdr.Model.Prompts = herdr.Model.Prompts.SetItem(key, new HerdrOutput(blocked.Pane, false, TermText.Lines(Dialog)));
+        // A click on an agent opens its chat with the chat top bar.
+        ClickStarting(chats, "Add a token bucket");
+        h.Check(model.Chat == new ChatKey.Agent(paired.Id, working.Pane), "a click on an agent opens its chat");
+        h.Check(window.CurrentPage is ChatsPage { Agent: not null }, "Chats shows the chat of the agent");
+        h.Check(Shows(window, "claude · upload · omarchy-xps"), "the top bar shows the agent, the project, and the computer");
+        h.Check(Named(window, "Changes") is not null, "the top bar has the Changes key");
+        model.OpenChat(new ChatKey.Computer(paired.Id));
         Pump();
-        h.Check(Shows(window, "bin/migrate --apply"), "the card shows the command of the question");
-        h.Check(Shows(window, "Yes, and do not ask again for bin/migrate commands"), "the card shows the choices");
-        h.Check(Texts(window).Count(t => t == "Open thread") == 2, "the choices take the place of Open thread on the blocked agent");
-
-        // A choice that rejects the action opens a reply in the dock.
-        ClickStarting(window, "3. No, and tell Codex what to do differently");
-        h.Check(model.ChatReply is { Agent: "codex", Pane: "w1:p1" }, "a tell choice opens a reply");
-        h.Check(Shows(window, "Reply to codex") && Shows(window, "· billing"), "the dock shows the reply row");
-        h.Check(Shows(window, "Writing a reply below"), "the card tells that the dock writes a reply");
-        Click(window, "Cancel the reply");
-        h.Check(model.ChatReply is null, "Cancel closes the reply");
-        h.Check(!Shows(window, "Reply to codex"), "the reply row goes");
 
         // The tray panel: the 2 items that need the user as cards, and the next items as rows.
         var panel = new TrayPanel(model, () => { }, () => { }, () => { });
@@ -108,7 +102,26 @@ public static class AgentsChecks
         h.Check(Shows(panel, "2 items need you"), "the tray panel counts the agent and the pair request");
         h.Check(Shows(panel, "Migrate the invoices") && Shows(panel, "omarchy-new asks to pair"), "the tray panel shows the 2 cards");
         h.Check(Shows(panel, "Add a token bucket") && Shows(panel, "Fix the flaky test"), "the tray panel shows the next items as rows");
+
+        // The card reads the question, and a fresh output gives the choices.
+        var key = HerdrModel.PromptKey(paired.Id, blocked.Pane);
+        h.Check(herdr.Model.Prompts.ContainsKey(key), "the card of the blocked agent reads its output");
+        herdr.Model.Prompts = herdr.Model.Prompts.SetItem(key, new HerdrOutput(blocked.Pane, false, TermText.Lines(Dialog)));
+        Pump();
+        h.Check(Shows(panel, "bin/migrate --apply"), "the card shows the command of the question");
+        h.Check(Shows(panel, "Yes, and do not ask again for bin/migrate commands"), "the card shows the choices");
+
+        // A choice that rejects the action opens the chat of the agent.
+        ClickStarting(panel, "3. No, and tell Codex what to do differently");
+        h.Check(model.Chat == new ChatKey.Agent(paired.Id, blocked.Pane), "a tell choice opens the chat of the agent");
         panel.Close();
+        herdr.Model.Outputs = herdr.Model.Outputs.SetItem(paired.Id, new HerdrOutput(blocked.Pane, false, TermText.Lines(Dialog)));
+        Pump();
+        h.Check(Shows(window, "codex asks") && Shows(window, "Do you want to proceed?"), "the dock of the agent chat shows the question");
+        h.Check(Shows(window, "Write"), "the dock of the agent chat has Write for the text");
+        // The agents window reads its own agent, so the chat of the agent closes first.
+        model.OpenChat(new ChatKey.Computer(paired.Id));
+        Pump();
 
         // The agents window with the thread of the working agent.
         AgentsWindows.Show(model, paired.Id, working.Pane);
@@ -154,7 +167,7 @@ public static class AgentsChecks
         herdr.Model.Prompts = ImmutableDictionary<string, HerdrOutput>.Empty;
         herdr.Model.Outputs = ImmutableDictionary<string, HerdrOutput>.Empty;
         herdr.Model.Since = ImmutableDictionary<string, ImmutableDictionary<string, DateTimeOffset>>.Empty;
-        model.ChatReply = null;
+        model.OpenChat(new ChatKey.Computer(paired.Id));
         model.SetScope(null);
         model.Go(Destination.Chat);
         Pump();
@@ -254,16 +267,6 @@ public static class AgentsChecks
             }
         }
         return false;
-    }
-
-    // Clicks the buttons whose name for a screen reader starts with the text.
-    static void ClickStarting(DependencyObject root, string start)
-    {
-        foreach (var b in Buttons(root).Where(b => AutomationProperties.GetName(b).StartsWith(start, StringComparison.Ordinal)))
-        {
-            b.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-        }
-        Pump();
     }
 
     // The element with the name that a screen reader reads, or null.

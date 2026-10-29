@@ -6,41 +6,27 @@ using FluxKit;
 
 namespace Flux;
 
-// A reply that the dock of the chat writes to the agent in Pane in the place
-// of the Choice that rejects its action, such as "No, and tell Codex what to
-// do differently". Lines are the lines of the question that the user read.
-// The reply goes out only while the question is the same.
-public sealed record ChatReply(string DeviceId, string Pane, string Agent, string Project, string Computer, AgentChoice Choice,
-                               ValueList<TermLine> Lines);
-
-// The answers that the chat sent to the agents, by computer and pane. An
-// answer shows on the card of the agent while the agent works on it, for 10
-// minutes at most. The item of an agent changes when its status changes, so
-// the answers live here and not in the card. ChatAnswers of the Mac app has
-// the same rules.
+// The answers that the cards of the tray panel sent to the agents, by
+// computer and pane. An answer shows on the card of the agent while the
+// agent works on it, for 10 minutes at most. The item of an agent changes
+// when its status changes, so the answers live here and not in the card.
+// ChatAnswers of the Mac app has the same rules.
 public sealed class ChatAnswers : Model
 {
     public static ChatAnswers Shared { get; } = new();
 
-    sealed record Entry(string Text, ValueList<TermLine> Lines, bool Working, DateTimeOffset At);
+    sealed record Entry(string Text, bool Working, DateTimeOffset At);
 
     ImmutableDictionary<string, Entry> entries = ImmutableDictionary<string, Entry>.Empty;
 
     static string Key(string deviceId, string pane) => deviceId + "|" + pane;
 
-    // Keeps the answer text to the agent in pane. lines are the lines of the
-    // question that a reply answered.
-    public void Sent(string text, string deviceId, string pane, IReadOnlyList<TermLine>? lines = null)
+    // Keeps the answer text to the agent in pane.
+    public void Sent(string text, string deviceId, string pane)
     {
-        entries = entries.SetItem(Key(deviceId, pane), new Entry(text, ValueList.From(lines ?? []), false, DateTimeOffset.Now));
+        entries = entries.SetItem(Key(deviceId, pane), new Entry(text, false, DateTimeOffset.Now));
         Changed();
     }
-
-    // The lines of the question that a reply of the chat answered, or null.
-    // The choices of that question stay off until the agent shows another
-    // question, so that 1 click does not answer it again.
-    public ValueList<TermLine>? Told(string deviceId, string pane) =>
-        entries.TryGetValue(Key(deviceId, pane), out var e) && e.Lines.Count > 0 ? e.Lines : null;
 
     // The answer to show for the agent in pane, or null.
     public string? Answer(string deviceId, string pane) =>
@@ -71,11 +57,10 @@ public sealed class ChatAnswers : Model
     }
 }
 
-// The cards of the Inbox items in a thread, by the key of the item. A card
-// of an agent keeps its state while its item stays, so that a drawing of the
-// thread does not read the output again. The chat and the tray panel keep
-// 1 each.
-public sealed class EventCards(AppModel model, bool inPanel = false)
+// The cards of the Inbox items in the tray panel, by the key of the item. A
+// card of an agent keeps its state while its item stays, so that a drawing
+// of the panel does not read the output again.
+public sealed class EventCards(AppModel model)
 {
     readonly Dictionary<string, ChatAgentCard> agents = [];
 
@@ -91,7 +76,7 @@ public sealed class EventCards(AppModel model, bool inPanel = false)
                 }
                 else
                 {
-                    agents[item.Key] = card = new ChatAgentCard(model, item, at, inPanel);
+                    agents[item.Key] = card = new ChatAgentCard(model, item, at);
                 }
                 return card;
             case InboxContent.Pair p when model.DeviceOf(p.DeviceId) is { } d:
@@ -115,20 +100,20 @@ public sealed class EventCards(AppModel model, bool inPanel = false)
     }
 }
 
-// An agent: what it waits for, what it works on, or that it is done. The
-// rules of an agent that waits:
+// An agent in the tray panel: what it waits for, what it works on, or that
+// it is done. The rules of an agent that waits:
 // - The card reads the output when it shows and when its window comes to
 //   the front. Only an output that comes after that read is fresh, and only
 //   a fresh output gives choices.
 // - The question keeps the lines nearest the choices, and it is never cut.
 // - Each answer asks for Windows Hello first, see ReplyLock.
 // - After an answer, the choices stay off until a new output comes.
-// - A choice that rejects the action opens a reply in the dock.
+// - A choice that rejects the action opens the chat of the agent in the
+//   main window, where the user writes what the agent must do.
 // ChatAgentCard of the Mac app has the same rules.
 public sealed class ChatAgentCard : View
 {
     readonly AppModel model;
-    readonly bool inPanel;
     readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
     readonly TextBlock detailText = Ui.Text("", 12, color: Tn.Current.Sub, mono: true, wrap: true);
     InboxItem item;
@@ -144,12 +129,11 @@ public sealed class ChatAgentCard : View
     AgentThread? thread;
     AgentAsk? ask;
 
-    public ChatAgentCard(AppModel model, InboxItem item, DateTimeOffset at, bool inPanel)
+    public ChatAgentCard(AppModel model, InboxItem item, DateTimeOffset at)
     {
         this.model = model;
         this.item = item;
         this.at = at;
-        this.inPanel = inPanel;
         Watch(model);
         Watch(Plugin?.Model);
         Watch(ChatAnswers.Shared);
@@ -269,8 +253,7 @@ public sealed class ChatAgentCard : View
         var output = plugin?.Model.Prompt(DeviceId, Agent.Pane);
         var fresh = Fresh();
         Parse(fresh);
-        var replying = model.ChatReply is { } r && r.DeviceId == DeviceId && r.Pane == Agent.Pane;
-        var choices = blocked && !replying && fresh is not null ? fresh.Choices : ValueList<AgentChoice>.Empty;
+        var choices = blocked && fresh is not null ? fresh.Choices : ValueList<AgentChoice>.Empty;
         var reply = plugin?.Model.Reply(DeviceId, Agent.Pane);
         var sending = reply?.Sending == true;
         var many = model.Scope is null && model.Paired.Count > 1;
@@ -308,8 +291,7 @@ public sealed class ChatAgentCard : View
             }
             if (fresh is not null && choices.Count > 0)
             {
-                var told = ChatAnswers.Shared.Told(DeviceId, Agent.Pane);
-                var open = AgentItem.Control && !sending && fresh != answered && !Equals(fresh.Lines, told);
+                var open = AgentItem.Control && !sending && fresh != answered;
                 var buttons = choices.Select((c, i) => (UIElement)AgentParts.AskChoiceButton(c, i == 0, open, () => Answer(c, fresh), 40));
                 extra.Add(Ui.V(6, buttons).Margin(0, 6, 0, 0));
             }
@@ -341,7 +323,7 @@ public sealed class ChatAgentCard : View
             clock.Stop();
         }
         var card = Cards.InCard(Cards.Head(item.StateWord, item.Tone.Brush(), source, Texts.ClockTime(at), AgentParts.StatusMark(Agent.Status, 8, 11)),
-            item.Title, ask: blocked, extra: extra.Count == 0 ? null : Ui.V(6, extra), action: Action(replying, choices.Count > 0));
+            item.Title, ask: blocked, extra: extra.Count == 0 ? null : Ui.V(6, extra), action: choices.Count > 0 ? null : OpenAction());
         return card;
     }
 
@@ -349,24 +331,20 @@ public sealed class ChatAgentCard : View
     static UIElement PromptLines(IReadOnlyList<string> lines) =>
         Ui.SelectableText(string.Join("\n", lines), 12, color: Tn.Current.Sub);
 
-    // Open thread, or the line that tells that the dock writes a reply. The choices take its place.
-    UIElement? Action(bool replying, bool choices)
+    // Open thread. The choices take its place.
+    UIElement OpenAction() => Cards.TextAction("Open thread", OpenChat, "Open the chat of the agent in Flux");
+
+    // Shows the chat of the agent in the main window.
+    void OpenChat()
     {
-        if (replying)
-        {
-            return Ui.Text("Writing a reply below", 13, FontWeights.SemiBold, Tn.Current.Accent).MinHeight(24);
-        }
-        if (choices)
-        {
-            return null;
-        }
-        return Cards.TextAction("Open thread", () => AgentsWindows.Show(model, DeviceId, Agent.Pane),
-            "Open the thread of the agent in the agents window");
+        model.OpenChat(new ChatKey.Agent(DeviceId, Agent.Pane));
+        model.ShowMain?.Invoke();
     }
 
     // Sends the keys of the choice after Windows Hello. The question on
     // screen must still be the question that the user read. A choice that
-    // rejects the action opens a reply in the dock of the chat.
+    // rejects the action opens the chat of the agent, where the dock shows
+    // the same question and the field for the text.
     void Answer(AgentChoice choice, HerdrOutput output)
     {
         if (answered == output)
@@ -375,24 +353,14 @@ public sealed class ChatAgentCard : View
         }
         if (Chat.IsTellChoice(choice))
         {
-            model.ChatReply = new ChatReply(DeviceId, Agent.Pane, Agent.Agent, Agent.Project.Length == 0 ? Agent.Workspace : Agent.Project,
-                item.Computer, choice, output.Lines);
-            if (inPanel)
-            {
-                if (FluxKit.Inbox.InScope([item], model.Scope).Count == 0)
-                {
-                    model.SetScope(null);
-                }
-                model.Go(Destination.Chat);
-                model.ShowMain?.Invoke();
-            }
+            OpenChat();
             return;
         }
         lockError = null;
         var deviceId = DeviceId;
         var pane = Agent.Pane;
         // The tray panel hides when Windows Hello takes the focus, so the prompt belongs to the main window.
-        var owner = inPanel ? Application.Current?.MainWindow : Window.GetWindow(this);
+        var owner = Application.Current?.MainWindow;
         ReplyLock.Run($"answer agents on {item.Computer}", owner, () =>
         {
             if (Plugin is not { } plugin || answered == output)

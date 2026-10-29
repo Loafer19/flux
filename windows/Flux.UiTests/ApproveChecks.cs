@@ -9,7 +9,8 @@ using static Harness;
 
 // Fingerprint approval with Windows Hello: the prompt window with the
 // countdown, Deny, and Approve, the key code of an enrollment, a failure, the
-// chat card of the open request, the answer cards, the section of the
+// cards of the open request in the list of chats and in the chat of the
+// computer, the answer cards, the section of the
 // computer page, the tray panel, the count of the items that need the user,
 // and the map of the answers of Windows Hello. The paired sample computer
 // has an open sudo request, 2 answers, and a key.
@@ -47,11 +48,13 @@ public static class ApproveChecks
                 ApproveOutcome.Approved, request with { Id = "r9" }, earlier.AddMinutes(-1).AddSeconds(4)),
         });
         Open(m, request);
-        model.Go(Destination.Chat);
+        model.OpenChat(new ChatKey.Computer(paired.Id));
         Pump();
 
-        // The chat and the counts: the open request and the pair request need the user.
-        h.Check(Shows(window, "Approve sudo on omarchy-xps?") && Shows(window, "Needs approval"), "the chat shows the open request");
+        // The list, the chat, and the counts: the open request and the pair request need the user.
+        h.Check(Shows(window.Chats, "Approve sudo on omarchy-xps?") && Shows(window.Chats, "Needs approval"), "the list shows the open request");
+        h.Check(Buttons(window.Chats).Any(b => AutomationProperties.GetName(b) == "Approve"), "the card of the list keeps Approve in place");
+        h.Check(window.CurrentPage is { } page && Shows(page, "Approve sudo on omarchy-xps?"), "the chat of the computer shows the open request");
         h.Check(Shows(window, "user alice · /dev/pts/3"), "the card shows the user and the terminal");
         h.Check(Buttons(window).Any(b => AutomationProperties.GetName(b) == "Deny") && Buttons(window).Any(b => AutomationProperties.GetName(b) == "Approve"),
             "the card shows Deny and Approve");

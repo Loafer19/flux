@@ -125,6 +125,8 @@ data class DeviceUi(
     val shortcutsSupported: Boolean = false,
     /** The key bindings and workspaces of the computer, or null before the first answer. */
     val shortcuts: ShortcutsState? = null,
+    /** The time that the last link to the computer ended, in milliseconds since the epoch, or 0 when no link ended while the app ran. */
+    val lastSeen: Long = 0,
 )
 
 /** A snapshot of the whole app for the UI. */

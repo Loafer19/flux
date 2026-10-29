@@ -5,39 +5,119 @@ using FluxKit;
 
 namespace Flux;
 
-// Chat: 1 thread of what happens between this computer and the computers in
-// scope, with the newest entry at the bottom. The computers write on the
-// left, and what this computer sent shows on the right. Before the first
-// pairing, the page shows the pairing guide. ChatView.swift of the Mac app
-// has the same layout.
-public sealed class ChatPage : Page
+// The detail column of Chats: the chat of a computer or of an agent, see
+// AppModel.ShownChat. Before the first pairing, it shows the pairing guide.
+// Each chat draws its own top bar, so the window shows no header over it.
+// The chat of each computer stays, so that it keeps its draft and its place.
+// The chat of an agent reads the output while it shows. The design puts the
+// chats in the detail column of the Mac app too.
+public sealed class ChatsPage : Page
 {
+    readonly Dictionary<string, ComputerChat> computers = [];
+    readonly Dictionary<string, AgentsWindowModel> agentModels = [];
+    readonly ScrollViewer guide = Ui.Scroll(new Border());
+    AgentDetail? agent;
+    string agentDevice = "";
+
+    public ChatsPage(AppModel model) : base(model)
+    {
+        // The chat of an agent ends its watch when the page leaves the window.
+        Unloaded += (_, _) => CloseAgent();
+    }
+
+    public override string Title => "Chats";
+
+    public override bool OwnHeader => true;
+
+    // The chat of the agent on screen, or null. The window sends Ctrl+R and Ctrl+D to it.
+    internal AgentDetail? Agent => agent;
+
+    // The chat of the computer on screen, or null. Tests read it.
+    internal ComputerChat? Computer => Content as ComputerChat;
+
+    protected override UIElement Build()
+    {
+        // The chats of computers that are no longer paired go.
+        foreach (var id in computers.Keys.Where(id => Model.PairedDevice(id) is null).ToArray())
+        {
+            computers.Remove(id);
+            agentModels.Remove(id);
+        }
+        var shown = Model.ShownChat;
+        if (shown is ChatKey.Agent a && Model.Core.Plugin<HerdrPlugin>() is { } plugin)
+        {
+            if (agent is null || agent.Pane != a.Pane || agentDevice != a.DeviceId)
+            {
+                CloseAgent();
+                if (!agentModels.TryGetValue(a.DeviceId, out var m))
+                {
+                    agentModels[a.DeviceId] = m = new AgentsWindowModel(Model, a.DeviceId, plugin, a.Pane);
+                }
+                agent = new AgentDetail(m, a.Pane, chat: true);
+                agentDevice = a.DeviceId;
+            }
+            return agent;
+        }
+        CloseAgent();
+        if (shown is null)
+        {
+            guide.Content = Ui.Column(PairGuide.Build(Model), 16, 16);
+            return guide;
+        }
+        if (!computers.TryGetValue(shown.DeviceId, out var chat))
+        {
+            computers[shown.DeviceId] = chat = new ComputerChat(Model, shown.DeviceId);
+        }
+        return chat;
+    }
+
+    void CloseAgent()
+    {
+        agent?.Close();
+        agent = null;
+    }
+}
+
+// The chat of 1 computer: the top bar, the progress line, the thread of that
+// computer with the newest entry at the bottom, and the dock. The thread
+// holds the links, texts, clips, and files that this computer sent, the
+// files and the last clip of the computer, its open approval, and the
+// answers. The computer writes on the left, and what this computer sent
+// shows on the right. The agents have chats of their own, so they do not
+// show here. Files and text that the user drops on the chat go to the
+// computer. ChatScreen.kt of the Android app has the same parts.
+public sealed class ComputerChat : View
+{
+    readonly AppModel model;
     readonly ScrollViewer scroll = Ui.Scroll(new Border());
-    readonly ChatDock chatDock;
+    readonly ChatDock dock;
     readonly DockPanel layout = new();
+    readonly Border barHost = new();
     readonly Border lineHost = new();
-    readonly EventCards cards;
     bool atEnd = true;
     int lastCount;
-    string online = "";
 
-    public ChatPage(AppModel model) : base(model)
+    public ComputerChat(AppModel model, string deviceId)
     {
-        chatDock = new ChatDock(model);
-        cards = new EventCards(model);
-        // Files, text, and links that the user drops on the page go to the computer.
+        this.model = model;
+        DeviceId = deviceId;
+        dock = new ChatDock(model, deviceId);
         AllowDrop = true;
-        Drop += (_, e) => ShareViews.Drop(model, e);
+        Drop += (_, e) => ShareViews.Drop(model, e, deviceId);
+        DockPanel.SetDock(barHost, Dock.Top);
         DockPanel.SetDock(lineHost, Dock.Top);
+        DockPanel.SetDock(dock.Root, Dock.Bottom);
+        layout.Children.Add(barHost);
         layout.Children.Add(lineHost);
-        DockPanel.SetDock(chatDock.Root, Dock.Bottom);
-        layout.Children.Add(chatDock.Root);
+        layout.Children.Add(dock.Root);
         Ui.Detach(scroll);
         layout.Children.Add(scroll);
+        Watch(model);
         foreach (var m in ChatFeed.Models(model))
         {
             Watch(m);
         }
+        Watch(Batteries.Model(model));
         scroll.ScrollChanged += (_, e) =>
         {
             if (e.ExtentHeightChange == 0)
@@ -47,43 +127,34 @@ public sealed class ChatPage : Page
         };
     }
 
+    // The ID of the computer of the chat.
+    public string DeviceId { get; }
+
     // The dock with the field, for the tests.
-    internal ChatDock Composer => chatDock;
-
-    public override string Title => "Chat";
-
-    public override string Subtitle => Model.Paired.Count == 0 ? "" : Status().Context;
-
-    ChatStatus Status() => ChatStatus.Make(Model);
+    internal ChatDock Composer => dock;
 
     protected override UIElement Build()
     {
         var tn = Tn.Current;
-        lineHost.Child = Parts.ProgressLine(ChatFeed.Progress(Model));
-        if (Model.Paired.Count == 0)
+        if (model.PairedDevice(DeviceId) is not { } d)
         {
-            chatDock.Root.Visibility = Visibility.Collapsed;
-            scroll.Content = Ui.Column(PairGuide.Build(Model), 12, 16);
-            return layout;
+            return Parts.Unavailable(Icons.Laptop, "The computer is gone", "It is no longer paired with this computer.");
         }
-        chatDock.Root.Visibility = Visibility.Visible;
-        chatDock.Update();
-        // The chat asks each computer that comes online for its agents.
-        var ids = string.Join(",", Model.ConnectedPaired.Select(d => d.Id));
-        if (ids != online)
+        var battery = Batteries.Of(model, d.Id);
+        var context = ChatParts.Context(d, battery);
+        if (!d.Online && model.LastSeen(d.Id) is { } seen)
         {
-            online = ids;
-            foreach (var d in Model.ConnectedPaired)
-            {
-                Model.Core.Plugin<HerdrPlugin>()?.Request(d.Id);
-            }
+            context += " · last seen " + ChatParts.ShortTime(seen);
         }
-
-        var entries = ChatFeed.Entries(Model, cards);
+        barHost.Child = ChatParts.Bar(ChatParts.Picture(Texts.Symbol(d), tn.Text, tn.Tile, tn.Line, tn.Bg, d.Online ? tn.Green : null),
+            d.Name, context, Menu(d));
+        lineHost.Child = Parts.ProgressLine(ShareViews.Progress(model, d.Id));
+        dock.Update();
+        var entries = ChatFeed.Entries(model, d.Id);
         var items = new List<UIElement?>();
         if (entries.Count == 0)
         {
-            items.Add(Ui.Text("Agents that need you, approvals, and files from your computers show here. So do the links, text, and files that you send. To send files, drop them on this page.",
+            items.Add(Ui.Text("Approvals and the files and clips from this computer show here. So do the links, text, and files that you send. To send files, drop them on this chat.",
                 12, color: tn.Sub, wrap: true, align: TextAlignment.Center).Margin(24, 0, 24, 0));
         }
         DateTimeOffset? last = null;
@@ -96,11 +167,10 @@ public sealed class ChatPage : Page
             last = e.At;
             items.Add(e.View);
         }
-        items.Add(ChatNotices.Build(Model, Status()));
-        var column = Ui.V(10, items);
+        items.Add(ChatNotices.Build(model, d));
         var thread = new Border
         {
-            Child = column,
+            Child = Ui.V(10, items),
             MaxWidth = Metrics.MaxContentWidth,
             Padding = new Thickness(14, 14, 14, 16),
             VerticalAlignment = VerticalAlignment.Bottom,
@@ -115,17 +185,52 @@ public sealed class ChatPage : Page
         lastCount = entries.Count;
         return layout;
     }
+
+    // The menu of the chat: Control with this computer in scope, the agents
+    // window, and Start Agent.
+    UIElement Menu(DeviceSnapshot d)
+    {
+        var button = new FluxButton("", ButtonKind.Text, () => { }, Icons.More).Named("More actions").Help("More actions");
+        button.Click += (_, _) =>
+        {
+            var menu = new ContextMenu { PlacementTarget = button, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+            menu.Items.Add(Item("Control", () =>
+            {
+                model.SetScope(d.Id);
+                model.Go(Destination.Control);
+            }));
+            var herdr = model.Core.Plugin<HerdrPlugin>();
+            if (herdr is not null && d.Accepts(PacketType.Herdr))
+            {
+                menu.Items.Add(Item("Agents Window", () => AgentsWindows.Show(model, d.Id)));
+                if (d.Online && AgentsFeature.CanStart(model, d))
+                {
+                    menu.Items.Add(Item("Start Agent…", () => AgentsFeature.Start(model, d.Id)));
+                }
+            }
+            menu.IsOpen = true;
+        };
+        return button;
+    }
+
+    static MenuItem Item(string header, Action run)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => run();
+        return item;
+    }
 }
 
 // 1 entry of the chat: its time, its view, and whether this computer wrote it.
 public sealed record ChatEntryView(string Id, DateTimeOffset At, UIElement View, bool Mine = false);
 
-// The entries of the chat in the order of Chat.Entries of FluxKit: the
-// files, the texts, and the clips of the share feature, the last clip, the
-// answers to approvals, and the Inbox items with the times of the app model.
-// ChatView.swift of the Mac app has the same order.
+// The entries of the chat of a computer in the order of Chat.Entries of
+// FluxKit: the files, the texts, and the clips of the share feature, the
+// last clip, the answers to approvals, and the open approval of the
+// computer. ChatView.swift of the Mac app has the same order.
 public static class ChatFeed
 {
+    // The models that the chats watch.
     public static IEnumerable<System.ComponentModel.INotifyPropertyChanged> Models(AppModel model) =>
         new System.ComponentModel.INotifyPropertyChanged?[]
         {
@@ -133,31 +238,27 @@ public static class ChatFeed
             model.Core.Plugin<SharePlugin>()?.Model,
             model.Core.Plugin<HerdrPlugin>()?.Model,
             model.Core.Plugin<ApprovePlugin>()?.Model,
-            ChatAnswers.Shared,
         }.OfType<System.ComponentModel.INotifyPropertyChanged>();
 
-    // The progress of the files that come in or go out, or null.
-    public static double? Progress(AppModel model) => ShareViews.Progress(model);
-
-    // The entries of the chat in scope, oldest first. cards keeps the cards
-    // of the Inbox items between the drawings.
-    public static IReadOnlyList<ChatEntryView> Entries(AppModel model, EventCards cards)
+    // The entries of the chat of the computer, oldest first.
+    public static IReadOnlyList<ChatEntryView> Entries(AppModel model, string deviceId)
     {
-        var all = model.InboxItems();
         var share = model.Core.Plugin<SharePlugin>()?.Model;
-        var herdr = model.Core.Plugin<HerdrPlugin>()?.Model;
-        var answers = (IEnumerable<ApproveRecord>?)model.Core.Plugin<ApprovePlugin>()?.Model.History ?? [];
+        var approve = model.Core.Plugin<ApprovePlugin>()?.Model;
+        InboxItem[] items = approve?.Current is { } open && open.ComputerId == deviceId
+            ? [new InboxItem(new InboxContent.Approval(open), open.ComputerName)]
+            : [];
         var entries = Chat.Entries((IEnumerable<SentItem>?)share?.Sent ?? [], (IEnumerable<FileTransfer>?)share?.Transfers ?? [],
-            model.Core.Plugin<ClipboardPlugin>()?.Model.Last, answers, all, (id, pane) => herdr?.AgentSince(id, pane), model.ChatSeen(all), model.Scope);
-        var shared = ShareViews.Entries(model).ToDictionary(e => e.Id);
-        cards.Keep(all.Select(i => i.Key));
+            model.Core.Plugin<ClipboardPlugin>()?.Model.Last, (IEnumerable<ApproveRecord>?)approve?.History ?? [], items, (_, _) => null,
+            model.ChatSeen(items), deviceId);
+        var shared = ShareViews.Entries(model, deviceId).ToDictionary(e => e.Id);
         var list = new List<ChatEntryView>();
         foreach (var e in entries)
         {
             switch (e)
             {
-                case ChatEntry.Event ev:
-                    list.Add(new ChatEntryView(e.Id, e.At, cards.Card(ev.Item, ev.Time)));
+                case ChatEntry.Event { Item.Content: InboxContent.Approval a } ev:
+                    list.Add(new ChatEntryView(e.Id, e.At, ApproveCards.ApprovalCard(model, ev.Item, a.Request, ev.Time)));
                     break;
                 case ChatEntry.Clip c:
                     list.Add(new ChatEntryView(e.Id, e.At, Cards.ClipCard(c.Value)));
@@ -178,67 +279,26 @@ public static class ChatFeed
     }
 }
 
-// The texts of the context line and the notices of the chat.
-public sealed record ChatStatus(int Needs, int Elsewhere, string? ScopeName, IReadOnlyList<string> Offline, string? Connecting, string? PairedName)
-{
-    // "omarchy-xps · 2 need you". With all computers in scope, only the count shows.
-    public string Context => Texts.ContextLine(ScopeName ?? "", Needs > 0 ? $"{Needs} need you" : "nothing needs you");
-
-    public string? OfflineLine => Offline.Count switch
-    {
-        0 => null,
-        1 => $"{Offline[0]} is not reachable. Its agents do not show here.",
-        _ => $"{Offline.Count} computers are not reachable. Their agents do not show here.",
-    };
-
-    public static ChatStatus Make(AppModel model)
-    {
-        var all = model.InboxItems();
-        var reach = FluxKit.Inbox.Reach(model.Scope, model.State.Devices);
-        var needs = FluxKit.Inbox.NeedsYou(FluxKit.Inbox.InScope(all, model.Scope));
-        string? pairedName = null;
-        if (model.NewlyPairedId is { } id && (model.Scope is null || model.Scope == id))
-        {
-            pairedName = model.PairedDevice(id)?.Name;
-        }
-        string? connecting = null;
-        if (reach.NoneOnline && model.Connecting)
-        {
-            connecting = reach.Offline.Count == 1 ? reach.Offline[0].Name : "";
-        }
-        return new ChatStatus(needs, FluxKit.Inbox.NeedsYou(all) - needs, model.PairedDevice(model.Scope)?.Name,
-            model.Connecting ? [] : reach.Offline.Select(d => d.Name).ToArray(), connecting, pairedName);
-    }
-}
-
-// The notices under the entries of the chat: that Flux connects, a new
-// pairing, the items on other computers that need the user, and the
-// computers that are not reachable.
+// The notices under the entries of the chat of a computer: that Flux
+// connects to it, that it just paired, or that it is not reachable.
 public static class ChatNotices
 {
-    public static UIElement Build(AppModel model, ChatStatus status)
+    public static UIElement Build(AppModel model, DeviceSnapshot d)
     {
         var tn = Tn.Current;
         var rows = new List<UIElement?>();
-        if (status.Connecting is { } name)
+        if (!d.Online && model.Connecting)
         {
-            rows.Add(Ui.H(10, Parts.Spinner(), Ui.Text(name.Length == 0 ? "Connecting to your computers" : $"Connecting to {name}", 12, color: tn.Sub))
-                .Margin(10, 0, 10, 0));
+            rows.Add(Ui.H(10, Parts.Spinner(), Ui.Text($"Connecting to {d.Name}", 12, color: tn.Sub)).Margin(10, 0, 10, 0));
         }
-        if (status.PairedName is { } paired)
+        if (model.NewlyPairedId == d.Id)
         {
-            rows.Add(Notice(Ui.Icon(Icons.Check, 15, tn.Green), $"{paired} is paired. What waits for you on {paired} shows here first."));
+            rows.Add(Notice(Ui.Icon(Icons.Check, 15, tn.Green), $"{d.Name} is paired. Its agents show in the list of chats, and its files and clips show here."));
         }
-        if (status.Elsewhere > 0)
+        if (!d.Online && !model.Connecting)
         {
-            rows.Add(Notice(Ui.Dot(tn.Red), status.Elsewhere == 1
-                    ? "1 item on another computer needs you"
-                    : $"{status.Elsewhere} items on other computers need you",
-                new FluxButton("Show all computers", ButtonKind.Text, () => model.SetScope(null))));
-        }
-        if (status.OfflineLine is { } offline)
-        {
-            rows.Add(Notice(Parts.LinkDot(false), offline, new FluxButton("Retry", ButtonKind.Text, model.Retry)));
+            rows.Add(Notice(Parts.LinkDot(false), $"{d.Name} is not reachable. Its agents do not show in the list of chats.",
+                new FluxButton("Retry", ButtonKind.Text, model.Retry)));
         }
         return Ui.V(Metrics.Gap, rows);
     }
@@ -332,9 +392,10 @@ public static class Cards
     }
 
     // A card from a computer, on the left at 88% of the column. A card that
-    // needs the user takes the full column and a red border of 2 px.
+    // needs the user takes the full column and a red border of 2 px. A card
+    // of the list of chats, list, takes the tile corner on all sides.
     public static UIElement InCard(UIElement head, string title, string detail = "", bool mono = false, bool ask = false,
-                                   UIElement? extra = null, UIElement? action = null)
+                                   UIElement? extra = null, UIElement? action = null, bool list = false)
     {
         var tn = Tn.Current;
         var titleText = Ui.Text(title, 14, FontWeights.SemiBold, mono: mono, wrap: true);
@@ -350,7 +411,7 @@ public static class Cards
             Background = tn.Tile,
             BorderBrush = ask ? tn.Red : tn.Line,
             BorderThickness = new Thickness(ask ? 2 : 1),
-            CornerRadius = new CornerRadius(14, 14, 14, 4),
+            CornerRadius = list ? new CornerRadius(Metrics.TileCorner) : new CornerRadius(14, 14, 14, 4),
             Padding = new Thickness(12, 10, 12, 10),
             HorizontalAlignment = ask ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
         };
@@ -394,12 +455,13 @@ public static class Cards
         return InCard(Head("Clipboard", tn.Cyan, clip.Computer, Texts.ClockTime(clip.At), Ui.Dot(tn.Cyan, 8)), text, mono: !clip.Secret);
     }
 
-    // A computer that asks to pair. A click opens the pairing page.
-    public static UIElement PairCard(AppModel model, DeviceSnapshot d, DateTimeOffset at)
+    // A computer that asks to pair. A click opens the pairing page. list
+    // draws the card for the list of chats.
+    public static UIElement PairCard(AppModel model, DeviceSnapshot d, DateTimeOffset at, bool list = false)
     {
         var tn = Tn.Current;
         return InCard(Head("Pair request", tn.Red, "", Texts.ClockTime(at), Ui.Dot(tn.Red, 8)),
-            $"{d.Name} asks to pair", $"Key {Certificates.FormatKey(d.PairKey)}", ask: true,
+            $"{d.Name} asks to pair", $"Key {Certificates.FormatKey(d.PairKey)}", ask: true, list: list,
             action: TextAction("Compare the key", () =>
             {
                 model.Go(Destination.Computers);

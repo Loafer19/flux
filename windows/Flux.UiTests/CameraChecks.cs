@@ -10,8 +10,8 @@ using Flux;
 using FluxKit;
 using static Harness;
 
-// The camera modes and the screenshots: the tools of the chat dock, the tray
-// action, the setting Send new screenshots, the camera window in each mode
+// The camera modes and the screenshots: the tools of the tray of a chat, the
+// tray action, the setting Send new screenshots, the camera window in each mode
 // with sample images, the text recognition of Windows, the QR decoder, the
 // PDF, the signature PNG, the EXIF orientation, the screenshot folder, and
 // the screen capture.
@@ -142,11 +142,12 @@ public static class CameraChecks
         return output.ToArray();
     }
 
-    // The tools of the chat dock and the action of the tray.
+    // The tools of the tray of a chat and the action of the tray menu.
     static void Tools(Harness h)
     {
-        var titles = ChatDock.Tools.Select(t => t(h.Model)).OfType<(string Title, string Glyph, Action Run)>().Select(t => t.Title).ToArray();
-        h.Check(new[] { "Photo", "Scan", "Text", "QR" }.All(titles.Contains), $"the dock has Photo, Scan, Text, and QR, not {string.Join(", ", titles)}");
+        var titles = ChatDock.Tools.Select(t => t(h.Model, h.Paired)).OfType<(string Title, string Glyph, Action Run)>().Select(t => t.Title).ToArray();
+        h.Check(new[] { "Camera", "Scan", "Text", "QR", "Signature" }.All(titles.Contains),
+            $"the tray has Camera, Scan, Text, QR, and Signature, not {string.Join(", ", titles)}");
         h.Check(TrayActions.For(h.Model, h.Paired).Any(a => a.Title == "Camera…"), "the tray menu of a computer has Camera…");
     }
 
